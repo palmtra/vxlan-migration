@@ -1,4 +1,4 @@
-# cvg-vxlan
+# Classic VLAN to VXLAN EVPN Migration
 
 Ansible Automation Platform (AAP) driven network automation for two VLAN lifecycle streams:
 
