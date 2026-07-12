@@ -1,0 +1,48 @@
+---
+# -----------------------------------------------------------------------------
+# Cisco NXOS state gathering
+# -----------------------------------------------------------------------------
+
+- name: NXOS — show vlan brief
+  ansible.netcommon.cli_command:
+    command: show vlan brief
+  register: _nxos_show_vlan
+  check_mode: false
+  changed_when: false
+  failed_when: false
+
+- name: NXOS — show SVIs
+  ansible.netcommon.cli_command:
+    command: show ip interface brief | include Vlan
+  register: _nxos_show_svi
+  check_mode: false
+  changed_when: false
+  failed_when: false
+
+- name: NXOS — show trunk interfaces
+  ansible.netcommon.cli_command:
+    command: show interface trunk
+  register: _nxos_show_trunk
+  check_mode: false
+  changed_when: false
+  failed_when: false
+
+- name: NXOS — show VXLAN VNIs
+  ansible.netcommon.cli_command:
+    command: show nve vni
+  register: _nxos_show_vxlan
+  check_mode: false
+  changed_when: false
+  failed_when: false
+
+- name: NXOS — assemble discovery fact
+  ansible.builtin.set_fact:
+    _vlan_discovery:
+      hostname: "{{ inventory_hostname }}"
+      data_center: "{{ data_center | default('unknown') }}"
+      os_family: "{{ network_os_family }}"
+      timestamp: "{{ ansible_date_time.iso8601 }}"
+      vlans_raw: "{{ _nxos_show_vlan.stdout | default('') }}"
+      svi_raw: "{{ _nxos_show_svi.stdout | default('') }}"
+      trunks_raw: "{{ _nxos_show_trunk.stdout | default('') }}"
+      vxlan_raw: "{{ _nxos_show_vxlan.stdout | default('') }}"

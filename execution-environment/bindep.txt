@@ -1,0 +1,11 @@
+# System package dependencies for the execution environment
+
+# SSH client for network_cli connections
+openssh-clients
+
+# Common networking / crypto libraries
+openssl
+libssh2
+
+# Terminal handling
+ncurses

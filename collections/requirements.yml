@@ -1,0 +1,21 @@
+---
+collections:
+  # Core networking collection: facts, config, vlans, etc.
+  - name: ansible.netcommon
+    version: ">=6.0.0"
+
+  # Cisco IOS modules (ios_vlans, ios_config, ios_facts, etc.)
+  - name: cisco.ios
+    version: ">=7.0.0"
+
+  # Cisco NXOS modules (nxos_vlans, nxos_config, nxos_facts, etc.)
+  - name: cisco.nxos
+    version: ">=6.0.0"
+
+  # Arista EOS modules (eos_vlans, eos_config, eos_facts, eos_command, etc.)
+  - name: arista.eos
+    version: ">=7.0.0"
+
+  # Useful for RESTCONF/NETCONF based southbound if needed later
+  - name: ansible.utils
+    version: ">=3.0.0"

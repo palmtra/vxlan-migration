@@ -1,0 +1,5 @@
+hostname,data_center,os_family,timestamp,vlans_present,svi_present,trunks_present,vxlan_present
+{% for host in ansible_play_hosts %}
+{% set d = hostvars[host]._vlan_discovery %}
+{{ d.hostname }},{{ d.data_center }},{{ d.os_family }},{{ d.timestamp }},{{ 'yes' if d.vlans_raw else 'no' }},{{ 'yes' if d.svi_raw else 'no' }},{{ 'yes' if d.trunks_raw else 'no' }},{{ 'yes' if d.vxlan_raw else 'no' }}
+{% endfor %}

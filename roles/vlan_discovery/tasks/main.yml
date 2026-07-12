@@ -1,0 +1,47 @@
+---
+# -----------------------------------------------------------------------------
+# vlan_discovery
+# -----------------------------------------------------------------------------
+# Gathers current VLAN/SVI/trunk/VXLAN state per device and writes
+# per-host JSON plus a combined CSV report.
+# -----------------------------------------------------------------------------
+
+- name: Ensure reports directory exists
+  ansible.builtin.file:
+    path: "{{ discovery_reports_dir }}"
+    state: directory
+    mode: '0755'
+  delegate_to: localhost
+  become: false
+  check_mode: false
+
+- name: Include EOS discovery tasks
+  ansible.builtin.include_tasks: gather_eos.yml
+  when: network_os_family == 'eos'
+
+- name: Include NXOS discovery tasks
+  ansible.builtin.include_tasks: gather_nxos.yml
+  when: network_os_family == 'nxos'
+
+- name: Include IOS discovery tasks
+  ansible.builtin.include_tasks: gather_ios.yml
+  when: network_os_family == 'ios'
+
+- name: Write per-host JSON report
+  ansible.builtin.template:
+    src: host_report.json.j2
+    dest: "{{ discovery_reports_dir }}/{{ inventory_hostname }}_vlan_state.json"
+    mode: '0644'
+  delegate_to: localhost
+  become: false
+  when: discovery_write_json | bool
+
+- name: Write combined CSV report
+  ansible.builtin.template:
+    src: combined_report.csv.j2
+    dest: "{{ discovery_reports_dir }}/combined_vlan_state.csv"
+    mode: '0644'
+  delegate_to: localhost
+  become: false
+  run_once: true
+  when: discovery_write_csv | bool

@@ -1,0 +1,15 @@
+{# IOS/IOS-XE VXLAN migration config #}
+{% for vlan in _vlans_to_migrate %}
+vlan {{ vlan.id }}
+ name {{ vlan.vlan_name | default(vlan.name) }}
+ vn-segment {{ vlan.vni }}
+{% endfor %}
+!
+interface {{ ios_nve_interface }}
+ no ip address
+ host-reachability protocol bgp
+ source-interface {{ vtep_source_interface }}
+{% for vlan in _vlans_to_migrate %}
+ member vni {{ vlan.vni }}
+  mcast-group {{ vlan.mcast_group | default(vxlan_default_mcast_group) }}
+{% endfor %}

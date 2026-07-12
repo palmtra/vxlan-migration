@@ -1,0 +1,10 @@
+---
+# -----------------------------------------------------------------------------
+# vlan_discovery defaults
+# -----------------------------------------------------------------------------
+
+discovery_reports_dir: "{{ playbook_dir }}/../reports"
+discovery_write_json: true
+discovery_write_csv: true
+
+# Raw command set is platform-specific in gather_*.yml files.

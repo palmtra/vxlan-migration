@@ -1,0 +1,44 @@
+---
+# -----------------------------------------------------------------------------
+# Arista EOS VLAN decommission
+# -----------------------------------------------------------------------------
+
+- name: Discover trunk interfaces on EOS
+  ansible.netcommon.cli_command:
+    command: show interfaces switchport
+  register: _eos_trunk_output
+  check_mode: false
+  changed_when: false
+  failed_when: false
+
+- name: Build list of EOS trunk interfaces
+  ansible.builtin.set_fact:
+    _eos_trunk_interfaces: "{{ (_eos_trunk_output.stdout | default('')) | regex_findall('(?s)Name: (\\S+).*?Operational Mode: trunk') | map('regex_replace', '^Et', 'Ethernet') | list }}"
+
+- name: Remove SVIs for decommissioned VLANs
+  arista.eos.eos_config:
+    lines:
+      - "no interface Vlan{{ item.id }}"
+  loop: "{{ _vlans_to_decommission }}"
+  loop_control:
+    label: "{{ item.id }}"
+
+- name: Prune decommissioned VLANs from EOS trunks
+  arista.eos.eos_config:
+    src: eos_trunk_prune.j2
+    match: line
+    replace: line
+  when:
+    - decommission_prune_trunks | bool
+    - _vlans_to_decommission | length > 0
+    - _eos_trunk_interfaces | length > 0 or
+      (_vlans_to_decommission | selectattr('explicit_trunk_interfaces', 'defined') | list) | length > 0
+
+- name: Delete decommissioned VLANs on EOS
+  arista.eos.eos_config:
+    lines:
+      - "no vlan {{ item.id }}"
+  loop: "{{ _vlans_to_decommission }}"
+  when: decommission_delete_vlan | bool
+  loop_control:
+    label: "{{ item.id }}"

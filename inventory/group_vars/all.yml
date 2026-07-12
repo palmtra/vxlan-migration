@@ -1,0 +1,35 @@
+---
+# -----------------------------------------------------------------------------
+# Global variables for cvg-vxlan
+# -----------------------------------------------------------------------------
+
+# Load the canonical VLAN registry by default
+vlan_registry_file: "{{ playbook_dir }}/../vars/vlan_registry.yml"
+
+# Safety switch.  When false, destructive decommission tasks are skipped.
+# Set to true only when you are ready to delete VLANs / SVIs.
+vlan_change_dangerous: false
+
+# When true, every change playbook will save a local backup per host.
+network_backup_enabled: true
+network_backup_dir: "{{ playbook_dir }}/../backups/{{ inventory_hostname }}"
+
+# VXLAN fabric defaults used by the migration role
+vtep_loopback_id: 0
+vtep_source_interface: "Loopback{{ vtep_loopback_id }}"
+
+# Default multicast group for VXLAN BUM traffic.  Replace with your fabric value
+# (unicast HER, ingress replication, or EVPN control-plane) as required.
+vxlan_default_mcast_group: "239.1.1.1"
+
+# Optional EVPN AFIs to enable on VNI.  Disable if your fabric is multicast only.
+# This is an example of a design-parameter that should be promoted to per-VLAN data.
+evpn_enabled: false
+
+# Scope controls.  AAP surveys can inject these to limit blast radius.
+# Empty target_vlan_ids means all VLANs in the registry.
+# target_actions is overridden by individual playbooks; site.yml defaults to both.
+target_vlan_ids: []
+target_actions:
+  - migrate
+  - decommission

@@ -1,0 +1,21 @@
+---
+# -----------------------------------------------------------------------------
+# Arista EOS defaults
+# -----------------------------------------------------------------------------
+ansible_network_os: eos
+network_os_family: eos
+
+network_config_module: arista.eos.eos_config
+network_vlans_module: arista.eos.eos_vlans
+network_facts_module: arista.eos.eos_facts
+network_command_module: arista.eos.eos_command
+
+# EOS-specific VXLAN interface defaults
+eos_vxlan_interface: "Vxlan1"
+eos_vxlan_source_interface: "{{ vtep_source_interface }}"
+eos_vxlan_udp_port: 4789
+
+# EOS trunk patterns for VLAN pruning
+trunk_interface_patterns:
+  - "Ethernet[0-9]+"
+  - "Port-Channel[0-9]+"

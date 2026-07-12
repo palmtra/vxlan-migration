@@ -1,0 +1,13 @@
+---
+# -----------------------------------------------------------------------------
+# decommission_vlan defaults
+# -----------------------------------------------------------------------------
+
+# If true, prune VLAN from discovered trunk interfaces.
+decommission_prune_trunks: true
+
+# If true, delete the VLAN definition after SVI removal and trunk pruning.
+decommission_delete_vlan: true
+
+# Interfaces to prune.  If empty, role discovers trunks from the device.
+decommission_explicit_trunk_interfaces: []

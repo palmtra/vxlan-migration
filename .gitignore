@@ -1,0 +1,14 @@
+.local/
+backups/
+reports/
+*.log
+*.retry
+*.vault
+vault.yml
+vault.yaml
+.secrets/
+.env
+__pycache__/
+*.pyc
+.vscode/
+.idea/

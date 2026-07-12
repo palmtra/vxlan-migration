@@ -1,0 +1,18 @@
+---
+# Ansible Lint configuration
+# Run with: ansible-lint
+
+exclude_paths:
+  - .local/
+  - .git/
+  - backups/
+  - collections/
+
+warn_list:
+  - experimental
+
+skip_list:
+  - name[casing]
+  - no-changed-when
+
+use_default_rules: true

@@ -1,0 +1,40 @@
+---
+# -----------------------------------------------------------------------------
+# network_common
+# -----------------------------------------------------------------------------
+# Shared tasks used by both migrate and decommission playbooks:
+#   - load canonical VLAN registry
+#   - filter to the VLANs targeted by the current playbook
+#   - gather network facts
+#   - capture a configuration backup
+# -----------------------------------------------------------------------------
+
+- name: Load canonical VLAN registry
+  ansible.builtin.include_vars:
+    file: "{{ vlan_registry_file }}"
+    name: vlan_registry
+
+- name: Compute effective VLAN list for this run
+  ansible.builtin.set_fact:
+    _effective_vlans: "{{ vlan_registry.vlans | select_vlans_for_run(target_vlan_ids | default([]), target_actions | default([])) }}"
+
+- name: Display VLANs selected for this host
+  ansible.builtin.debug:
+    msg: "Selected VLANs: {{ _effective_vlans | map(attribute='id') | list }}"
+
+- name: Verify device reachability
+  ansible.netcommon.cli_command:
+    command: show version
+  register: _net_version
+  check_mode: false
+  changed_when: false
+
+- name: Gather structured network facts
+  action: "{{ network_facts_module }}"
+  register: _network_facts
+  check_mode: false
+  changed_when: false
+
+- name: Capture pre-change configuration backup
+  ansible.builtin.include_tasks: backup.yml
+  when: network_backup_enabled | bool

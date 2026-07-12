@@ -1,0 +1,15 @@
+---
+# -----------------------------------------------------------------------------
+# Migrate legacy VLANs to VXLAN
+# -----------------------------------------------------------------------------
+
+- name: Migrate selected VLANs to VXLAN
+  hosts: network_devices
+  gather_facts: false
+  vars:
+    target_actions:
+      - migrate
+
+  roles:
+    - network_common
+    - migrate_to_vxlan

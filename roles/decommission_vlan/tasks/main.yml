@@ -1,0 +1,36 @@
+---
+# -----------------------------------------------------------------------------
+# decommission_vlan
+# -----------------------------------------------------------------------------
+# Removes SVIs, prunes trunks, and deletes VLANs marked action=decommission.
+# This role requires vlan_change_dangerous=true as a guard.
+# -----------------------------------------------------------------------------
+
+- name: Identify VLANs to decommission
+  ansible.builtin.set_fact:
+    _vlans_to_decommission: "{{ _effective_vlans | selectattr('action', 'equalto', 'decommission') | list }}"
+
+- name: Enforce safety guard for VLAN decommission
+  ansible.builtin.fail:
+    msg: >
+      vlan_change_dangerous must be set to true to run decommission tasks.
+      Re-run with -e vlan_change_dangerous=true only after review.
+  when:
+    - _vlans_to_decommission | length > 0
+    - not (vlan_change_dangerous | bool)
+
+- name: Report decommission scope
+  ansible.builtin.debug:
+    msg: "Decommissioning VLANs: {{ _vlans_to_decommission | map(attribute='id') | list }}"
+
+- name: Include EOS decommission tasks
+  ansible.builtin.include_tasks: eos_decommission.yml
+  when: network_os_family == 'eos'
+
+- name: Include NXOS decommission tasks
+  ansible.builtin.include_tasks: nxos_decommission.yml
+  when: network_os_family == 'nxos'
+
+- name: Include IOS decommission tasks
+  ansible.builtin.include_tasks: ios_decommission.yml
+  when: network_os_family == 'ios'

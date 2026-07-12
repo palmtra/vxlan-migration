@@ -1,0 +1,48 @@
+---
+# -----------------------------------------------------------------------------
+# Arista EOS state gathering
+# -----------------------------------------------------------------------------
+
+- name: EOS — show vlan
+  ansible.netcommon.cli_command:
+    command: show vlan
+  register: _eos_show_vlan
+  check_mode: false
+  changed_when: false
+  failed_when: false
+
+- name: EOS — show SVIs
+  ansible.netcommon.cli_command:
+    command: show ip interface brief | include Vlan
+  register: _eos_show_svi
+  check_mode: false
+  changed_when: false
+  failed_when: false
+
+- name: EOS — show switchport / trunk info
+  ansible.netcommon.cli_command:
+    command: show interfaces switchport
+  register: _eos_show_switchport
+  check_mode: false
+  changed_when: false
+  failed_when: false
+
+- name: EOS — show VXLAN vlan-to-vni mappings
+  ansible.netcommon.cli_command:
+    command: show vxlan vlan-to-vni
+  register: _eos_show_vxlan
+  check_mode: false
+  changed_when: false
+  failed_when: false
+
+- name: EOS — assemble discovery fact
+  ansible.builtin.set_fact:
+    _vlan_discovery:
+      hostname: "{{ inventory_hostname }}"
+      data_center: "{{ data_center | default('unknown') }}"
+      os_family: "{{ network_os_family }}"
+      timestamp: "{{ ansible_date_time.iso8601 }}"
+      vlans_raw: "{{ _eos_show_vlan.stdout | default('') }}"
+      svi_raw: "{{ _eos_show_svi.stdout | default('') }}"
+      trunks_raw: "{{ _eos_show_switchport.stdout | default('') }}"
+      vxlan_raw: "{{ _eos_show_vxlan.stdout | default('') }}"

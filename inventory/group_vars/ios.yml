@@ -1,0 +1,23 @@
+---
+# -----------------------------------------------------------------------------
+# Cisco IOS/IOS-XE defaults
+# -----------------------------------------------------------------------------
+ansible_network_os: ios
+network_os_family: ios
+
+# Mapping of platform-specific command templates / modules used by roles.
+network_config_module: cisco.ios.ios_config
+network_vlans_module: cisco.ios.ios_vlans
+network_facts_module: cisco.ios.ios_facts
+network_command_module: cisco.ios.ios_command
+
+# IOS-specific VXLAN interface defaults
+ios_nve_interface: "nve1"
+ios_nve_host_reachability: "interface {{ vtep_source_interface }}"
+
+# Trunk interface pattern used when pruning VLANs.
+# Override per host if trunk naming differs.
+trunk_interface_patterns:
+  - "GigabitEthernet0/[0-9]"
+  - "TenGigabitEthernet[0-9]/[0-9]/[0-9]"
+  - "Port-channel[0-9]+"

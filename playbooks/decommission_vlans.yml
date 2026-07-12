@@ -1,0 +1,25 @@
+---
+# -----------------------------------------------------------------------------
+# Decommission selected VLANs
+# -----------------------------------------------------------------------------
+# Removes SVIs, prunes trunks, and deletes VLANs marked action=decommission.
+# Requires vlan_change_dangerous=true.
+# -----------------------------------------------------------------------------
+
+- name: Decommission selected VLANs
+  hosts: network_devices
+  gather_facts: false
+  vars:
+    target_actions:
+      - decommission
+
+  pre_tasks:
+    - name: Confirm dangerous changes are enabled
+      ansible.builtin.assert:
+        that:
+          - vlan_change_dangerous | bool
+        fail_msg: "Set vlan_change_dangerous=true (review playbooks/decommission_vlans.yml for safety)."
+
+  roles:
+    - network_common
+    - decommission_vlan

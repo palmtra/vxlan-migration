@@ -1,0 +1,48 @@
+---
+# -----------------------------------------------------------------------------
+# Cisco IOS/IOS-XE state gathering
+# -----------------------------------------------------------------------------
+
+- name: IOS — show vlan brief
+  ansible.netcommon.cli_command:
+    command: show vlan brief
+  register: _ios_show_vlan
+  check_mode: false
+  changed_when: false
+  failed_when: false
+
+- name: IOS — show SVIs
+  ansible.netcommon.cli_command:
+    command: show ip interface brief | include Vlan
+  register: _ios_show_svi
+  check_mode: false
+  changed_when: false
+  failed_when: false
+
+- name: IOS — show trunk interfaces
+  ansible.netcommon.cli_command:
+    command: show interfaces trunk
+  register: _ios_show_trunk
+  check_mode: false
+  changed_when: false
+  failed_when: false
+
+- name: IOS — show VXLAN VNIs
+  ansible.netcommon.cli_command:
+    command: show nve vni
+  register: _ios_show_vxlan
+  check_mode: false
+  changed_when: false
+  failed_when: false
+
+- name: IOS — assemble discovery fact
+  ansible.builtin.set_fact:
+    _vlan_discovery:
+      hostname: "{{ inventory_hostname }}"
+      data_center: "{{ data_center | default('unknown') }}"
+      os_family: "{{ network_os_family }}"
+      timestamp: "{{ ansible_date_time.iso8601 }}"
+      vlans_raw: "{{ _ios_show_vlan.stdout | default('') }}"
+      svi_raw: "{{ _ios_show_svi.stdout | default('') }}"
+      trunks_raw: "{{ _ios_show_trunk.stdout | default('') }}"
+      vxlan_raw: "{{ _ios_show_vxlan.stdout | default('') }}"

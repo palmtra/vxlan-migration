@@ -1,0 +1,9 @@
+# Python dependencies for the execution environment
+# Keep versions aligned with AAP 2.4+ and collection requirements.
+
+ansible-core>=2.15.0
+paramiko>=3.0.0
+ncclient>=0.6.13
+xmltodict>=0.13.0
+jmespath>=1.0.0
+pyyaml>=6.0

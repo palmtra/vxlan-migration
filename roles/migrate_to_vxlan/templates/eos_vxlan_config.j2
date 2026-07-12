@@ -1,0 +1,13 @@
+{# Arista EOS VXLAN migration config #}
+{% for vlan in _vlans_to_migrate %}
+vlan {{ vlan.id }}
+ name {{ vlan.vlan_name | default(vlan.name) }}
+{% endfor %}
+!
+interface {{ eos_vxlan_interface }}
+ vxlan source-interface {{ eos_vxlan_source_interface | default(vtep_source_interface) }}
+ vxlan udp-port {{ eos_vxlan_udp_port }}
+{% for vlan in _vlans_to_migrate %}
+ vxlan vlan {{ vlan.id }} vni {{ vlan.vni }}
+ vxlan vlan {{ vlan.id }} multicast group {{ vlan.mcast_group | default(vxlan_default_mcast_group) }}
+{% endfor %}

@@ -1,0 +1,34 @@
+---
+# -----------------------------------------------------------------------------
+# Ad-hoc / post-change validation playbook
+# -----------------------------------------------------------------------------
+
+- name: Validate network state after VLAN changes
+  hosts: network_devices
+  gather_facts: false
+
+  roles:
+    - network_common
+
+  tasks:
+    - name: Show current VLAN database
+      ansible.netcommon.cli_command:
+        command: show vlan brief
+      register: _vlan_brief
+      check_mode: false
+      changed_when: false
+
+    - name: Show VXLAN / NVE state
+      ansible.netcommon.cli_command:
+        command: show nve vni
+      register: _nve_vni
+      check_mode: false
+      changed_when: false
+      failed_when: false
+
+    - name: Display state summary
+      ansible.builtin.debug:
+        msg:
+          - "Host: {{ inventory_hostname }}"
+          - "VLANs: {{ _vlan_brief.stdout_lines | default([]) | join(' ') }}"
+          - "VNIs: {{ _nve_vni.stdout_lines | default([]) | join(' ') }}"

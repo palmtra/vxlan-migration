@@ -1,0 +1,31 @@
+---
+# -----------------------------------------------------------------------------
+# Post-migration validation
+# -----------------------------------------------------------------------------
+
+- name: Validate NVE interface state
+  ansible.netcommon.cli_command:
+    command: "show nve interface {{ ios_nve_interface | default(nxos_nve_interface) }}"
+  register: _nve_state
+  check_mode: false
+  changed_when: false
+
+- name: Validate VNI membership
+  ansible.netcommon.cli_command:
+    command: "show nve vni"
+  register: _vni_state
+  check_mode: false
+  changed_when: false
+
+- name: Display validation results
+  ansible.builtin.debug:
+    var: _vni_state.stdout_lines
+  when: _vni_state.stdout_lines is defined
+
+- name: Fail if expected VNIs are not present
+  ansible.builtin.fail:
+    msg: "VNI {{ item.vni }} not found in NVE output for VLAN {{ item.id }}"
+  when: item.vni | string not in (_vni_state.stdout | default(''))
+  loop: "{{ _vlans_to_migrate }}"
+  loop_control:
+    label: "{{ item.id }}"

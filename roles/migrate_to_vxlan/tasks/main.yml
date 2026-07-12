@@ -1,0 +1,40 @@
+---
+# -----------------------------------------------------------------------------
+# migrate_to_vxlan
+# -----------------------------------------------------------------------------
+# Applies VXLAN configuration for every VLAN in _effective_vlans whose
+# action is 'migrate'.  Platform-specific implementations live in
+# ios_migrate.yml / nxos_migrate.yml.
+# -----------------------------------------------------------------------------
+
+- name: Identify VLANs to migrate
+  ansible.builtin.set_fact:
+    _vlans_to_migrate: "{{ _effective_vlans | selectattr('action', 'equalto', 'migrate') | list }}"
+
+- name: Fail if any migrate VLAN is missing a VNI
+  ansible.builtin.fail:
+    msg: "VLAN {{ item.id }} ({{ item.name }}) is marked migrate but has no vni."
+  when: item.vni is not defined or item.vni == none
+  loop: "{{ _vlans_to_migrate }}"
+  loop_control:
+    label: "{{ item.id }}"
+
+- name: Report migration scope
+  ansible.builtin.debug:
+    msg: "Migrating VLANs: {{ _vlans_to_migrate | map(attribute='id') | list }}"
+
+- name: Include EOS migration tasks
+  ansible.builtin.include_tasks: eos_migrate.yml
+  when: network_os_family == 'eos'
+
+- name: Include NXOS migration tasks
+  ansible.builtin.include_tasks: nxos_migrate.yml
+  when: network_os_family == 'nxos'
+
+- name: Include IOS migration tasks
+  ansible.builtin.include_tasks: ios_migrate.yml
+  when: network_os_family == 'ios'
+
+- name: Validate VXLAN state after migration
+  ansible.builtin.include_tasks: validate.yml
+  when: validate_after_migration | bool

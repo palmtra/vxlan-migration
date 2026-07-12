@@ -1,0 +1,46 @@
+---
+# -----------------------------------------------------------------------------
+# Canonical VLAN registry for cvg-vxlan
+# -----------------------------------------------------------------------------
+# Each entry describes a legacy VLAN and what should happen to it.
+#
+# action: migrate | decommission
+#   migrate      -> provision VXLAN bindings (VNI, NVE, optional EVPN)
+#   decommission -> remove SVI, prune trunks, delete VLAN
+#
+# Required fields:
+#   id, name, action
+#
+# Migration-only fields:
+#   vni, vlan_name, vrf, mcast_group
+#
+# Decommission-only fields:
+#   (none; optional explicit_trunk_interfaces to prune)
+# -----------------------------------------------------------------------------
+
+vlans:
+  - id: 100
+    name: legacy_web
+    action: migrate
+    vlan_name: WEB_VXLAN
+    vni: 50100
+    vrf: default
+    mcast_group: "239.1.1.100"
+
+  - id: 200
+    name: legacy_app
+    action: migrate
+    vlan_name: APP_VXLAN
+    vni: 50200
+    vrf: default
+    mcast_group: "239.1.1.200"
+
+  - id: 900
+    name: legacy_temp_lab
+    action: decommission
+
+  - id: 910
+    name: legacy_old_storage
+    action: decommission
+    # Optional: if provided, only these trunks are pruned.  Otherwise role scans.
+    explicit_trunk_interfaces: []
