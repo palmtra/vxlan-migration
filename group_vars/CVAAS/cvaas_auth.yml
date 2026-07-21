@@ -1,0 +1,8 @@
+ansible_host: www.cv-prod-us-central1-c.arista.io
+ansible_user: cvaas
+ansible_password: "{{ lookup('file' playbook_dir '/tokens/cvaas.tok') }}"
+ansible_connection: httpapi
+ansible_network_os: eos
+ansible_httpapi_use_ssl: true
+ansible_httpapi_validate_certs: true
+ansible_httpapi_port: 443

@@ -1,0 +1,41 @@
+---
+- name: Gather read-only fabric information from CVP
+  hosts: CVAAS
+  gather_facts: false
+  collections:
+    - arista.cvp
+
+  tasks:
+    - name: "Collect all facts (devices, configlets, containers, images)"
+      arista.cvp.cv_facts_v3:
+      register: cvp_facts
+
+    - name: "Print full device list"
+      ansible.builtin.debug:
+        msg: "{{ cvp_facts.data.cvp_devices | map(attribute='hostname') | list }}"
+
+    - name: "Collect only device facts"
+      arista.cvp.cv_facts_v3:
+        facts:
+          - devices
+      register: device_facts
+
+    - name: "Collect devices + containers with verbose output"
+      arista.cvp.cv_facts_v3:
+        facts:
+          - devices
+          - containers
+        verbose: long
+      register: fabric_topology
+
+    - name: "Filter devices by name pattern (spines)"
+      arista.cvp.cv_facts_v3:
+        facts:
+          - devices
+        regexp_filter: ".*spine.*"
+        verbose: long
+      register: spine_devices
+
+    - name: "Print spine device names"
+      ansible.builtin.debug:
+        msg: "{{ spine_devices.data.cvp_devices | map(attribute='hostname') | list }}"

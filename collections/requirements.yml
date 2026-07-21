@@ -14,8 +14,12 @@ collections:
 
   # Arista EOS modules (eos_vlans, eos_config, eos_facts, eos_command, etc.)
   - name: arista.eos
-    version: ">=7.0.0"
+    version: ">=12.2.0"
 
   # Useful for RESTCONF/NETCONF based southbound if needed later
   - name: ansible.utils
     version: ">=3.0.0"
+  
+  # Arista CVP
+  - name: arista.CVP
+    version: ">= 3.12.0"
