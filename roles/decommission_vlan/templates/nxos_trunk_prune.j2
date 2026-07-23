@@ -1,8 +1,0 @@
-{# NXOS trunk VLAN pruning for decommissioned VLANs #}
-{% for vlan in _vlans_to_decommission %}
-{% set trunk_list = vlan.explicit_trunk_interfaces | default(_nxos_trunk_interfaces) %}
-{% for trunk in trunk_list %}
-interface {{ trunk }}
- switchport trunk allowed vlan remove {{ vlan.id }}
-{% endfor %}
-{% endfor %}

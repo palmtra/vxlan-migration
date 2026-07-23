@@ -1,19 +1,15 @@
 ---
 # -----------------------------------------------------------------------------
-# Site playbook: migrate AND/OR decommission VLANs in a single AAP workflow.
-#
-# By default this runs both streams.  To scope the run use target_actions:
-#   ansible-playbook playbooks/site.yml -e target_actions='["migrate"]'
-#   ansible-playbook playbooks/site.yml -e target_actions='["decommission"]'
+# Site playbook: migrate VLANs to VXLAN.
 # -----------------------------------------------------------------------------
 
-- name: VLAN lifecycle operations
+- name: VLAN migration operations
   hosts: network_devices
   gather_facts: false
-  # target_actions defaults to ['migrate', 'decommission'] in group_vars/all.yml.
-  # Override via -e target_actions='["migrate"]' or an AAP survey.
+  vars:
+    target_actions:
+      - migrate
 
   roles:
     - network_common
     - migrate_to_vxlan
-    - decommission_vlan
