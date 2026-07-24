@@ -5,7 +5,8 @@ Ansible Automation Platform (AAP) driven network automation to **migrate legacy 
 VLAN decommission discovery and cleanup planning are maintained separately in `cvg-decomm-vlan`.
 
 Built to mature quickly for AAP but remains runnable from Ansible CLI / AWX.
-Primary platforms are **Arista EOS** and **Cisco NXOS**; **Cisco IOS/IOS-XE** is also supported.
+**VXLAN migration configlets** target **Arista EOS** via CloudVision (CVP).
+Discovery and decommission support **Arista EOS**, **Cisco NXOS**, and **Cisco IOS/IOS-XE**.
 
 ## Quick start
 

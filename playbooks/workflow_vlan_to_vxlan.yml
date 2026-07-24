@@ -106,19 +106,3 @@
         - _target_vlan_id | string not in (_eos_vxlan_validate.stdout | default(''))
           or _target_vni | string not in (_eos_vxlan_validate.stdout | default(''))
 
-    - name: Validate NXOS/IOS NVE VNI membership
-      ansible.netcommon.cli_command:
-        command: show nve vni
-      register: _nve_validate
-      check_mode: false
-      changed_when: false
-      failed_when: false
-      when: network_os_family in ['nxos', 'ios']
-
-    - name: Assert NXOS/IOS VNI present
-      ansible.builtin.fail:
-        msg: "NVE VNI {{ _target_vni }} for VLAN {{ _target_vlan_id }} not found on {{ inventory_hostname }}"
-      when:
-        - network_os_family in ['nxos', 'ios']
-        - _target_vni | string | length > 0
-        - _target_vni | string not in (_nve_validate.stdout | default(''))

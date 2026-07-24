@@ -18,17 +18,18 @@
       check_mode: false
       changed_when: false
 
-    - name: Show VXLAN / NVE state
+    - name: Show EOS VXLAN vlan-to-vni mappings
       ansible.netcommon.cli_command:
-        command: show nve vni
-      register: _nve_vni
+        command: show vxlan vlan-to-vni
+      register: _vxlan_vni
       check_mode: false
       changed_when: false
       failed_when: false
+      when: network_os_family == 'eos'
 
     - name: Display state summary
       ansible.builtin.debug:
         msg:
           - "Host: {{ inventory_hostname }}"
           - "VLANs: {{ _vlan_brief.stdout_lines | default([]) | join(' ') }}"
-          - "VNIs: {{ _nve_vni.stdout_lines | default([]) | join(' ') }}"
+          - "VXLAN: {{ _vxlan_vni.stdout_lines | default([]) | join(' ') }}"

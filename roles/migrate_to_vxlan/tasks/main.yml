@@ -3,8 +3,8 @@
 # migrate_to_vxlan
 # -----------------------------------------------------------------------------
 # Applies VXLAN configuration for every VLAN in _effective_vlans whose
-# action is 'migrate'.  Platform-specific implementations live in
-# ios_migrate.yml / nxos_migrate.yml.
+# action is 'migrate'.  Only Arista EOS is supported; configlets are pushed
+# through CVP rather than applied directly to devices.
 # -----------------------------------------------------------------------------
 
 - name: Identify VLANs to migrate
@@ -26,14 +26,6 @@
 - name: Include EOS migration tasks
   ansible.builtin.include_tasks: eos_migrate.yml
   when: network_os_family == 'eos'
-
-- name: Include NXOS migration tasks
-  ansible.builtin.include_tasks: nxos_migrate.yml
-  when: network_os_family == 'nxos'
-
-- name: Include IOS migration tasks
-  ansible.builtin.include_tasks: ios_migrate.yml
-  when: network_os_family == 'ios'
 
 - name: Validate VXLAN state after migration
   ansible.builtin.include_tasks: validate.yml

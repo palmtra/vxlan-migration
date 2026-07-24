@@ -6,7 +6,8 @@
 - **Primary platforms**: Arista EOS and Cisco NXOS. Cisco IOS/IOS-XE is also supported.
 - **Single source of truth** for VLAN intent: `vars/vlan_registry.yml`.
 - **Safe defaults**: destructive decommission requires an explicit flag.
-- **Platform abstraction**: EOS, NXOS, and IOS logic isolated in per-platform task files.
+- **VXLAN migration target**: Arista EOS configlets deployed via CloudVision (CVP).
+  Multi-vendor discovery and decommission support remains for EOS, NXOS, and IOS.
 - **Data center scoping**: inventory groups `dc_lisle` and `dc_omaha`.
 
 ## Data model
@@ -123,11 +124,8 @@ flowchart TD
     SkipPush --> ValidateStep
 
     subgraph Validate [Validation phase]
-        ValidateStep --> OS{network_os_family}
-        OS -- eos --> EOS[show vxlan vlan-to-vni]
-        OS -- nxos / ios --> NXOS[show nve vni]
+        ValidateStep --> EOS[EOS: show vxlan vlan-to-vni]
         EOS --> Match{VLAN/VNI present?}
-        NXOS --> Match
         Match -- No --> Fail2[Fail validation]
         Match -- Yes --> Done([Migration complete])
     end
@@ -253,14 +251,14 @@ ansible-playbook -i inventory/hosts.yml playbooks/decommission_vlans.yml \
 
 ## Extending to other platforms
 
-EOS, NXOS, and IOS are already implemented. To add another platform:
+Discovery and decommission support EOS, NXOS, and IOS. The VXLAN migration
+configlet generation targets **Arista EOS via CVP**. To add another platform:
 
 1. Add `network_os_family: <new>` in `inventory/group_vars/<new>.yml`.
-2. Add platform-specific task files in `roles/migrate_to_vxlan/tasks/`,
-   `roles/decommission_vlan/tasks/`, and `roles/vlan_discovery/tasks/`.
-3. Add platform templates in `roles/migrate_to_vxlan/templates/` and
-   `roles/decommission_vlan/templates/`.
-4. Update the platform dispatcher in each role's `tasks/main.yml`.
+2. Add platform-specific task files in `roles/vlan_discovery/tasks/`
+   and `roles/decommission_vlan/tasks/`.
+3. For EOS VXLAN migration configlets, extend `roles/migrate_to_vxlan/`,
+   `roles/cvp_deploy/`, or `roles/avd_vxlan_config/` as appropriate.
 
 ## Validation
 

@@ -11,10 +11,6 @@ network_vlans_module: cisco.ios.ios_vlans
 network_facts_module: cisco.ios.ios_facts
 network_command_module: cisco.ios.ios_command
 
-# IOS-specific VXLAN interface defaults
-ios_nve_interface: "nve1"
-ios_nve_host_reachability: "interface {{ vtep_source_interface }}"
-
 # Trunk interface pattern used when pruning VLANs.
 # Override per host if trunk naming differs.
 trunk_interface_patterns:
