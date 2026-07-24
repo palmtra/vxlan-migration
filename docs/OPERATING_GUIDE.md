@@ -66,7 +66,12 @@ In AAP:
 ### 3. Discover current state (per data center)
 
 ```bash
+# Discover all VLANs in the registry
 ansible-playbook -i inventory/hosts.yml playbooks/discover_vlan_state.yml --limit dc_lisle
+
+# Discover a single VLAN
+ansible-playbook -i inventory/hosts.yml playbooks/discover_vlan_state.yml \
+  --limit dc_lisle -e target_vlan_ids='[100]'
 ```
 
 Reports land in `reports/`:

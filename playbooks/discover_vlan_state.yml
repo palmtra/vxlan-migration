@@ -6,6 +6,10 @@
 #   ansible-playbook -i inventory/hosts.yml playbooks/discover_vlan_state.yml \
 #     --limit dc_lisle
 #
+# Scope to specific VLANs:
+#   ansible-playbook -i inventory/hosts.yml playbooks/discover_vlan_state.yml \
+#     --limit dc_lisle -e target_vlan_ids='[100]'
+#
 # Reports are written to reports/:
 #   - <hostname>_vlan_state.json (raw command output per host)
 #   - combined_vlan_state.csv (summary across all hosts)
