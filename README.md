@@ -155,9 +155,9 @@ To push generated configlets to CVP, add:
   -e cvp_apply_configlets=true
 ```
 
-CVP credentials must be supplied via Ansible Vault, a variable file, or AAP credentials.
-
-By default this creates a **pending** CVP change control (`cvp_change_control_state: set`)
+CVP credentials must be supplied via `inventory/group_vars/all/vault.yml`, a scoped variable
+file, or AAP custom credential types. By default this creates a **pending** CVP change
+control (`cvp_change_control_state: set`)
 and does **not** approve or execute it automatically. Approval and execution must be done
 in CloudVision. Only override with `-e cvp_change_control_state=approve_and_execute -e
 cvp_change_control_auto_execute_allowed=true` after explicit review.

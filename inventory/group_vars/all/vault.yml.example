@@ -1,0 +1,15 @@
+---
+# Example contents for an encrypted Ansible Vault file.
+# Rename this file to vault.yml and run:
+#   ansible-vault encrypt inventory/group_vars/all/vault.yml
+# Then replace the placeholder values with real credentials.
+
+# Network device credentials (used by ansible_user / ansible_password)
+ansible_user: admin
+ansible_password: changeme
+
+# Integration endpoints and tokens
+netbox_url: https://netbox.example.com
+netbox_token: "<netbox-api-token>"
+cvp_url: https://cvp.example.com
+cvp_token: "<cvp-api-token>"

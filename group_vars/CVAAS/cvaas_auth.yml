@@ -4,7 +4,6 @@ ansible_host: www.cv-prod-us-central1-c.arista.io
 cvp_url: "https://www.cv-prod-us-central1-c.arista.io"
 cvp_token: "{{ vault_cvp_token | default('') }}"
 
-# httpapi connection settings used by playbooks that talk to CVP/CVAAS directly.
 ansible_user: cvaas
 ansible_password: "{{ vault_cvp_token | default('') }}"
 ansible_connection: httpapi

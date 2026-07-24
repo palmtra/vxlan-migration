@@ -136,6 +136,7 @@
     cvp_token: "{{ cvp_token_value }}"
     state: "{{ cvp_change_control_state }}"
     name: "{{ cvp_change_control_name }}"
+    notes: "{{ cvp_change_control_notes }}"
     activities:
       - action: "Configlet Push"
         name: "Apply VXLAN VLAN {{ target_vlan_id }} configlets"

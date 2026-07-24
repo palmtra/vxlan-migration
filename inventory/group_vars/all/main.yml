@@ -46,3 +46,7 @@ netbox_token: ""
 # Arista CVP / CVAAS endpoint used by roles/cvp_deploy.
 cvp_url: ""
 cvp_token: ""
+
+# Connection defaults for network devices
+ansible_connection: network_cli
+ansible_become: false

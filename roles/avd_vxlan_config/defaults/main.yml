@@ -25,6 +25,13 @@ cvp_apply_configlets: false
 cvp_server: "{{ cvp_url | default('') }}"
 cvp_token_value: "{{ cvp_token | default('') }}"
 cvp_change_control_name: "VXLAN migrate VLAN {{ target_vlan_id }}"
+cvp_change_control_notes: |
+  Auto-generated change control for migrating legacy VLAN {{ target_vlan_id }}
+  to VXLAN in data center {{ target_data_center | default('unknown') }}.
+
+# Change control action. 'set' creates a pending change control that requires
+# manual approval/execution in CVP. Use 'approve_and_execute' only after
+# explicit review; it is intentionally not the default.
 cvp_change_control_state: "set"
 cvp_change_control_auto_execute_allowed: false
 

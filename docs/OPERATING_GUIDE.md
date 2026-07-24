@@ -38,23 +38,26 @@ Do **not** use shell environment variables. Credentials and integration endpoint
 should be supplied via an Ansible Vault file, a scoped variable file, or
 Ansible Automation Platform (AAP) credentials.
 
-Create an encrypted vault file, for example `inventory/group_vars/vault.yml`:
+Create an encrypted vault file in the `all` group vars directory:
 
 ```bash
-ansible-vault create inventory/group_vars/vault.yml
+ansible-vault create inventory/group_vars/all/vault.yml
 ```
 
 Example contents:
 
 ```yaml
 ---
-vault_ansible_user: admin
-vault_ansible_password: changeme
+ansible_user: admin
+ansible_password: changeme
 netbox_url: https://netbox.example.com
 netbox_token: "<netbox-api-token>"
 cvp_url: https://cvp.example.com
 cvp_token: "<cvp-api-token>"
 ```
+
+The unencrypted `inventory/group_vars/all/main.yml` holds the rest of the
+project defaults. Ansible loads both files for every host.
 
 In AAP:
 
@@ -86,7 +89,7 @@ The `workflow_vlan_to_vxlan.yml` playbook runs the complete migration from a
 ServiceNow change ticket.  For local testing, pass manual overrides:
 
 ```bash
-# Ensure credentials are provided via inventory/group_vars/vault.yml or AAP credentials first.
+# Ensure credentials are provided via inventory/group_vars/all/vault.yml or AAP credentials first.
 ansible-playbook -i inventory/hosts.yml playbooks/workflow_vlan_to_vxlan.yml \
   --limit dc_lisle \
   -e manual_vlan_id=100 \
