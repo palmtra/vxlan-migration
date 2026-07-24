@@ -27,3 +27,7 @@ collections:
   # Arista AVD - structured config generation for EOS / CVP deployments
   - name: arista.avd
     version: ">=4.0.0"
+
+  # NetBox modules for future inventory/lookup integration.
+  - name: netbox.netbox
+    version: ">=3.17.0"
