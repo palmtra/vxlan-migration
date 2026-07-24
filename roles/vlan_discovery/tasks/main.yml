@@ -3,7 +3,8 @@
 # vlan_discovery
 # -----------------------------------------------------------------------------
 # Gathers current VLAN/SVI/trunk/VXLAN state per device and writes
-# per-host JSON plus a combined CSV report.
+# timestamped per-host JSON and combined CSV/Markdown reports under
+# reports/<dc>/<device>/ and reports/<scope>/ respectively.
 # -----------------------------------------------------------------------------
 
 - name: Set a millisecond timestamp for this discovery run
