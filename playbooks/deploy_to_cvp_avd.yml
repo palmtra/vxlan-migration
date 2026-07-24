@@ -1,0 +1,35 @@
+---
+# -----------------------------------------------------------------------------
+# deploy_to_cvp_avd.yml
+# -----------------------------------------------------------------------------
+# Standalone playbook that generates CVP configlets for an Arista VXLAN
+# migration using the Arista AVD eos_cli_config_gen role.
+#
+# Usage:
+#   ansible-playbook -i inventory/hosts.yml playbooks/deploy_to_cvp_avd.yml \
+#     --limit dc_lisle \
+#     -e target_vlan_id=100 \
+#     -e target_data_center=lisle \
+#     -e target_vrf=default \
+#     -e cvp_apply_configlets=false
+#
+# When cvp_apply_configlets=true and CVP credentials are available, the
+# generated configlets are pushed to CVP as a change control precursor.
+# -----------------------------------------------------------------------------
+
+- name: Generate and optionally deploy AVD-based CVP configlets
+  hosts: eos_devices
+  gather_facts: false
+
+  pre_tasks:
+    - name: Validate required input
+      ansible.builtin.fail:
+        msg: "target_vlan_id, target_data_center, and target_vrf are required."
+      when:
+        - target_vlan_id is not defined or not target_vlan_id
+        - target_data_center is not defined or not target_data_center
+        - target_vrf is not defined or not target_vrf
+      run_once: true
+
+  roles:
+    - avd_vxlan_config

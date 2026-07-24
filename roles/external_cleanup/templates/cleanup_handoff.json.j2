@@ -1,0 +1,15 @@
+{
+  "workflow": "cvg-vxlan",
+  "stage": "external_cleanup_handoff",
+  "status": "pending",
+  "target_vlan_id": {{ target_vlan_id | int }},
+  "target_data_center": "{{ target_data_center | default('') }}",
+  "target_vrf": "{{ target_vrf | default('') }}",
+  "vlan_discovered": {{ _vlan_found_on_switches | bool | lower }},
+  "switches": {{ _vlan_found_switches | default([]) | to_nice_json }},
+  "pending_improvements": [
+    "Integrate with external decommission/orchestration tool",
+    "Confirm cleanup completion before final VLAN removal from legacy fabric"
+  ],
+  "generated_at": "{{ lookup('pipe', 'date -Iseconds') }}"
+}

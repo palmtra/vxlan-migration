@@ -6,5 +6,6 @@
 discovery_reports_dir: "{{ playbook_dir }}/../reports"
 discovery_write_json: true
 discovery_write_csv: true
+discovery_write_markdown: true
 
 # Raw command set is platform-specific in gather_*.yml files.

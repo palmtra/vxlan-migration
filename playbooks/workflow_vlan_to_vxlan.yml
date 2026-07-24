@@ -1,0 +1,124 @@
+---
+# -----------------------------------------------------------------------------
+# workflow_vlan_to_vxlan.yml
+# -----------------------------------------------------------------------------
+# End-to-end workflow triggered by a ServiceNow change ticket to migrate a
+# single legacy VLAN to VXLAN.
+#
+# Expected input (ServiceNow webhook / extra vars):
+#   snow_vlan_id: <vlan-id>
+#   snow_data_center: <dc-name>
+#   snow_target_vrf: <vrf-name>
+#
+# For local testing you may instead pass:
+#   -e manual_vlan_id=100 -e manual_data_center=lisle -e manual_target_vrf=default
+#
+# Scope to a data center with --limit, e.g. --limit dc_lisle.
+#
+# Set -e use_avd=true to generate Arista CVP configlets with the
+# arista.avd.eos_cli_config_gen role instead of the legacy custom Jinja path.
+# -----------------------------------------------------------------------------
+
+- name: Step 1-4 — Normalize input, discover state, hand off cleanup, check NetBox
+  hosts: network_devices
+  gather_facts: false
+
+  pre_tasks:
+    - name: Step 1 — Normalize change-ticket input
+      ansible.builtin.include_role:
+        name: servicenow_input
+      run_once: true
+
+    - name: Set workflow-scoped target VLAN list
+      ansible.builtin.set_fact:
+        target_vlan_ids:
+          - "{{ hostvars['localhost']['target_vlan_id'] | int }}"
+
+  roles:
+    - network_common
+    - vlan_discovery
+
+  tasks:
+    - name: Step 3 — Hand off discovered VLAN to external cleanup tool
+      ansible.builtin.include_role:
+        name: external_cleanup
+      vars:
+        target_vlan_id: "{{ hostvars['localhost']['target_vlan_id'] | int }}"
+        target_data_center: "{{ hostvars['localhost']['target_data_center'] | default('') }}"
+        target_vrf: "{{ hostvars['localhost']['target_vrf'] | default('') }}"
+      run_once: true
+
+    - name: Step 4 — Verify VLAN exists in NetBox
+      ansible.builtin.include_role:
+        name: netbox_check
+      vars:
+        target_vlan_id: "{{ hostvars['localhost']['target_vlan_id'] | int }}"
+      run_once: true
+
+- name: Step 5 — Deploy VXLAN migration configlets to Arista CVP
+  hosts: "{{ use_avd | default(false) | bool | ternary('eos_devices', 'localhost') }}"
+  gather_facts: false
+
+  tasks:
+    - name: Step 5a — Legacy Jinja configlet generation
+      ansible.builtin.include_role:
+        name: cvp_deploy
+      vars:
+        target_vlan_id: "{{ hostvars['localhost']['target_vlan_id'] | int }}"
+        target_data_center: "{{ hostvars['localhost']['target_data_center'] | default('') }}"
+        target_vrf: "{{ hostvars['localhost']['target_vrf'] | default('') }}"
+      when: not use_avd | default(false) | bool
+
+    - name: Step 5b — AVD-based configlet generation
+      ansible.builtin.include_role:
+        name: avd_vxlan_config
+      vars:
+        target_vlan_id: "{{ hostvars['localhost']['target_vlan_id'] | int }}"
+        target_data_center: "{{ hostvars['localhost']['target_data_center'] | default('') }}"
+        target_vrf: "{{ hostvars['localhost']['target_vrf'] | default('') }}"
+      when: use_avd | default(false) | bool
+
+- name: Step 6 — Validate post-migration state
+  hosts: network_devices
+  gather_facts: false
+
+  tasks:
+    - name: Compute expected VNI for validation
+      ansible.builtin.set_fact:
+        _target_vlan_id: "{{ hostvars['localhost']['target_vlan_id'] | int }}"
+        _target_vni: "{{ (vlan_registry.vlans | selectattr('id', 'equalto', hostvars['localhost']['target_vlan_id'] | int) | first | default({})).vni | default('') }}"
+
+    - name: Validate EOS VXLAN vlan-to-vni mapping
+      ansible.netcommon.cli_command:
+        command: show vxlan vlan-to-vni
+      register: _eos_vxlan_validate
+      check_mode: false
+      changed_when: false
+      failed_when: false
+      when: network_os_family == 'eos'
+
+    - name: Assert EOS VLAN/VNI present
+      ansible.builtin.fail:
+        msg: "VXLAN mapping for VLAN {{ _target_vlan_id }} / VNI {{ _target_vni }} not found on {{ inventory_hostname }}"
+      when:
+        - network_os_family == 'eos'
+        - _target_vni | string | length > 0
+        - _target_vlan_id | string not in (_eos_vxlan_validate.stdout | default(''))
+          or _target_vni | string not in (_eos_vxlan_validate.stdout | default(''))
+
+    - name: Validate NXOS/IOS NVE VNI membership
+      ansible.netcommon.cli_command:
+        command: show nve vni
+      register: _nve_validate
+      check_mode: false
+      changed_when: false
+      failed_when: false
+      when: network_os_family in ['nxos', 'ios']
+
+    - name: Assert NXOS/IOS VNI present
+      ansible.builtin.fail:
+        msg: "NVE VNI {{ _target_vni }} for VLAN {{ _target_vlan_id }} not found on {{ inventory_hostname }}"
+      when:
+        - network_os_family in ['nxos', 'ios']
+        - _target_vni | string | length > 0
+        - _target_vni | string not in (_nve_validate.stdout | default(''))

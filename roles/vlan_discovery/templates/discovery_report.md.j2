@@ -1,0 +1,73 @@
+# VLAN Discovery Report
+
+Generated: {{ hostvars[ansible_play_hosts | first]._vlan_discovery.timestamp | default('unknown') }}
+
+## Summary
+
+| Host | Data Center | OS Family | VLAN ID | VLAN Name | VLAN Present | SVI | Trunks/Access | MAC Table | STP | ARP | Cleanup Ready |
+|------|-------------|-----------|---------|-----------|--------------|-----|---------------|-----------|-----|-----|---------------|
+{% for host in ansible_play_hosts %}
+{% set d = hostvars[host]._vlan_discovery %}
+{% for vlan in d.per_vlan | default([]) %}
+| {{ d.hostname }} | {{ d.data_center }} | {{ d.os_family }} | {{ vlan.vlan_id }} | {{ vlan.vlan_name }} | {{ 'yes' if vlan.vlan_present else 'no' }} | {{ 'yes' if vlan.svi_present else 'no' }} | {{ 'yes' if vlan.trunks_present else 'no' }} | {{ 'yes' if vlan.mac_table_raw else 'no' }} | {{ 'yes' if vlan.stp_raw else 'no' }} | {{ 'yes' if vlan.arp_raw else 'no' }} | {{ 'yes' if vlan.vlan_present else 'no' }} |
+{% endfor %}
+{% endfor %}
+
+## Detailed Per-Host Findings
+
+{% for host in ansible_play_hosts %}
+### {{ hostvars[host]._vlan_discovery.hostname }}
+
+- **Data center:** {{ hostvars[host]._vlan_discovery.data_center }}
+- **OS family:** {{ hostvars[host]._vlan_discovery.os_family }}
+- **Timestamp:** {{ hostvars[host]._vlan_discovery.timestamp }}
+
+{% for vlan in hostvars[host]._vlan_discovery.per_vlan | default([]) %}
+#### VLAN {{ vlan.vlan_id }} ({{ vlan.vlan_name }})
+
+- **Present on device:** {{ 'yes' if vlan.vlan_present else 'no' }}
+- **SVI present:** {{ 'yes' if vlan.svi_present else 'no' }}
+- **Trunks/access interfaces carrying VLAN:** {{ 'yes' if vlan.trunks_present else 'no' }}
+- **Target VRF:** {{ vlan.target_vrf | default('default') }}
+- **Cleanup ready:** {{ 'yes' if vlan.vlan_present else 'no' }}
+
+##### MAC Address Table
+
+```
+{{ vlan.mac_table_raw | default('No data collected.') }}
+```
+
+##### Spanning Tree
+
+```
+{{ vlan.stp_raw | default('No data collected.') }}
+```
+
+##### ARP Table (VRF: {{ vlan.target_vrf | default('default') }})
+
+```
+{{ vlan.arp_raw | default('No data collected.') }}
+```
+
+{% endfor %}
+{% endfor %}
+
+## External Cleanup Hand-off
+
+VLANs discovered on at least one switch are marked as **pending** for external
+cleanup.  No configuration changes are made by this discovery playbook.
+
+{% for host in ansible_play_hosts %}
+{% set d = hostvars[host]._vlan_discovery %}
+{% for vlan in d.per_vlan | default([]) %}
+{% if vlan.vlan_present %}
+- **VLAN {{ vlan.vlan_id }}** on `{{ d.hostname }}` — cleanup pending
+{% endif %}
+{% endfor %}
+{% endfor %}
+
+## Pending Improvements
+
+- Automated creation of missing VLANs in NetBox with customer and VRF mapping.
+- Tightened integration with external cleanup / decommission tooling.
+- Structured parsing of MAC, STP, and interface tables instead of raw output.

@@ -1,0 +1,19 @@
+---
+# -----------------------------------------------------------------------------
+# netbox_check defaults
+# -----------------------------------------------------------------------------
+# Read-only NetBox lookup.  The role verifies that the target VLAN exists in
+# NetBox before the migration proceeds.  VLAN creation / VRF mapping is a
+# deferred improvement and is not performed here.
+# -----------------------------------------------------------------------------
+
+netbox_url: "{{ lookup('env', 'NETBOX_API') | default('', true) }}"
+netbox_token: "{{ lookup('env', 'NETBOX_TOKEN') | default('', true) }}"
+netbox_validate_certs: true
+netbox_timeout: 30
+
+# When true, the role returns the NetBox object instead of failing.
+netbox_return_facts: true
+
+# Defer creation of missing VLANs.
+netbox_create_missing_vlan: false

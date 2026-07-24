@@ -1,0 +1,21 @@
+---
+# -----------------------------------------------------------------------------
+# servicenow_input defaults
+# -----------------------------------------------------------------------------
+# ServiceNow is the canonical trigger for the workflow.  For testing or AAP
+# ad-hoc runs, every SNOW field can be overridden with a manual equivalent.
+# -----------------------------------------------------------------------------
+
+# ServiceNow payload fields (injected by AAP webhook / extra vars)
+snow_vlan_id: ""
+snow_data_center: ""
+snow_target_vrf: ""
+
+# Manual overrides (useful for CLI testing)
+manual_vlan_id: ""
+manual_data_center: ""
+manual_target_vrf: ""
+
+# Final computed values are published as host-agnostic facts by tasks/main.yml.
+# Default reports directory for hand-off artifacts.
+workflow_reports_dir: "{{ playbook_dir }}/../reports"

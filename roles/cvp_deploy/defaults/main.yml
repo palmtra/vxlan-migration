@@ -1,0 +1,36 @@
+---
+# -----------------------------------------------------------------------------
+# cvp_deploy defaults
+# -----------------------------------------------------------------------------
+# Builds Arista CVP configlets for VXLAN migration and optionally creates a
+# change control.  Safe defaults keep configlet generation local until
+# cvp_apply_configlets is set to true.
+# -----------------------------------------------------------------------------
+
+# CVP/CVAAS connection details.  Defaults rely on environment variables.
+cvp_url: "{{ lookup('env', 'CVP_SERVER') | default('', true) }}"
+cvp_token: "{{ lookup('env', 'CVP_TOKEN') | default('', true) }}"
+cvp_validate_certs: true
+
+# Module-facing aliases used by the arista.cvp collection.
+cvp_server: "{{ cvp_url }}"
+
+# Generated configlet storage directory.
+cvp_configlet_build_dir: "{{ playbook_dir }}/../reports/cvp_configlets"
+
+# When true, push generated configlets to CVP and create a change control.
+# When false, configlets are only rendered to files for review.
+cvp_apply_configlets: false
+
+# Change control metadata.
+cvp_change_control_name: "VXLAN migration - VLAN {{ target_vlan_id }}"
+cvp_change_control_notes: |
+  Auto-generated change control for migrating legacy VLAN {{ target_vlan_id }}
+  to VXLAN VNI {{ _vlan_to_migrate.vni | default('TBD') }} in data center
+  {{ target_data_center | default('unknown') }}.
+
+# Device tags/regex used to identify border leafs from the inventory.
+cvp_borderleaf_regex: ".*border.*"
+
+# Whether to generate border-leaf import (VRF-aware) config as well.
+cvp_build_borderleaf_config: true

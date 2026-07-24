@@ -1,0 +1,48 @@
+---
+# AVD structured configuration for VLAN {{ target_vlan_id }} migration
+# Device: {{ _target_device }}
+# Border leaf: {{ _is_borderleaf }}
+
+vlans:
+  - id: {{ target_vlan_id | int }}
+    name: {{ _avd_vlan.name | default('VLAN' ~ target_vlan_id) }}
+    state: active
+
+vxlan_interface:
+  vxlan1:
+    description: "VTEP for VLAN {{ target_vlan_id }} migration"
+    vxlan:
+      source_interface: {{ avd_vxlan_source_interface }}
+      udp_port: {{ avd_vxlan_udp_port | int }}
+      vlans:
+        - id: {{ target_vlan_id | int }}
+          vni: {{ _avd_vlan.vni | int }}
+          multicast_group: "{{ _avd_vlan.mcast_group }}"
+
+vrfs:
+  - name: {{ target_vrf }}
+
+{% set _bgp_as = hostvars[_target_device].bgp_as | default(avd_default_bgp_as | default('')) %}
+{% set _router_id = hostvars[_target_device].router_id | default(hostvars[_target_device].ansible_host | default('')) %}
+{% if _bgp_as | length > 0 and _router_id | length > 0 %}
+router_bgp:
+  as: "{{ _bgp_as }}"
+  router_id: "{{ _router_id }}"
+  vlans:
+    - id: {{ target_vlan_id | int }}
+      rd: "{{ _router_id }}:{{ _avd_vlan.vni }}"
+      route_targets:
+        both:
+          - "{{ _avd_vlan.vni }}:{{ _avd_vlan.vni }}"
+      redistribute_routes:
+        - learned
+{% endif %}
+
+{% if _is_borderleaf | bool %}
+eos_cli: |
+  vrf instance {{ target_vrf }}
+     rd {{ _router_id }}:{{ _avd_vlan.vni }}
+     !
+     address-family ipv4
+        route-target import evpn {{ _avd_vlan.vni }}:{{ _avd_vlan.vni }}
+{% endif %}

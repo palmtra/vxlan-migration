@@ -1,0 +1,34 @@
+---
+# -----------------------------------------------------------------------------
+# avd_vxlan_config defaults
+# -----------------------------------------------------------------------------
+# Generates a CVP configlet for an Arista VXLAN VLAN migration using
+# arista.avd.eos_cli_config_gen.  Deployment to CVP is still performed by the
+# arista.cvp collection so the workflow does not need a full AVD fabric model.
+# -----------------------------------------------------------------------------
+
+# VLAN to migrate.  Usually supplied by the workflow playbook.
+target_vlan_id: ""
+target_data_center: ""
+target_vrf: ""
+
+# Directory where AVD-generated configlets are stored.
+avd_configlet_build_dir: "{{ playbook_dir }}/../cvp_configlets"
+avd_output_dir: "{{ avd_configlet_build_dir }}/avd"
+
+# If true, add a per-VRF VNI import section for border-leaf devices.
+avd_build_borderleaf_config: false
+avd_borderleaf_regex: "(?i)border"
+
+# CVP deployment controls (same interface as cvp_deploy role).
+cvp_apply_configlets: false
+cvp_server: "{{ cvp_url | default('') }}"
+cvp_token_value: "{{ cvp_token | default('') }}"
+cvp_change_control_name: "VXLAN migrate VLAN {{ target_vlan_id }}"
+
+# Default loopback / interface values used in the generated structured config.
+avd_vxlan_source_interface: Loopback1
+avd_vxlan_udp_port: 4789
+
+# Registry source (loaded by network_common or via include_vars).
+vlan_registry_file: "{{ playbook_dir }}/../vars/vlan_registry.yml"

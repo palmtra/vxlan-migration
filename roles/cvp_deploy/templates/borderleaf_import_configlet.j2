@@ -1,0 +1,21 @@
+{# Border-leaf VRF/VNI import for VXLAN migration #}
+{# Ensures the new VRF on VXLAN can reach the legacy VLAN via import of the VNI. #}
+!
+{% if target_vrf is defined and target_vrf != 'default' %}
+vrf instance {{ target_vrf }}
+ rd {{ target_vrf | hash('md5')[:8] }}:{{ _vlan_to_migrate.vni }}
+!
+{% endif %}
+router bgp {{ _device_bgp_asn | default(65000) }}
+{% if target_vrf is defined and target_vrf != 'default' %}
+ vrf {{ target_vrf }}
+  rd {{ _device_loopback_ip | default('0.0.0.0') }}:{{ _vlan_to_migrate.vni }}
+  route-target import vpn-ipv4 {{ _vlan_to_migrate.vni }}:{{ _vlan_to_migrate.vni }}
+  route-target export vpn-ipv4 {{ _vlan_to_migrate.vni }}:{{ _vlan_to_migrate.vni }}
+!
+{% endif %}
+interface Vxlan1
+{% if target_vrf is defined and target_vrf != 'default' %}
+ vxlan vrf {{ target_vrf }} vni {{ _vlan_to_migrate.vni }}
+{% endif %}
+!

@@ -45,3 +45,13 @@
   become: false
   run_once: true
   when: discovery_write_csv | bool
+
+- name: Write Markdown discovery report
+  ansible.builtin.template:
+    src: discovery_report.md.j2
+    dest: "{{ discovery_reports_dir }}/discovery_report.md"
+    mode: '0644'
+  delegate_to: localhost
+  become: false
+  run_once: true
+  when: discovery_write_markdown | bool

@@ -27,3 +27,22 @@ evpn_enabled: false
 target_vlan_ids: []
 target_actions:
   - migrate
+
+# When true, use arista.avd.eos_cli_config_gen for EOS configlet generation
+# instead of the legacy custom Jinja templates in roles/cvp_deploy.
+use_avd: false
+
+# Default BGP ASN used for AVD-generated router_bgp sections.
+# Per-device values can be set as hostvars (bgp_as / router_id).
+avd_default_bgp_as: ""
+
+# -----------------------------------------------------------------------------
+# Integration endpoints (override via env or vault)
+# -----------------------------------------------------------------------------
+# NetBox read-only lookup performed by roles/netbox_check.
+netbox_url: "{{ lookup('env', 'NETBOX_API') | default('', true) }}"
+netbox_token: "{{ lookup('env', 'NETBOX_TOKEN') | default('', true) }}"
+
+# Arista CVP / CVAAS endpoint used by roles/cvp_deploy.
+cvp_url: "{{ lookup('env', 'CVP_SERVER') | default('', true) }}"
+cvp_token: "{{ lookup('env', 'CVP_TOKEN') | default('', true) }}"

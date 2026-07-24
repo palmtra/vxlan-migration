@@ -53,6 +53,94 @@ Reports land in `reports/`:
 
 - `<hostname>_vlan_state.json` — raw command output per host
 - `combined_vlan_state.csv` — summary across the data center
+- `discovery_report.md` — human-readable report with MAC, STP, SVI, ARP, and cleanup-ready flags
+
+### ServiceNow-driven end-to-end workflow
+
+The `workflow_vlan_to_vxlan.yml` playbook runs the complete migration from a
+ServiceNow change ticket.  For local testing, pass manual overrides:
+
+```bash
+ansible-playbook -i inventory/hosts.yml playbooks/workflow_vlan_to_vxlan.yml \
+  --limit dc_lisle \
+  -e manual_vlan_id=100 \
+  -e manual_data_center=lisle \
+  -e manual_target_vrf=default \
+  -e netbox_url=https://netbox.example.com \
+  -e netbox_token=<token> \
+  -e cvp_apply_configlets=false
+
+# Same workflow using Arista AVD for EOS configlet generation
+ansible-playbook -i inventory/hosts.yml playbooks/workflow_vlan_to_vxlan.yml \
+  --limit dc_lisle \
+  -e manual_vlan_id=100 \
+  -e manual_data_center=lisle \
+  -e manual_target_vrf=default \
+  -e use_avd=true \
+  -e cvp_apply_configlets=false
+```
+
+### Detailed workflow
+
+```mermaid
+%%{init: {'theme': 'base', 'themeVariables': { 'primaryColor': '#e8f4fd', 'primaryTextColor': '#111827', 'primaryBorderColor': '#0366d6', 'lineColor': '#374151', 'secondaryColor': '#f3f4f6', 'tertiaryColor': '#ffffff', 'background': '#ffffff', 'mainBkg': '#ffffff' }}}%%
+flowchart TD
+    Start([Trigger: ServiceNow webhook or CLI]) --> Input[1. Normalize input<br/>roles/servicenow_input]
+
+    Input --> Registry{Target VLAN in<br/>vars/vlan_registry.yml?}
+    Registry -- No --> Fail1[Fail: VLAN not in registry]
+    Registry -- Yes --> Discovery[2. VLAN discovery<br/>roles/vlan_discovery]
+
+    subgraph Discover [Discovery phase]
+        Discovery --> Facts[Collect per-device state:<br/>VLAN, MAC table, STP,<br/>access/trunk interfaces,<br/>SVI, ARP per VRF]
+        Facts --> Reports[Write reports:<br/>combined_vlan_state.csv<br/>discovery_report.md]
+    end
+
+    Reports --> Cleanup[3. External cleanup hand-off<br/>roles/external_cleanup]
+    Cleanup --> NetBox[4. NetBox VLAN check<br/>roles/netbox_check]
+    NetBox --> ConfigGen{use_avd?}
+
+    subgraph LegacyPath [Legacy CVP path]
+        ConfigGen -- No --> LegacyBuild[Build per-device variables<br/>roles/cvp_deploy]
+        LegacyBuild --> LegacyJinja[Render custom Jinja configlets]
+        LegacyJinja --> LegacyMap[Build CVP configlet map]
+    end
+
+    subgraph AVDPath [Arista AVD path]
+        ConfigGen -- Yes --> AVDStruct[Generate per-device<br/>structured config YAML]
+        AVDStruct --> AVDValidate[arista.avd.validate_inputs]
+        AVDValidate --> AVDRender[arista.avd.eos_cli_config_gen]
+        AVDRender --> AVDMap[Build CVP configlet map]
+    end
+
+    LegacyMap --> ApplyConfiglets
+    AVDMap --> ApplyConfiglets
+
+    ApplyConfiglets{cvp_apply_configlets?} -- Yes --> CVP[Push to CVP via<br/>arista.cvp.cv_configlet_v3]
+    ApplyConfiglets -- No --> SkipPush[Skip CVP push]
+
+    CVP --> ValidateStep[5. Post-migration validation]
+    SkipPush --> ValidateStep
+
+    subgraph Validate [Validation phase]
+        ValidateStep --> OS{network_os_family}
+        OS -- eos --> EOS[show vxlan vlan-to-vni]
+        OS -- nxos / ios --> NXOS[show nve vni]
+        EOS --> Match{VLAN/VNI present?}
+        NXOS --> Match
+        Match -- No --> Fail2[Fail validation]
+        Match -- Yes --> Done([Migration complete])
+    end
+```
+
+Steps performed:
+
+1. Normalize ServiceNow / manual input.
+2. Discover VLAN state (VLAN, MAC, STP, interfaces, SVI, ARP) per switch.
+3. Mark discovered VLAN as `pending` for external cleanup.
+4. Verify VLAN exists in NetBox.
+5. Generate (and optionally push) CVP configlets for Arista leaf/border-leaf switches.
+6. Validate post-migration state.
 
 ### 4. Dry-run decommission plan
 
@@ -64,7 +152,42 @@ ansible-playbook -i inventory/hosts.yml playbooks/dry_run_decommission.yml \
 This writes `reports/dry_run_decommission.csv` listing, per switch, the SVIs,
 trunk interfaces, and VLANs that would be removed. No changes are made.
 
-### 5. Run migration stream only
+### 5. AVD-based CVP configlet generation
+
+For large, continuous Arista-only migrations, generate CVP configlets with
+Arista AVD (`arista.avd.eos_cli_config_gen`) instead of the legacy Jinja
+templates:
+
+```bash
+# Generate configlets only
+ansible-playbook -i inventory/hosts.yml playbooks/deploy_to_cvp_avd.yml \
+  --limit dc_lisle \
+  -e target_vlan_id=100 \
+  -e target_data_center=lisle \
+  -e target_vrf=default \
+  -e cvp_apply_configlets=false
+
+# Generate and push to CVP
+ansible-playbook -i inventory/hosts.yml playbooks/deploy_to_cvp_avd.yml \
+  --limit dc_lisle \
+  -e target_vlan_id=100 \
+  -e target_data_center=lisle \
+  -e target_vrf=default \
+  -e cvp_apply_configlets=true \
+  -e cvp_server=https://cvp.example.com \
+  -e cvp_token=<token>
+```
+
+Set per-device BGP parameters as hostvars (`bgp_as`, `router_id`) or as
+`avd_default_bgp_as` in group variables.
+
+To use AVD inside the full workflow, set:
+
+```bash
+-e use_avd=true
+```
+
+### 6. Run migration stream only
 
 ```bash
 # Scope to a data center
@@ -95,14 +218,23 @@ ansible-playbook -i inventory/hosts.yml playbooks/decommission_vlans.yml \
 3. **Inventories**: import `inventory/hosts.yml` or configure a dynamic inventory.
 4. **Credentials**: create Machine/Network credentials and link them to Job Templates.
 5. **Job Templates**:
+   - `playbooks/workflow_vlan_to_vxlan.yml` (end-to-end ServiceNow-driven migration)
    - `playbooks/discover_vlan_state.yml`
+   - `playbooks/check_netbox.yml`
+   - `playbooks/deploy_to_cvp.yml` (legacy Jinja configlets)
+   - `playbooks/deploy_to_cvp_avd.yml` (Arista AVD configlets)
    - `playbooks/dry_run_decommission.yml`
    - `playbooks/migrate_vlans_to_vxlan.yml`
    - `playbooks/decommission_vlans.yml`
    - `playbooks/validate_network_state.yml`
 6. **Surveys** (optional): expose `target_vlan_ids` and `target_actions` as survey
-   questions so operators can scope a Job run without editing files.
+   questions so operators can scope a Job run without editing files.  For the
+   full workflow, expose `manual_vlan_id`, `manual_data_center`, and `manual_target_vrf`
+   for ad-hoc runs or map them from the ServiceNow webhook payload.
 7. **Workflows** (example):
+   - ServiceNow webhook triggers `workflow_vlan_to_vxlan` with change ticket data.
+   - Discovery, cleanup hand-off, NetBox check, CVP deployment, and validation run
+     as a single orchestrated workflow.
    - Discovery: `discover_vlan_state`
    - Decommission planning: `dry_run_decommission`
    - Approval node

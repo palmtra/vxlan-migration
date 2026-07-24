@@ -1,0 +1,87 @@
+---
+# -----------------------------------------------------------------------------
+# external_cleanup
+# -----------------------------------------------------------------------------
+# Determines whether the target VLAN was discovered on any network device.
+# If it was, the VLAN is marked as ready for external cleanup and an optional
+# hand-off artifact / API call is produced.  This role does not change devices.
+# -----------------------------------------------------------------------------
+
+- name: Ensure hand-off directory exists
+  ansible.builtin.file:
+    path: "{{ external_cleanup_handoff_dir }}"
+    state: directory
+    mode: '0755'
+  delegate_to: localhost
+  become: false
+  run_once: true
+  check_mode: false
+
+- name: Determine whether VLAN was discovered on any switch
+  ansible.builtin.set_fact:
+    _vlan_found_on_switches: "{{ ansible_play_hosts |
+      map('extract', hostvars, '_vlan_discovery') |
+      selectattr('per_vlan', 'defined') |
+      select('has_vlan_present') |
+      list | length > 0 }}"
+  delegate_to: localhost
+  become: false
+  run_once: true
+  check_mode: false
+
+- name: Build list of switches where VLAN is present
+  ansible.builtin.set_fact:
+    _vlan_found_switches: "{{ ansible_play_hosts |
+      map('extract', hostvars, '_vlan_discovery') |
+      selectattr('per_vlan', 'defined') |
+      select('has_vlan_present') |
+      map(attribute='hostname') |
+      list | unique }}"
+  delegate_to: localhost
+  become: false
+  run_once: true
+  check_mode: false
+
+- name: Write external cleanup hand-off artifact
+  ansible.builtin.template:
+    src: cleanup_handoff.json.j2
+    dest: "{{ external_cleanup_handoff_dir }}/cleanup_handoff_vlan{{ target_vlan_id }}_{{ target_data_center | default('unknown') }}.json"
+    mode: '0644'
+  delegate_to: localhost
+  become: false
+  run_once: true
+  when: external_cleanup_write_handoff | bool
+
+- name: Optionally notify external cleanup orchestrator
+  ansible.builtin.uri:
+    url: "{{ external_cleanup_api_url }}"
+    method: "{{ external_cleanup_api_method }}"
+    body_format: json
+    body:
+      vlan_id: "{{ target_vlan_id | int }}"
+      data_center: "{{ target_data_center | default('') }}"
+      target_vrf: "{{ target_vrf | default('') }}"
+      switches: "{{ _vlan_found_switches }}"
+      status: "pending_cleanup"
+    status_code:
+      - 200
+      - 201
+      - 202
+      - 204
+    timeout: "{{ external_cleanup_api_timeout }}"
+  delegate_to: localhost
+  become: false
+  run_once: true
+  when:
+    - external_cleanup_api_url | default('', true) | length > 0
+    - _vlan_found_on_switches | bool
+  ignore_errors: true
+
+- name: Report cleanup hand-off status
+  ansible.builtin.debug:
+    msg:
+      - "VLAN {{ target_vlan_id }} discovered on: {{ _vlan_found_switches | default([]) }}"
+      - "External cleanup status: pending"
+  delegate_to: localhost
+  become: false
+  run_once: true

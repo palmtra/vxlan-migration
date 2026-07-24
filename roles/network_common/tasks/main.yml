@@ -9,6 +9,21 @@
 #   - capture a configuration backup
 # -----------------------------------------------------------------------------
 
+- name: Gather date/time facts on the control node
+  ansible.builtin.setup:
+    gather_subset:
+      - date_time
+  delegate_to: localhost
+  become: false
+  run_once: true
+  register: _localhost_facts
+  check_mode: false
+  changed_when: false
+
+- name: Expose date/time facts for report timestamps
+  ansible.builtin.set_fact:
+    ansible_date_time: "{{ _localhost_facts.ansible_facts.ansible_date_time }}"
+
 - name: Load canonical VLAN registry
   ansible.builtin.include_vars:
     file: "{{ vlan_registry_file }}"

@@ -1,0 +1,68 @@
+---
+# -----------------------------------------------------------------------------
+# netbox_check
+# -----------------------------------------------------------------------------
+# Verifies the target VLAN exists in NetBox.  If it does not exist the play
+# fails unless netbox_create_missing_vlan is enabled (deferred; still fails
+# with a clear message today).
+# -----------------------------------------------------------------------------
+
+- name: Validate NetBox endpoint is configured
+  ansible.builtin.fail:
+    msg: "NetBox URL is not configured. Set netbox_url or the NETBOX_API environment variable."
+  when: netbox_url | default('', true) | length == 0
+  delegate_to: localhost
+  become: false
+  run_once: true
+
+- name: Validate NetBox token is configured
+  ansible.builtin.fail:
+    msg: "NetBox token is not configured. Set netbox_token or the NETBOX_TOKEN environment variable."
+  when: netbox_token | default('', true) | length == 0
+  delegate_to: localhost
+  become: false
+  run_once: true
+
+- name: Search NetBox for the target VLAN by VID
+  ansible.builtin.uri:
+    url: "{{ netbox_url }}/api/ipam/vlans/?vid={{ target_vlan_id | int }}"
+    method: GET
+    headers:
+      Authorization: "Token {{ netbox_token }}"
+      Accept: "application/json"
+    validate_certs: "{{ netbox_validate_certs | bool }}"
+    timeout: "{{ netbox_timeout | int }}"
+    status_code: 200
+  register: _netbox_vlan_lookup
+  delegate_to: localhost
+  become: false
+  run_once: true
+
+- name: Record NetBox VLAN fact
+  ansible.builtin.set_fact:
+    _netbox_vlan: "{{ _netbox_vlan_lookup.json.results | default([]) | first | default({}) }}"
+  delegate_to: localhost
+  become: false
+  run_once: true
+
+- name: Fail if VLAN does not exist in NetBox
+  ansible.builtin.fail:
+    msg:
+      - "VLAN {{ target_vlan_id }} does not exist in NetBox."
+      - "Automated VLAN creation and customer/VRF mapping is a deferred improvement."
+  when:
+    - not netbox_create_missing_vlan | bool
+    - _netbox_vlan | length == 0
+  delegate_to: localhost
+  become: false
+  run_once: true
+
+- name: Report NetBox VLAN lookup result
+  ansible.builtin.debug:
+    msg:
+      - "NetBox VLAN record: {{ _netbox_vlan.name | default('not found') }}"
+      - "VID: {{ _netbox_vlan.vid | default(target_vlan_id) }}"
+      - "Site: {{ _netbox_vlan.site.name | default('unknown') }}"
+  delegate_to: localhost
+  become: false
+  run_once: true

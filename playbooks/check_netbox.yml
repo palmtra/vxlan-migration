@@ -1,0 +1,26 @@
+---
+# -----------------------------------------------------------------------------
+# check_netbox.yml
+# -----------------------------------------------------------------------------
+# Standalone playbook to verify that a target VLAN exists in NetBox.
+#
+# Usage:
+#   ansible-playbook -i inventory/hosts.yml playbooks/check_netbox.yml \
+#     -e manual_vlan_id=100 \
+#     -e netbox_url=https://netbox.example.com \
+#     -e netbox_token=<token>
+# -----------------------------------------------------------------------------
+
+- name: Normalize input
+  hosts: localhost
+  gather_facts: false
+  roles:
+    - servicenow_input
+
+- name: Check NetBox for the target VLAN
+  hosts: localhost
+  gather_facts: false
+  vars:
+    target_vlan_id: "{{ hostvars['localhost']['target_vlan_id'] | int }}"
+  roles:
+    - netbox_check

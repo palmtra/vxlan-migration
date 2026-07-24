@@ -1,0 +1,34 @@
+---
+# -----------------------------------------------------------------------------
+# deploy_to_cvp.yml
+# -----------------------------------------------------------------------------
+# Standalone playbook to generate and optionally push CVP configlets for a
+# target VLAN.  Requires prior discovery so that _vlan_discovery facts exist.
+#
+# Usage (generate only):
+#   ansible-playbook -i inventory/hosts.yml playbooks/deploy_to_cvp.yml \
+#     -e manual_vlan_id=100 -e manual_data_center=lisle
+#
+# Usage (push to CVP):
+#   ansible-playbook -i inventory/hosts.yml playbooks/deploy_to_cvp.yml \
+#     -e manual_vlan_id=100 -e manual_data_center=lisle \
+#     -e cvp_apply_configlets=true \
+#     -e cvp_server=https://cvp.example.com \
+#     -e cvp_token=<token>
+# -----------------------------------------------------------------------------
+
+- name: Normalize input
+  hosts: localhost
+  gather_facts: false
+  roles:
+    - servicenow_input
+
+- name: Deploy VXLAN migration to CVP
+  hosts: localhost
+  gather_facts: false
+  vars:
+    target_vlan_id: "{{ hostvars['localhost']['target_vlan_id'] | int }}"
+    target_data_center: "{{ hostvars['localhost']['target_data_center'] | default('') }}"
+    target_vrf: "{{ hostvars['localhost']['target_vrf'] | default('') }}"
+  roles:
+    - cvp_deploy

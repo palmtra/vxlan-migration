@@ -1,6 +1,9 @@
 .local/
 backups/
 reports/
+cvp_configlets/
+inventory/documentation/
+collections/ansible_collections/
 *.log
 *.retry
 *.vault

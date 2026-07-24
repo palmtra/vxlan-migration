@@ -1,0 +1,212 @@
+---
+# -----------------------------------------------------------------------------
+# cvp_deploy
+# -----------------------------------------------------------------------------
+# Generates CVP configlets for Arista leaf / border-leaf switches where the
+# target VLAN was discovered, then optionally applies them via CVP and creates
+# a change control.
+# -----------------------------------------------------------------------------
+
+- name: Ensure configlet build directory exists
+  ansible.builtin.file:
+    path: "{{ cvp_configlet_build_dir }}"
+    state: directory
+    mode: '0755'
+  delegate_to: localhost
+  become: false
+  run_once: true
+  check_mode: false
+
+- name: Load VLAN registry for CVP rendering
+  ansible.builtin.include_vars:
+    file: "{{ vlan_registry_file }}"
+    name: vlan_registry
+  delegate_to: localhost
+  become: false
+  run_once: true
+
+- name: Compute VLAN to migrate for CVP
+  ansible.builtin.set_fact:
+    _vlan_to_migrate: "{{ vlan_registry.vlans | selectattr('id', 'equalto', target_vlan_id | int) | first | default({}) }}"
+  delegate_to: localhost
+  become: false
+  run_once: true
+
+- name: Fail if target VLAN is not in registry
+  ansible.builtin.fail:
+    msg: "VLAN {{ target_vlan_id }} is not declared in the VLAN registry."
+  when: _vlan_to_migrate | length == 0
+  delegate_to: localhost
+  become: false
+  run_once: true
+
+- name: Determine Arista devices where target VLAN was discovered
+  ansible.builtin.set_fact:
+    _cvp_target_devices: "{{ groups['eos_devices'] | default([]) |
+      map('extract', hostvars) |
+      selectattr('_vlan_discovery', 'defined') |
+      selectattr('_vlan_discovery.os_family', 'equalto', 'eos') |
+      select('has_vlan_present') |
+      map(attribute='inventory_hostname') | list }}"
+  delegate_to: localhost
+  become: false
+  run_once: true
+  check_mode: false
+
+- name: Fail if no Arista switches were discovered with the target VLAN
+  ansible.builtin.fail:
+    msg: "No Arista EOS devices were found carrying VLAN {{ target_vlan_id }}. Aborting CVP deployment."
+  when: _cvp_target_devices | length == 0
+  delegate_to: localhost
+  become: false
+  run_once: true
+
+- name: Render leaf VXLAN configlet per target device
+  ansible.builtin.template:
+    src: leaf_vxlan_configlet.j2
+    dest: "{{ cvp_configlet_build_dir }}/vxlan_vlan{{ target_vlan_id }}_{{ item }}.cfg"
+    mode: '0644'
+  loop: "{{ _cvp_target_devices }}"
+  delegate_to: localhost
+  become: false
+  run_once: true
+  check_mode: false
+  vars:
+    _device_hostname: "{{ item }}"
+
+- name: Render border-leaf import configlet
+  ansible.builtin.template:
+    src: borderleaf_import_configlet.j2
+    dest: "{{ cvp_configlet_build_dir }}/vxlan_vlan{{ target_vlan_id }}_borderleaf_import.cfg"
+    mode: '0644'
+  delegate_to: localhost
+  become: false
+  run_once: true
+  check_mode: false
+  when: cvp_build_borderleaf_config | bool
+
+- name: Load generated leaf configlets
+  ansible.builtin.set_fact:
+    _cvp_leaf_configlets: "{{ _cvp_leaf_configlets | default({}) | combine({
+      ('vxlan_vlan' + target_vlan_id | string + '_' + item): lookup('ansible.builtin.file',
+      cvp_configlet_build_dir + '/vxlan_vlan' + target_vlan_id | string + '_' + item + '.cfg')
+    }) }}"
+  loop: "{{ _cvp_target_devices }}"
+  delegate_to: localhost
+  become: false
+  run_once: true
+  check_mode: false
+
+- name: Load generated border-leaf import configlet
+  ansible.builtin.set_fact:
+    _cvp_borderleaf_configlet: "{{ lookup('ansible.builtin.file',
+      cvp_configlet_build_dir + '/vxlan_vlan' + target_vlan_id | string + '_borderleaf_import.cfg') }}"
+  delegate_to: localhost
+  become: false
+  run_once: true
+  check_mode: false
+  when: cvp_build_borderleaf_config | bool
+
+- name: Build full CVP configlet map
+  ansible.builtin.set_fact:
+    _cvp_configlets: "{{ _cvp_leaf_configlets | default({}) | combine({
+      ('vxlan_vlan' + target_vlan_id | string + '_borderleaf_import'):
+      (_cvp_borderleaf_configlet | default(''))
+    }) }}"
+  delegate_to: localhost
+  become: false
+  run_once: true
+  check_mode: false
+
+- name: Apply CVP configlets (only when cvp_apply_configlets is true)
+  arista.cvp.cv_configlet_v3:
+    cvp_server: "{{ cvp_server }}"
+    cvp_token: "{{ cvp_token }}"
+    configlets: "{{ _cvp_configlets }}"
+    state: present
+  delegate_to: localhost
+  become: false
+  run_once: true
+  when:
+    - cvp_apply_configlets | bool
+    - cvp_server | length > 0
+    - cvp_token | length > 0
+  ignore_errors: true
+
+- name: Assign configlets to target devices (only when cvp_apply_configlets is true)
+  arista.cvp.cv_device_v3:
+    cvp_server: "{{ cvp_server }}"
+    cvp_token: "{{ cvp_token }}"
+    devices:
+      - fqdn: "{{ item }}"
+        configlets:
+          - "vxlan_vlan{{ target_vlan_id }}_{{ item }}"
+  loop: "{{ _cvp_target_devices }}"
+  delegate_to: localhost
+  become: false
+  run_once: true
+  when:
+    - cvp_apply_configlets | bool
+    - cvp_server | length > 0
+    - cvp_token | length > 0
+  ignore_errors: true
+
+- name: Identify border leaf devices
+  ansible.builtin.set_fact:
+    _cvp_borderleaf_devices: "{{ groups['eos_devices'] | default([]) |
+      select('match', cvp_borderleaf_regex) | list }}"
+  delegate_to: localhost
+  become: false
+  run_once: true
+  check_mode: false
+
+- name: Assign border-leaf import configlet to border leafs (only when applying)
+  arista.cvp.cv_device_v3:
+    cvp_server: "{{ cvp_server }}"
+    cvp_token: "{{ cvp_token }}"
+    devices:
+      - fqdn: "{{ item }}"
+        configlets:
+          - "vxlan_vlan{{ target_vlan_id }}_borderleaf_import"
+  loop: "{{ _cvp_borderleaf_devices }}"
+  delegate_to: localhost
+  become: false
+  run_once: true
+  when:
+    - cvp_apply_configlets | bool
+    - cvp_build_borderleaf_config | bool
+    - _cvp_borderleaf_devices | length > 0
+    - cvp_server | length > 0
+    - cvp_token | length > 0
+  ignore_errors: true
+
+- name: Create CVP change control (only when cvp_apply_configlets is true)
+  arista.cvp.cv_change_control_v3:
+    cvp_server: "{{ cvp_server }}"
+    cvp_token: "{{ cvp_token }}"
+    state: present
+    name: "{{ cvp_change_control_name }}"
+    notes: "{{ cvp_change_control_notes }}"
+    activities:
+      - action: "Configlet Push"
+        name: "Apply VXLAN VLAN {{ target_vlan_id }} configlets"
+        arguments:
+          - "{{ _cvp_configlets.keys() | list }}"
+  delegate_to: localhost
+  become: false
+  run_once: true
+  when:
+    - cvp_apply_configlets | bool
+    - cvp_server | length > 0
+    - cvp_token | length > 0
+  ignore_errors: true
+
+- name: Report generated CVP configlets
+  ansible.builtin.debug:
+    msg:
+      - "Generated CVP configlets for: {{ _cvp_target_devices }}"
+      - "Configlet directory: {{ cvp_configlet_build_dir }}"
+      - "Applied to CVP: {{ cvp_apply_configlets | bool }}"
+  delegate_to: localhost
+  become: false
+  run_once: true

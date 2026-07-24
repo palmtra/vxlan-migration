@@ -1,0 +1,103 @@
+---
+# -----------------------------------------------------------------------------
+# avd_vxlan_config
+# -----------------------------------------------------------------------------
+# Generates per-device EOS configlets for a VLAN-to-VXLAN migration using the
+# Arista AVD eos_cli_config_gen role.  This role is intended to run in a play
+# targeted at eos_devices; it writes per-device structured configs, invokes AVD
+# to render CLI snippets, and optionally pushes them to CVP.
+# -----------------------------------------------------------------------------
+
+- name: Ensure AVD output directories exist
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: '0755'
+  delegate_to: localhost
+  become: false
+  run_once: true
+  loop:
+    - "{{ avd_output_dir }}"
+    - "{{ avd_output_dir }}/structured_configs"
+
+- name: Load canonical VLAN registry
+  ansible.builtin.include_vars:
+    file: "{{ vlan_registry_file }}"
+    name: _avd_vlan_registry
+  delegate_to: localhost
+  become: false
+  run_once: true
+
+- name: Look up target VLAN in registry
+  ansible.builtin.set_fact:
+    _avd_vlan: "{{ _avd_vlan_registry.vlans | selectattr('id', 'equalto', target_vlan_id | int) | first | default({}) }}"
+  delegate_to: localhost
+  become: false
+  run_once: true
+
+- name: Fail when target VLAN is not in the registry
+  ansible.builtin.fail:
+    msg: "VLAN {{ target_vlan_id }} not found in {{ vlan_registry_file }}"
+  delegate_to: localhost
+  become: false
+  run_once: true
+  when: not _avd_vlan
+
+- name: Write per-device AVD structured config files
+  ansible.builtin.template:
+    src: avd_structured_config.yml.j2
+    dest: "{{ avd_output_dir }}/structured_configs/{{ item }}.yml"
+    mode: '0644'
+  delegate_to: localhost
+  become: false
+  run_once: true
+  loop: "{{ ansible_play_hosts }}"
+  vars:
+    _target_device: "{{ item }}"
+    _is_borderleaf: "{{ item is match(avd_borderleaf_regex) }}"
+
+- name: Render EOS configuration with AVD eos_cli_config_gen
+  ansible.builtin.include_role:
+    name: arista.avd.eos_cli_config_gen
+  vars:
+    output_dir: "{{ avd_output_dir }}"
+    eos_cli_config_gen_configuration: {}
+    eos_cli_config_gen_documentation: {}
+
+- name: Read generated EOS configuration files
+  ansible.builtin.slurp:
+    src: "{{ avd_output_dir }}/configs/{{ item }}.cfg"
+  register: _avd_config_files
+  delegate_to: localhost
+  become: false
+  run_once: true
+  loop: "{{ ansible_play_hosts }}"
+
+- name: Build CVP configlet map
+  ansible.builtin.set_fact:
+    _avd_configlets: "{{ _avd_configlets | default({}) | combine({ item.item ~ '_vlan' ~ target_vlan_id: item.content | b64decode }) }}"
+  delegate_to: localhost
+  become: false
+  run_once: true
+  loop: "{{ _avd_config_files.results }}"
+
+- name: Display generated configlets
+  ansible.builtin.debug:
+    var: _avd_configlets
+  delegate_to: localhost
+  become: false
+  run_once: true
+
+- name: Apply CVP configlets (only when cvp_apply_configlets is true)
+  arista.cvp.cv_configlet_v3:
+    cvp_server: "{{ cvp_server }}"
+    cvp_token: "{{ cvp_token_value }}"
+    configlets: "{{ _avd_configlets }}"
+    state: present
+  delegate_to: localhost
+  become: false
+  run_once: true
+  when:
+    - cvp_apply_configlets | bool
+    - cvp_server | length > 0
+    - cvp_token | length > 0

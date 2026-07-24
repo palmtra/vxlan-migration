@@ -1,0 +1,35 @@
+---
+# -----------------------------------------------------------------------------
+# servicenow_input
+# -----------------------------------------------------------------------------
+# Normalizes the change-ticket payload into Ansible facts on localhost.
+# ServiceNow fields take precedence; manual_* values are fallbacks for testing.
+# -----------------------------------------------------------------------------
+
+- name: Compute effective target VLAN (ServiceNow, then manual)
+  ansible.builtin.set_fact:
+    target_vlan_id: "{{ (snow_vlan_id | default('', true) | length > 0) | ternary(snow_vlan_id | int, (manual_vlan_id | default('', true) | length > 0) | ternary(manual_vlan_id | int, omit)) }}"
+    target_data_center: "{{ snow_data_center | default(manual_data_center, true) | default('', true) }}"
+    target_vrf: "{{ snow_target_vrf | default(manual_target_vrf, true) | default('default', true) }}"
+  delegate_to: localhost
+  delegate_facts: true
+  become: false
+  run_once: true
+
+- name: Fail if no target VLAN was supplied
+  ansible.builtin.fail:
+    msg: "A target VLAN must be provided via snow_vlan_id or manual_vlan_id."
+  delegate_to: localhost
+  become: false
+  run_once: true
+  when: hostvars['localhost']['target_vlan_id'] is not defined
+
+- name: Display normalized workflow input
+  ansible.builtin.debug:
+    msg:
+      - "Target VLAN: {{ hostvars['localhost']['target_vlan_id'] }}"
+      - "Data center: {{ hostvars['localhost']['target_data_center'] | default('unspecified', true) }}"
+      - "Target VRF: {{ hostvars['localhost']['target_vrf'] | default('default') }}"
+  delegate_to: localhost
+  become: false
+  run_once: true
