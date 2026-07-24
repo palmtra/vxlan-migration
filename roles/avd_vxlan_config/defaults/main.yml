@@ -25,6 +25,8 @@ cvp_apply_configlets: false
 cvp_server: "{{ cvp_url | default('') }}"
 cvp_token_value: "{{ cvp_token | default('') }}"
 cvp_change_control_name: "VXLAN migrate VLAN {{ target_vlan_id }}"
+cvp_change_control_state: "set"
+cvp_change_control_auto_execute_allowed: false
 
 # Default loopback / interface values used in the generated structured config.
 avd_vxlan_source_interface: Loopback1

@@ -165,6 +165,11 @@ ansible-playbook -i inventory/hosts.yml playbooks/deploy_to_cvp_avd.yml \
   -e target_vrf=default \
   -e cvp_apply_configlets=false
 
+CVP configlet push creates a **pending** change control (`cvp_change_control_state: set` by
+default). It is **not** approved or executed automatically; an operator must approve and run it
+in CloudVision. To override, pass `-e cvp_change_control_state=approve_and_execute -e
+cvp_change_control_auto_execute_allowed=true` explicitly.
+
 # Generate and push to CVP
 ansible-playbook -i inventory/hosts.yml playbooks/deploy_to_cvp_avd.yml \
   --limit dc_lisle \

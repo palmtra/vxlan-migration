@@ -157,6 +157,11 @@ To push generated configlets to CVP, add:
   -e cvp_token=<token>
 ```
 
+By default this creates a **pending** CVP change control (`cvp_change_control_state: set`)
+and does **not** approve or execute it automatically. Approval and execution must be done
+in CloudVision. Only override with `-e cvp_change_control_state=approve_and_execute -e
+cvp_change_control_auto_execute_allowed=true` after explicit review.
+
 Per-device BGP parameters may be supplied as hostvars (`bgp_as`, `router_id`) or
 via `avd_default_bgp_as` in group variables.
 

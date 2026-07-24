@@ -118,6 +118,17 @@
   run_once: true
   check_mode: false
 
+- name: Enforce explicit approval before any auto-executing CVP change control
+  ansible.builtin.fail:
+    msg: >-
+      cvp_change_control_state is set to '{{ cvp_change_control_state }}' which would
+      auto-execute on CVP. Set cvp_change_control_auto_execute_allowed=true and confirm
+      the change control has been reviewed before proceeding.
+  when:
+    - cvp_apply_configlets | bool
+    - cvp_change_control_state in ['approve', 'execute', 'approve_and_execute', 'schedule_and_approve']
+    - not cvp_change_control_auto_execute_allowed | bool
+
 - name: Apply CVP configlets (only when cvp_apply_configlets is true)
   arista.cvp.cv_configlet_v3:
     cvp_server: "{{ cvp_server }}"
@@ -131,7 +142,6 @@
     - cvp_apply_configlets | bool
     - cvp_server | length > 0
     - cvp_token | length > 0
-  ignore_errors: true
 
 - name: Assign configlets to target devices (only when cvp_apply_configlets is true)
   arista.cvp.cv_device_v3:
@@ -149,7 +159,6 @@
     - cvp_apply_configlets | bool
     - cvp_server | length > 0
     - cvp_token | length > 0
-  ignore_errors: true
 
 - name: Identify border leaf devices
   ansible.builtin.set_fact:
@@ -178,13 +187,12 @@
     - _cvp_borderleaf_devices | length > 0
     - cvp_server | length > 0
     - cvp_token | length > 0
-  ignore_errors: true
 
 - name: Create CVP change control (only when cvp_apply_configlets is true)
   arista.cvp.cv_change_control_v3:
     cvp_server: "{{ cvp_server }}"
     cvp_token: "{{ cvp_token }}"
-    state: present
+    state: "{{ cvp_change_control_state }}"
     name: "{{ cvp_change_control_name }}"
     notes: "{{ cvp_change_control_notes }}"
     activities:
@@ -199,7 +207,6 @@
     - cvp_apply_configlets | bool
     - cvp_server | length > 0
     - cvp_token | length > 0
-  ignore_errors: true
 
 - name: Report generated CVP configlets
   ansible.builtin.debug:
