@@ -10,10 +10,26 @@
 - name: Set a millisecond timestamp for this discovery run
   ansible.builtin.set_fact:
     _report_timestamp_ms: "{{ hostvars[ansible_play_hosts[0]]._report_timestamp_ms | default(lookup('pipe', 'date +%Y%m%d_%H%M%S_%3N')) }}"
-    _report_scope: "{{ ansible_play_hosts | map('extract', hostvars) | map(attribute='data_center') | reject('undefined') | unique | list | join('_') | default('unknown', true) }}"
   delegate_to: localhost
   become: false
   check_mode: false
+
+- name: Determine report scope from active hosts
+  ansible.builtin.set_fact:
+    _report_scope: "{{ _report_scope_computed }}"
+  delegate_to: localhost
+  become: false
+  check_mode: false
+  vars:
+    _report_scope_computed: >-
+      {%- set dcs = ansible_play_hosts | map('extract', hostvars) | map(attribute='data_center') | reject('undefined') | unique | list -%}
+      {%- if dcs | length == 1 -%}
+        {%- set dc = dcs[0] -%}
+        {%- set dc_group = 'dc_' ~ dc -%}
+        {%- set all_dc_hosts = groups[dc_group] | default([]) | sort -%}
+        {%- set active_hosts = ansible_play_hosts | sort -%}
+        {%- if all_dc_hosts == active_hosts -%}{{ dc }}{%- else -%}{{ dc }}_{{ active_hosts | join('_') }}{%- endif -%}
+      {%- else -%}{{ dcs | join('_') | default('unknown', true) }}{%- endif -%}
 
 - name: Ensure per-device report directory exists
   ansible.builtin.file:

@@ -81,11 +81,16 @@ Reports land in `reports/` with a `dc/device/` layout and a millisecond timestam
 to each file so repeated runs do not overwrite previous results:
 
 - `reports/<dc>/<hostname>/<hostname>_vlan_state_YYYYMMDD_HHMMSS_mmm.json` — raw command output per host
-- `reports/<dc>/combined_vlan_state_YYYYMMDD_HHMMSS_mmm.csv` — summary across the scope
-- `reports/<dc>/discovery_report_YYYYMMDD_HHMMSS_mmm.md` — human-readable report
+- `reports/<scope>/combined_vlan_state_YYYYMMDD_HHMMSS_mmm.csv` — summary across the scope
+- `reports/<scope>/discovery_report_YYYYMMDD_HHMMSS_mmm.md` — human-readable report
 
-When the limit spans multiple data centers, `<dc>` becomes the joined list of unique data
-centers (e.g. `lisle_omaha`).
+`<scope>` is derived from the limit:
+
+- **Full DC** (`--limit dc_lisle`) → `<scope>` is the DC name (`lisle`).
+- **Single device** (`--limit eos-leaf-lis-01`) → `<scope>` is `lisle_eos-leaf-lis-01`.
+- **Multiple devices, same DC** (`--limit eos-leaf-lis-01,eos-leaf-lis-02`) → `<scope>` is
+  `lisle_eos-leaf-lis-01_eos-leaf-lis-02` so it does not collide with a full-DC report.
+- **Multiple DCs** (`--limit dc_lisle,dc_omaha`) → `<scope>` is the joined DCs (`lisle_omaha`).
 
 ### ServiceNow-driven end-to-end workflow
 
