@@ -77,11 +77,15 @@ ansible-playbook -i inventory/hosts.yml playbooks/discover_vlan_state.yml \
   --limit dc_lisle -e target_vlan_ids='[100]'
 ```
 
-Reports land in `reports/`:
+Reports land in `reports/` with a `dc/device/` layout and a millisecond timestamp appended
+to each file so repeated runs do not overwrite previous results:
 
-- `<hostname>_vlan_state.json` — raw command output per host
-- `combined_vlan_state.csv` — summary across the data center
-- `discovery_report.md` — human-readable report with MAC, STP, SVI, ARP, and cleanup-ready flags
+- `reports/<dc>/<hostname>/<hostname>_vlan_state_YYYYMMDD_HHMMSS_mmm.json` — raw command output per host
+- `reports/<dc>/combined_vlan_state_YYYYMMDD_HHMMSS_mmm.csv` — summary across the scope
+- `reports/<dc>/discovery_report_YYYYMMDD_HHMMSS_mmm.md` — human-readable report
+
+When the limit spans multiple data centers, `<dc>` becomes the joined list of unique data
+centers (e.g. `lisle_omaha`).
 
 ### ServiceNow-driven end-to-end workflow
 

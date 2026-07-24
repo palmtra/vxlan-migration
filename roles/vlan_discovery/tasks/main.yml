@@ -6,11 +6,20 @@
 # per-host JSON plus a combined CSV report.
 # -----------------------------------------------------------------------------
 
-- name: Ensure reports directory exists
+- name: Set a millisecond timestamp for this discovery run
+  ansible.builtin.set_fact:
+    _report_timestamp_ms: "{{ hostvars[ansible_play_hosts[0]]._report_timestamp_ms | default(lookup('pipe', 'date +%Y%m%d_%H%M%S_%3N')) }}"
+    _report_scope: "{{ ansible_play_hosts | map('extract', hostvars) | map(attribute='data_center') | reject('undefined') | unique | list | join('_') | default('unknown', true) }}"
+  delegate_to: localhost
+  become: false
+  check_mode: false
+
+- name: Ensure per-device report directory exists
   ansible.builtin.file:
-    path: "{{ discovery_reports_dir }}"
+    path: "{{ discovery_reports_dir }}/{{ data_center | default('unknown') }}/{{ inventory_hostname }}"
     state: directory
     mode: '0755'
+    recurse: true
   delegate_to: localhost
   become: false
   check_mode: false
@@ -30,16 +39,27 @@
 - name: Write per-host JSON report
   ansible.builtin.template:
     src: host_report.json.j2
-    dest: "{{ discovery_reports_dir }}/{{ inventory_hostname }}_vlan_state.json"
+    dest: "{{ discovery_reports_dir }}/{{ data_center | default('unknown') }}/{{ inventory_hostname }}/{{ inventory_hostname }}_vlan_state_{{ _report_timestamp_ms }}.json"
     mode: '0644'
   delegate_to: localhost
   become: false
   when: discovery_write_json | bool
 
+- name: Ensure combined report directory exists
+  ansible.builtin.file:
+    path: "{{ discovery_reports_dir }}/{{ _report_scope }}"
+    state: directory
+    mode: '0755'
+    recurse: true
+  delegate_to: localhost
+  become: false
+  run_once: true
+  check_mode: false
+
 - name: Write combined CSV report
   ansible.builtin.template:
     src: combined_report.csv.j2
-    dest: "{{ discovery_reports_dir }}/combined_vlan_state.csv"
+    dest: "{{ discovery_reports_dir }}/{{ _report_scope }}/combined_vlan_state_{{ _report_timestamp_ms }}.csv"
     mode: '0644'
   delegate_to: localhost
   become: false
@@ -49,7 +69,7 @@
 - name: Write Markdown discovery report
   ansible.builtin.template:
     src: discovery_report.md.j2
-    dest: "{{ discovery_reports_dir }}/discovery_report.md"
+    dest: "{{ discovery_reports_dir }}/{{ _report_scope }}/discovery_report_{{ _report_timestamp_ms }}.md"
     mode: '0644'
   delegate_to: localhost
   become: false
