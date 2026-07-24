@@ -1,6 +1,12 @@
+# CVAAS/CVP endpoint variables. Provide the token via Ansible Vault, AAP credentials,
+# or a scoped variable file; do not commit it in plain text.
 ansible_host: www.cv-prod-us-central1-c.arista.io
+cvp_url: "https://www.cv-prod-us-central1-c.arista.io"
+cvp_token: "{{ vault_cvp_token | default('') }}"
+
+# httpapi connection settings used by playbooks that talk to CVP/CVAAS directly.
 ansible_user: cvaas
-ansible_password: "{{ lookup('file' playbook_dir '/tokens/cvaas.tok') }}"
+ansible_password: "{{ vault_cvp_token | default('') }}"
 ansible_connection: httpapi
 ansible_network_os: eos
 ansible_httpapi_use_ssl: true
