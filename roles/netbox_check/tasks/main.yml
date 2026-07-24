@@ -9,7 +9,7 @@
 
 - name: Validate NetBox endpoint is configured
   ansible.builtin.fail:
-    msg: "NetBox URL is not configured. Set netbox_url or the NETBOX_API environment variable."
+    msg: "NetBox URL is not configured. Set netbox_url via Ansible Vault, a variable file, or AAP credentials."
   when: netbox_url | default('', true) | length == 0
   delegate_to: localhost
   become: false
@@ -17,7 +17,7 @@
 
 - name: Validate NetBox token is configured
   ansible.builtin.fail:
-    msg: "NetBox token is not configured. Set netbox_token or the NETBOX_TOKEN environment variable."
+    msg: "NetBox token is not configured. Set netbox_token via Ansible Vault, a variable file, or AAP credentials."
   when: netbox_token | default('', true) | length == 0
   delegate_to: localhost
   become: false

@@ -7,9 +7,10 @@
 # cvp_apply_configlets is set to true.
 # -----------------------------------------------------------------------------
 
-# CVP/CVAAS connection details.  Defaults rely on environment variables.
-cvp_url: "{{ lookup('env', 'CVP_SERVER') | default('', true) }}"
-cvp_token: "{{ lookup('env', 'CVP_TOKEN') | default('', true) }}"
+# CVP/CVAAS connection details.  Supply via Ansible Vault, a variable file,
+# or AAP credentials (injected as extra vars); not read from environment variables.
+cvp_url: ""
+cvp_token: ""
 cvp_validate_certs: true
 
 # Module-facing aliases used by the arista.cvp collection.

@@ -37,12 +37,12 @@ use_avd: false
 avd_default_bgp_as: ""
 
 # -----------------------------------------------------------------------------
-# Integration endpoints (override via env or vault)
+# Integration endpoints (override via variable file, Ansible Vault, or AAP credentials)
 # -----------------------------------------------------------------------------
 # NetBox read-only lookup performed by roles/netbox_check.
-netbox_url: "{{ lookup('env', 'NETBOX_API') | default('', true) }}"
-netbox_token: "{{ lookup('env', 'NETBOX_TOKEN') | default('', true) }}"
+netbox_url: ""
+netbox_token: ""
 
 # Arista CVP / CVAAS endpoint used by roles/cvp_deploy.
-cvp_url: "{{ lookup('env', 'CVP_SERVER') | default('', true) }}"
-cvp_token: "{{ lookup('env', 'CVP_TOKEN') | default('', true) }}"
+cvp_url: ""
+cvp_token: ""

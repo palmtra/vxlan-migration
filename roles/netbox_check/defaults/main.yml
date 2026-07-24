@@ -7,8 +7,9 @@
 # deferred improvement and is not performed here.
 # -----------------------------------------------------------------------------
 
-netbox_url: "{{ lookup('env', 'NETBOX_API') | default('', true) }}"
-netbox_token: "{{ lookup('env', 'NETBOX_TOKEN') | default('', true) }}"
+# Supply via Ansible Vault, a variable file, or AAP credentials.
+netbox_url: ""
+netbox_token: ""
 netbox_validate_certs: true
 netbox_timeout: 30
 

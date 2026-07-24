@@ -12,9 +12,9 @@
 # Usage (push to CVP):
 #   ansible-playbook -i inventory/hosts.yml playbooks/deploy_to_cvp.yml \
 #     -e manual_vlan_id=100 -e manual_data_center=lisle \
-#     -e cvp_apply_configlets=true \
-#     -e cvp_server=https://cvp.example.com \
-#     -e cvp_token=<token>
+#     -e cvp_apply_configlets=true
+#
+# CVP credentials must be supplied via Ansible Vault, a variable file, or AAP credentials.
 # -----------------------------------------------------------------------------
 
 - name: Normalize input

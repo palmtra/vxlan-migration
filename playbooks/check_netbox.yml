@@ -6,9 +6,9 @@
 #
 # Usage:
 #   ansible-playbook -i inventory/hosts.yml playbooks/check_netbox.yml \
-#     -e manual_vlan_id=100 \
-#     -e netbox_url=https://netbox.example.com \
-#     -e netbox_token=<token>
+#     -e manual_vlan_id=100
+#
+# Credentials must be supplied via Ansible Vault, a variable file, or AAP credentials.
 # -----------------------------------------------------------------------------
 
 - name: Normalize input

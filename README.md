@@ -152,10 +152,10 @@ ansible-playbook -i inventory/hosts.yml playbooks/deploy_to_cvp_avd.yml \
 To push generated configlets to CVP, add:
 
 ```bash
-  -e cvp_apply_configlets=true \
-  -e cvp_server=https://cvp.example.com \
-  -e cvp_token=<token>
+  -e cvp_apply_configlets=true
 ```
+
+CVP credentials must be supplied via Ansible Vault, a variable file, or AAP credentials.
 
 By default this creates a **pending** CVP change control (`cvp_change_control_state: set`)
 and does **not** approve or execute it automatically. Approval and execution must be done
@@ -181,5 +181,5 @@ via `avd_default_bgp_as` in group variables.
 - Use inventory groups `dc_lisle` / `dc_omaha` to scope Job Templates by data center.
 - Surveys can override `target_vlan_ids` to scope a Job run, or pass
   `manual_vlan_id`, `manual_data_center`, and `manual_target_vrf` for ad-hoc runs.
-- Configure NetBox and CVP credentials via environment variables
-  (`NETBOX_API`, `NETBOX_TOKEN`, `CVP_SERVER`, `CVP_TOKEN`) or encrypted extra vars.
+- Configure NetBox and CVP credentials via Ansible Vault, scoped variable files,
+  or AAP custom credential types; do not rely on shell environment variables.

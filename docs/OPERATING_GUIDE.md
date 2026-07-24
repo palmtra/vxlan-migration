@@ -34,15 +34,34 @@ ansible-galaxy collection install -r collections/requirements.yml -p collections
 
 ### 2. Provide credentials
 
-Set environment variables or create an encrypted vault:
+Do **not** use shell environment variables. Credentials and integration endpoints
+should be supplied via an Ansible Vault file, a scoped variable file, or
+Ansible Automation Platform (AAP) credentials.
+
+Create an encrypted vault file, for example `inventory/group_vars/vault.yml`:
 
 ```bash
-export ANSIBLE_NET_USER=admin
-export ANSIBLE_NET_PASS=changeme
+ansible-vault create inventory/group_vars/vault.yml
 ```
 
-For production, replace the env lookups in `inventory/hosts.yml` with an
-Ansible Vault file such as `inventory/group_vars/vault.yml`.
+Example contents:
+
+```yaml
+---
+vault_ansible_user: admin
+vault_ansible_password: changeme
+netbox_url: https://netbox.example.com
+netbox_token: "<netbox-api-token>"
+cvp_url: https://cvp.example.com
+cvp_token: "<cvp-api-token>"
+```
+
+In AAP:
+
+- Attach a **Machine** or **Network** credential to the Job Template for
+  `ansible_user` / `ansible_password`.
+- Create custom credential types for NetBox (`netbox_url`, `netbox_token`) and
+  CVP (`cvp_url`, `cvp_token`) and attach them to the relevant Job Templates.
 
 ### 3. Discover current state (per data center)
 
@@ -62,13 +81,12 @@ The `workflow_vlan_to_vxlan.yml` playbook runs the complete migration from a
 ServiceNow change ticket.  For local testing, pass manual overrides:
 
 ```bash
+# Ensure credentials are provided via inventory/group_vars/vault.yml or AAP credentials first.
 ansible-playbook -i inventory/hosts.yml playbooks/workflow_vlan_to_vxlan.yml \
   --limit dc_lisle \
   -e manual_vlan_id=100 \
   -e manual_data_center=lisle \
   -e manual_target_vrf=default \
-  -e netbox_url=https://netbox.example.com \
-  -e netbox_token=<token> \
   -e cvp_apply_configlets=false
 
 # Same workflow using Arista AVD for EOS configlet generation
@@ -171,14 +189,13 @@ in CloudVision. To override, pass `-e cvp_change_control_state=approve_and_execu
 cvp_change_control_auto_execute_allowed=true` explicitly.
 
 # Generate and push to CVP
+# Ensure cvp_url and cvp_token are supplied via vault/AAP credentials first.
 ansible-playbook -i inventory/hosts.yml playbooks/deploy_to_cvp_avd.yml \
   --limit dc_lisle \
   -e target_vlan_id=100 \
   -e target_data_center=lisle \
   -e target_vrf=default \
-  -e cvp_apply_configlets=true \
-  -e cvp_server=https://cvp.example.com \
-  -e cvp_token=<token>
+  -e cvp_apply_configlets=true
 ```
 
 Set per-device BGP parameters as hostvars (`bgp_as`, `router_id`) or as

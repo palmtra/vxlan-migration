@@ -14,7 +14,8 @@
 #     -e cvp_apply_configlets=false
 #
 # When cvp_apply_configlets=true and CVP credentials are available, the
-# generated configlets are pushed to CVP as a change control precursor.
+# generated configlets are pushed to CVP as a pending change control.
+# Credentials must be supplied via Ansible Vault, a variable file, or AAP credentials.
 # -----------------------------------------------------------------------------
 
 - name: Generate and optionally deploy AVD-based CVP configlets
