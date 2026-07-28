@@ -13,6 +13,9 @@
 # Reports are written to reports/:
 #   - <hostname>_vlan_state.json (raw command output per host)
 #   - combined_vlan_state.csv (summary across all hosts)
+#
+# Device configuration backups are skipped by default. To capture one:
+#   ansible-playbook ... -e vlan_discovery_backup_enabled=true
 # -----------------------------------------------------------------------------
 
 - name: Discover VLAN state
@@ -20,5 +23,7 @@
   gather_facts: false
 
   roles:
-    - network_common
+    - role: network_common
+      vars:
+        network_backup_enabled: "{{ vlan_discovery_backup_enabled | default(false) }}"
     - vlan_discovery

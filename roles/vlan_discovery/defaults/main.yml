@@ -8,4 +8,8 @@ discovery_write_json: true
 discovery_write_csv: true
 discovery_write_markdown: true
 
+# Whether to capture a device configuration backup before discovery.
+# Discovery is read-only, so backups are skipped by default.
+vlan_discovery_backup_enabled: false
+
 # Raw command set is platform-specific in gather_*.yml files.
