@@ -2,8 +2,13 @@
 # -----------------------------------------------------------------------------
 # netbox_check defaults
 # -----------------------------------------------------------------------------
-# Read-only NetBox lookup.  The role verifies that the target VLAN exists in
-# NetBox before the migration proceeds.  VLAN creation / VRF mapping is a
+# Read-only SSOT lookup.  The role verifies that the target VLAN exists in
+# NetBox (primary SSOT) before the migration proceeds.  If NetBox itself is
+# unreachable (not configured, connection error, timeout, non-2xx response),
+# it falls back to the local VLAN registry (vlan_registry_file, see
+# inventory/group_vars/all/main.yml) as a secondary/backup SSOT.  A definitive
+# "not found" from a reachable NetBox is authoritative and does NOT trigger
+# the local-registry fallback.  VLAN creation / VRF mapping in NetBox is a
 # deferred improvement and is not performed here.
 # -----------------------------------------------------------------------------
 

@@ -159,7 +159,7 @@ flowchart LR
 | 0 | ServiceNow webhook → EDA rulebook | **Not implemented** — currently manual/extra-var invocation only |
 | 0 | Input validation | Implemented (`roles/servicenow_input`) |
 | 1 | NetBox lookup | Implemented (`roles/netbox_check`) |
-| 1 | Local registry fallback on NetBox failure | **Not implemented** — `netbox_check` fails closed with no fallback today |
+| 1 | Local registry fallback on NetBox failure | Implemented (`roles/netbox_check`) — falls back to `vars/vlan_registry.yml` only when NetBox itself is unreachable; a reachable NetBox's "not found" still fails closed |
 | 2 | Native EOS/NXOS discovery | Implemented (`roles/vlan_discovery`, `gather_eos.yml` / `gather_nxos.yml`) |
 | 2 | Readiness report (CSV/MD) | Implemented, now with DC/device-scoped timestamped paths |
 | 2 | External cleanup hand-off | Implemented (`roles/external_cleanup`) |
