@@ -1,0 +1,16 @@
+{# Rollback of the border-leaf VRF/VNI import configlet #}
+!
+interface Vxlan1
+{% if target_vrf is defined and target_vrf != 'default' %}
+ no vxlan vrf {{ target_vrf }} vni {{ _vlan_to_migrate.vni }}
+{% endif %}
+!
+router bgp {{ _device_bgp_asn | default(65000) }}
+{% if target_vrf is defined and target_vrf != 'default' %}
+ no vrf {{ target_vrf }}
+{% endif %}
+!
+{% if target_vrf is defined and target_vrf != 'default' %}
+no vrf instance {{ target_vrf }}
+!
+{% endif %}

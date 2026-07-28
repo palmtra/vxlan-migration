@@ -3,7 +3,7 @@
 !
 {% if target_vrf is defined and target_vrf != 'default' %}
 vrf instance {{ target_vrf }}
- rd {{ target_vrf | hash('md5')[:8] }}:{{ _vlan_to_migrate.vni }}
+ rd {{ (target_vrf | hash('md5'))[:8] }}:{{ _vlan_to_migrate.vni }}
 !
 {% endif %}
 router bgp {{ _device_bgp_asn | default(65000) }}

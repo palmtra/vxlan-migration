@@ -13,6 +13,12 @@ verify_vtep_reachability: true
 verify_vni_mapping: true
 verify_mac_arp_learning: true
 
+# When true (default), the VNI mapping check expects the VLAN<->VNI mapping
+# to be PRESENT (forward-migration semantics). Set to false when reusing this
+# same checklist to re-verify a rollback, where the mapping is expected to
+# have been removed instead.
+verify_expect_vlan_present: true
+
 # VLAN IDs to run the per-VLAN checks (VNI mapping + MAC/ARP learning)
 # against. Defaults to every VLAN selected for this run.
 verify_vlan_ids: "{{ _effective_vlans | default([]) | map(attribute='id') | list }}"

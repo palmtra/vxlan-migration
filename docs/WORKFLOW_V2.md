@@ -168,8 +168,8 @@ flowchart LR
 | 3 | EDA-driven approval wait/resume | **Not implemented** — currently the play just fails if not approved |
 | 4 | Execute change | Implemented |
 | 4 | Post-change verification (full checklist) | Implemented (`roles/post_change_verification`) — EVPN BGP peer status, underlay VTEP reachability, VLAN↔VNI mapping, and MAC/ARP learning, wired into Step 6 of `workflow_vlan_to_vxlan.yml` |
-| 4 | Rollback via CVP Change Control | **Not implemented** |
-| 4 | Re-verify after rollback | **Not implemented** |
+| 4 | Rollback via CVP Change Control | Implemented (`roles/cvp_rollback`) — overwrites the same configlet names with "no ..." rollback content and creates a new change control, gated by the same `cvp_apply_configlets`/explicit-approval-required safety checks as `roles/cvp_deploy` |
+| 4 | Re-verify after rollback | Implemented — Step 6's rescue path re-runs `roles/post_change_verification` with `verify_expect_vlan_present: false`, escalating only if rollback is disabled or re-verification still fails |
 | 4 | ServiceNow status callbacks | Implemented (`roles/servicenow_update`) — `workflow_vlan_to_vxlan.yml` wraps each phase in block/rescue and posts a work-note update on failure (escalated) and on overall success (complete); safely no-ops when ServiceNow isn't configured |
 
 This table is the punch list for turning v2 into working automation. Suggested build

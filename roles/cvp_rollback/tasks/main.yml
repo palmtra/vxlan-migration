@@ -1,10 +1,13 @@
 ---
 # -----------------------------------------------------------------------------
-# cvp_deploy
+# cvp_rollback
 # -----------------------------------------------------------------------------
-# Generates CVP configlets for Arista leaf / border-leaf switches where the
-# target VLAN was discovered, then optionally applies them via CVP and creates
-# a change control.
+# Reverts a VXLAN migration by overwriting the same CVP configlet names that
+# roles/cvp_deploy created with "no ..." rollback content, then creates a new
+# change control to push that update. Mirrors cvp_deploy's structure and
+# safety gating (cvp_apply_configlets, explicit-approval-required) so a
+# rollback in a non-applying (dry-run) environment only renders configlets
+# to disk for review, exactly like a forward deploy would.
 # -----------------------------------------------------------------------------
 
 - name: Ensure configlet build directory exists
@@ -17,7 +20,7 @@
   run_once: true
   check_mode: false
 
-- name: Load VLAN registry for CVP rendering
+- name: Load VLAN registry for rollback rendering
   ansible.builtin.include_vars:
     file: "{{ vlan_registry_file }}"
     name: vlan_registry
@@ -25,7 +28,7 @@
   become: false
   run_once: true
 
-- name: Compute VLAN to migrate for CVP
+- name: Compute VLAN being rolled back
   ansible.builtin.set_fact:
     _vlan_to_migrate: "{{ vlan_registry.vlans | selectattr('id', 'equalto', target_vlan_id | int) | first | default({}) }}"
   delegate_to: localhost
@@ -34,7 +37,7 @@
 
 - name: Fail if target VLAN is not in registry
   ansible.builtin.fail:
-    msg: "VLAN {{ target_vlan_id }} is not declared in the VLAN registry."
+    msg: "VLAN {{ target_vlan_id }} is not declared in the VLAN registry; cannot build rollback configlets."
   when: _vlan_to_migrate | length == 0
   delegate_to: localhost
   become: false
@@ -55,15 +58,15 @@
 
 - name: Fail if no Arista switches were discovered with the target VLAN
   ansible.builtin.fail:
-    msg: "No Arista EOS devices were found carrying VLAN {{ target_vlan_id }}. Aborting CVP deployment."
+    msg: "No Arista EOS devices were found carrying VLAN {{ target_vlan_id }}. Nothing to roll back."
   when: _cvp_target_devices | length == 0
   delegate_to: localhost
   become: false
   run_once: true
 
-- name: Render leaf VXLAN configlet per target device
+- name: Render leaf VXLAN rollback configlet per target device
   ansible.builtin.template:
-    src: leaf_vxlan_configlet.j2
+    src: leaf_vxlan_rollback_configlet.j2
     dest: "{{ cvp_configlet_build_dir }}/vxlan_vlan{{ target_vlan_id }}_{{ item }}.cfg"
     mode: '0644'
   loop: "{{ _cvp_target_devices }}"
@@ -74,9 +77,9 @@
   vars:
     _device_hostname: "{{ item }}"
 
-- name: Render border-leaf import configlet
+- name: Render border-leaf import rollback configlet
   ansible.builtin.template:
-    src: borderleaf_import_configlet.j2
+    src: borderleaf_import_rollback_configlet.j2
     dest: "{{ cvp_configlet_build_dir }}/vxlan_vlan{{ target_vlan_id }}_borderleaf_import.cfg"
     mode: '0644'
   delegate_to: localhost
@@ -85,7 +88,7 @@
   check_mode: false
   when: cvp_build_borderleaf_config | bool
 
-- name: Load generated leaf configlets
+- name: Load generated leaf rollback configlets
   ansible.builtin.set_fact:
     _cvp_leaf_configlets: "{{ _cvp_leaf_configlets | default({}) | combine({
       ('vxlan_vlan' + target_vlan_id | string + '_' + item): lookup('ansible.builtin.file',
@@ -97,7 +100,7 @@
   run_once: true
   check_mode: false
 
-- name: Load generated border-leaf import configlet
+- name: Load generated border-leaf rollback configlet
   ansible.builtin.set_fact:
     _cvp_borderleaf_configlet: "{{ lookup('ansible.builtin.file',
       cvp_configlet_build_dir + '/vxlan_vlan' + target_vlan_id | string + '_borderleaf_import.cfg') }}"
@@ -107,7 +110,7 @@
   check_mode: false
   when: cvp_build_borderleaf_config | bool
 
-- name: Build full CVP configlet map
+- name: Build full CVP rollback configlet map
   ansible.builtin.set_fact:
     _cvp_configlets: "{{ _cvp_leaf_configlets | default({}) | combine({
       ('vxlan_vlan' + target_vlan_id | string + '_borderleaf_import'):
@@ -118,18 +121,18 @@
   run_once: true
   check_mode: false
 
-- name: Enforce explicit approval before any auto-executing CVP change control
+- name: Enforce explicit approval before any auto-executing rollback change control
   ansible.builtin.fail:
     msg: >-
       cvp_change_control_state is set to '{{ cvp_change_control_state }}' which would
       auto-execute on CVP. Set cvp_change_control_auto_execute_allowed=true and confirm
-      the change control has been reviewed before proceeding.
+      the rollback change control has been reviewed before proceeding.
   when:
     - cvp_apply_configlets | bool
     - cvp_change_control_state in ['approve', 'execute', 'approve_and_execute', 'schedule_and_approve']
     - not cvp_change_control_auto_execute_allowed | bool
 
-- name: Apply CVP configlets (only when cvp_apply_configlets is true)
+- name: Overwrite CVP configlets with rollback content (only when cvp_apply_configlets is true)
   arista.cvp.cv_configlet_v3:
     cvp_server: "{{ cvp_server }}"
     cvp_token: "{{ cvp_token }}"
@@ -143,61 +146,16 @@
     - cvp_server | length > 0
     - cvp_token | length > 0
 
-- name: Assign configlets to target devices (only when cvp_apply_configlets is true)
-  arista.cvp.cv_device_v3:
-    cvp_server: "{{ cvp_server }}"
-    cvp_token: "{{ cvp_token }}"
-    devices:
-      - fqdn: "{{ item }}"
-        configlets:
-          - "vxlan_vlan{{ target_vlan_id }}_{{ item }}"
-  loop: "{{ _cvp_target_devices }}"
-  delegate_to: localhost
-  become: false
-  run_once: true
-  when:
-    - cvp_apply_configlets | bool
-    - cvp_server | length > 0
-    - cvp_token | length > 0
-
-- name: Identify border leaf devices
-  ansible.builtin.set_fact:
-    _cvp_borderleaf_devices: "{{ groups['eos_devices'] | default([]) |
-      select('match', cvp_borderleaf_regex) | list }}"
-  delegate_to: localhost
-  become: false
-  run_once: true
-  check_mode: false
-
-- name: Assign border-leaf import configlet to border leafs (only when applying)
-  arista.cvp.cv_device_v3:
-    cvp_server: "{{ cvp_server }}"
-    cvp_token: "{{ cvp_token }}"
-    devices:
-      - fqdn: "{{ item }}"
-        configlets:
-          - "vxlan_vlan{{ target_vlan_id }}_borderleaf_import"
-  loop: "{{ _cvp_borderleaf_devices }}"
-  delegate_to: localhost
-  become: false
-  run_once: true
-  when:
-    - cvp_apply_configlets | bool
-    - cvp_build_borderleaf_config | bool
-    - _cvp_borderleaf_devices | length > 0
-    - cvp_server | length > 0
-    - cvp_token | length > 0
-
-- name: Create CVP change control (only when cvp_apply_configlets is true)
+- name: Create CVP rollback change control (only when cvp_apply_configlets is true)
   arista.cvp.cv_change_control_v3:
     cvp_server: "{{ cvp_server }}"
     cvp_token: "{{ cvp_token }}"
     state: "{{ cvp_change_control_state }}"
-    name: "{{ cvp_change_control_name }}"
-    notes: "{{ cvp_change_control_notes }}"
+    name: "{{ cvp_rollback_change_control_name }}"
+    notes: "{{ cvp_rollback_change_control_notes }}"
     activities:
       - action: "Configlet Push"
-        name: "Apply VXLAN VLAN {{ target_vlan_id }} configlets"
+        name: "Rollback VXLAN VLAN {{ target_vlan_id }} configlets"
         arguments:
           - "{{ _cvp_configlets.keys() | list }}"
   delegate_to: localhost
@@ -208,10 +166,10 @@
     - cvp_server | length > 0
     - cvp_token | length > 0
 
-- name: Report generated CVP configlets
+- name: Report generated rollback configlets
   ansible.builtin.debug:
     msg:
-      - "Generated CVP configlets for: {{ _cvp_target_devices }}"
+      - "Generated rollback configlets for: {{ _cvp_target_devices }}"
       - "Configlet directory: {{ cvp_configlet_build_dir }}"
       - "Applied to CVP: {{ cvp_apply_configlets | bool }}"
   delegate_to: localhost

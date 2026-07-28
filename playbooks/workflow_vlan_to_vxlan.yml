@@ -151,21 +151,64 @@
               - "Escalating to manual troubleshooting; rollback via CVP Change Control is a deferred improvement (see docs/WORKFLOW_V2.md)."
           when: not _verification_passed | bool
       rescue:
-        - name: Notify ServiceNow that post-change verification failed (escalation)
-          ansible.builtin.include_role:
-            name: servicenow_update
-          vars:
-            snow_status_message: >-
-              VLAN {{ hostvars['localhost']['target_vlan_id'] }} migration escalated:
-              post-change verification failed on {{ inventory_hostname }}.
-              {{ ansible_failed_result.msg | default('see task output for details') }}
-              Rollback via CVP Change Control is a deferred improvement.
-            snow_ticket_state: "escalated"
-          run_once: true
+        - name: Attempt rollback via CVP Change Control, then re-verify
+          block:
+            - name: Skip rollback if it is disabled for this run
+              ansible.builtin.fail:
+                msg: "auto_rollback_on_verification_failure is false; skipping rollback and escalating directly."
+              when: not auto_rollback_on_verification_failure | bool
 
-        - name: Re-raise the original failure
-          ansible.builtin.fail:
-            msg: "{{ ansible_failed_result.msg | default('Step 6 failed on ' + inventory_hostname) }}"
+            - name: Roll back the VXLAN migration configlets via CVP Change Control
+              ansible.builtin.include_role:
+                name: cvp_rollback
+
+            - name: Re-run the full verification checklist against the restored state
+              ansible.builtin.include_role:
+                name: post_change_verification
+              vars:
+                verify_expect_vlan_present: false
+                verify_mac_arp_learning: false
+
+            - name: Fail if rollback re-verification did not pass
+              ansible.builtin.fail:
+                msg:
+                  - "Rollback re-verification failed on {{ inventory_hostname }}."
+                  - "{{ _verification_results | dict2items | selectattr('value.passed', 'equalto', false) | map(attribute='key') | list }}"
+              when: not _verification_passed | bool
+
+            - name: Notify ServiceNow that the migration was rolled back successfully
+              ansible.builtin.include_role:
+                name: servicenow_update
+              vars:
+                snow_status_message: >-
+                  VLAN {{ hostvars['localhost']['target_vlan_id'] }} migration failed post-change
+                  verification and was rolled back successfully via CVP Change Control on
+                  {{ inventory_hostname }}. Original failure: {{ ansible_failed_result.msg | default('see task output') }}
+                snow_ticket_state: "rolled_back"
+              run_once: true
+
+            - name: Mark the run as unsuccessful even though rollback succeeded
+              ansible.builtin.fail:
+                msg: >-
+                  VLAN {{ hostvars['localhost']['target_vlan_id'] }} migration was rolled back
+                  successfully after a failed post-change verification on {{ inventory_hostname }}.
+                  The migration did not proceed; see ServiceNow for details.
+          rescue:
+            - name: Notify ServiceNow that verification failed and rollback did not resolve it (escalation)
+              ansible.builtin.include_role:
+                name: servicenow_update
+              vars:
+                snow_status_message: >-
+                  VLAN {{ hostvars['localhost']['target_vlan_id'] }} migration escalated:
+                  post-change verification failed on {{ inventory_hostname }} and either rollback
+                  was disabled/failed or rollback re-verification did not pass.
+                  {{ ansible_failed_result.msg | default('see task output for details') }}
+                snow_ticket_state: "escalated"
+              run_once: true
+
+            - name: Re-raise the original failure
+              ansible.builtin.fail:
+                msg: "{{ ansible_failed_result.msg | default('Step 6 failed on ' + inventory_hostname) }}"
 
     # Only reached by hosts whose block above succeeded; hosts that failed and
     # were re-raised in rescue are dropped from ansible_play_hosts by Ansible,

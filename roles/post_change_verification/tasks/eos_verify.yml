@@ -107,8 +107,15 @@
           {{ (_vtep_unreachable | default([]) | length > 0)
              | ternary('Unreachable VTEPs: ' ~ (_vtep_unreachable | default([]) | join(', ')), 'All remote VTEPs reachable') }}
       vni_mapping:
-        passed: "{{ (not verify_vni_mapping | bool) or (_per_vlan_verification | default([]) | rejectattr('vni_mapped') | list | length == 0) }}"
-        detail: "VLANs missing VNI mapping: {{ _per_vlan_verification | default([]) | rejectattr('vni_mapped') | map(attribute='vlan_id') | list }}"
+        passed: >-
+          {{ (not verify_vni_mapping | bool)
+             or (verify_expect_vlan_present | bool
+                 | ternary(_per_vlan_verification | default([]) | rejectattr('vni_mapped') | list | length == 0,
+                            _per_vlan_verification | default([]) | selectattr('vni_mapped') | list | length == 0)) }}
+        detail: >-
+          {{ verify_expect_vlan_present | bool
+             | ternary('VLANs missing VNI mapping: ' ~ (_per_vlan_verification | default([]) | rejectattr('vni_mapped') | map(attribute='vlan_id') | list),
+                        'VLANs still VNI-mapped after rollback: ' ~ (_per_vlan_verification | default([]) | selectattr('vni_mapped') | map(attribute='vlan_id') | list)) }}
       mac_arp_learning:
         passed: "{{ (not verify_mac_arp_learning | bool) or (_per_vlan_verification | default([]) | rejectattr('mac_or_arp_learned') | list | length == 0) }}"
         detail: "VLANs with no MAC/ARP learning: {{ _per_vlan_verification | default([]) | rejectattr('mac_or_arp_learned') | map(attribute='vlan_id') | list }}"

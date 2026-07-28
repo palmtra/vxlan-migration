@@ -28,6 +28,12 @@ target_vlan_ids: []
 target_actions:
   - migrate
 
+# When true, a failed post-change verification in workflow_vlan_to_vxlan.yml
+# automatically attempts a rollback via roles/cvp_rollback and re-verifies
+# before escalating. When false, verification failure escalates immediately
+# without attempting a rollback.
+auto_rollback_on_verification_failure: true
+
 # When true, use arista.avd.eos_cli_config_gen for EOS configlet generation
 # instead of the legacy custom Jinja templates in roles/cvp_deploy.
 use_avd: false

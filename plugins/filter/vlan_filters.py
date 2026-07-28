@@ -147,19 +147,10 @@ def build_vlan_verification(vlan_id, outputs):
     }
 
 
-def has_vlan_present(discovery_record):
-    """Return True if a per-host discovery record has any VLAN present."""
-    for vlan in discovery_record.get("per_vlan", []):
-        if vlan.get("vlan_present"):
-            return True
-    return False
-
-
 class FilterModule(object):
     def filters(self):
         return {
             "select_vlans_for_run": select_vlans_for_run,
             "extract_vlan_discovery": extract_vlan_discovery,
             "build_vlan_verification": build_vlan_verification,
-            "has_vlan_present": has_vlan_present,
         }

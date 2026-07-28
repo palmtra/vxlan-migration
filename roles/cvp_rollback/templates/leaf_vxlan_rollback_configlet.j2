@@ -1,0 +1,13 @@
+{# Rollback of the Arista leaf VXLAN migration configlet #}
+{# Applied to: {{ _device_hostname }} #}
+!
+interface {{ eos_vxlan_interface | default('Vxlan1') }}
+ no vxlan vlan {{ target_vlan_id }} vni {{ _vlan_to_migrate.vni }}
+!
+no vlan {{ target_vlan_id }}
+!
+{% if evpn_enabled | default(false) | bool %}
+router bgp {{ _device_bgp_asn | default(65000) }}
+ no vlan {{ target_vlan_id }}
+!
+{% endif %}
