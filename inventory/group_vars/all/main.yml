@@ -47,6 +47,15 @@ netbox_token: ""
 cvp_url: ""
 cvp_token: ""
 
+# ServiceNow change-ticket integration used by roles/servicenow_input (intake)
+# and roles/servicenow_update (status callbacks). snow_ticket_sys_id is
+# normally injected per-run by the ServiceNow webhook payload, not set here.
+snow_url: ""
+snow_username: ""
+snow_password: ""
+snow_table: "change_request"
+snow_enable_callbacks: true
+
 # Connection defaults for network devices
 ansible_connection: network_cli
 ansible_become: false

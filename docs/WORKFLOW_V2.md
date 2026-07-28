@@ -170,7 +170,7 @@ flowchart LR
 | 4 | Post-change verification (full checklist) | Implemented (`roles/post_change_verification`) — EVPN BGP peer status, underlay VTEP reachability, VLAN↔VNI mapping, and MAC/ARP learning, wired into Step 6 of `workflow_vlan_to_vxlan.yml` |
 | 4 | Rollback via CVP Change Control | **Not implemented** |
 | 4 | Re-verify after rollback | **Not implemented** |
-| 4 | ServiceNow status callbacks | **Not implemented** |
+| 4 | ServiceNow status callbacks | Implemented (`roles/servicenow_update`) — `workflow_vlan_to_vxlan.yml` wraps each phase in block/rescue and posts a work-note update on failure (escalated) and on overall success (complete); safely no-ops when ServiceNow isn't configured |
 
 This table is the punch list for turning v2 into working automation. Suggested build
 order: (1) NetBox fallback, (2) full verification checklist, (3) ServiceNow callbacks,

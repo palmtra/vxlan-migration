@@ -10,6 +10,7 @@
 snow_vlan_id: ""
 snow_data_center: ""
 snow_target_vrf: ""
+snow_ticket_sys_id: ""
 
 # Manual overrides (useful for CLI testing)
 manual_vlan_id: ""

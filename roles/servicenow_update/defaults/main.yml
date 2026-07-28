@@ -1,0 +1,30 @@
+---
+# -----------------------------------------------------------------------------
+# servicenow_update defaults
+# -----------------------------------------------------------------------------
+# Posts a status/work-note update back to the ServiceNow change ticket that
+# triggered this workflow.  Safe to include unconditionally: if ServiceNow
+# is not configured (no URL/credentials/ticket id) or snow_enable_callbacks
+# is false, the update is skipped with a debug note instead of failing.
+# -----------------------------------------------------------------------------
+
+# Supply via Ansible Vault, a variable file, or AAP credentials.
+snow_url: ""
+snow_username: ""
+snow_password: ""
+snow_validate_certs: true
+snow_timeout: 30
+
+# ServiceNow table containing the change ticket, and the sys_id of the
+# specific record to update (normalized by roles/servicenow_input into
+# hostvars['localhost']['target_ticket_sys_id']).
+snow_table: "change_request"
+snow_ticket_sys_id: ""
+
+# Master switch. Set false to disable all ServiceNow callbacks (e.g. in
+# fully offline/local testing) without having to unset credentials.
+snow_enable_callbacks: true
+
+# Optional ServiceNow state value to set alongside the work note
+# (leave unset/omit to only append a work note).
+snow_ticket_state: ""

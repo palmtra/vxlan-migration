@@ -1,0 +1,69 @@
+---
+# -----------------------------------------------------------------------------
+# servicenow_update
+# -----------------------------------------------------------------------------
+# Callers must set snow_status_message. snow_ticket_state is optional.
+# -----------------------------------------------------------------------------
+
+- name: Fail if caller did not provide a status message
+  ansible.builtin.fail:
+    msg: "servicenow_update requires snow_status_message to be set by the caller."
+  when: snow_status_message | default('', true) | length == 0
+  delegate_to: localhost
+  become: false
+  run_once: true
+
+- name: Determine whether ServiceNow callbacks are configured and enabled
+  ansible.builtin.set_fact:
+    _snow_configured: >-
+      {{ snow_enable_callbacks | bool
+         and (snow_url | default('', true) | length > 0)
+         and (snow_username | default('', true) | length > 0)
+         and (snow_password | default('', true) | length > 0)
+         and (snow_ticket_sys_id | default('', true) | length > 0) }}
+  delegate_to: localhost
+  become: false
+  run_once: true
+
+- name: Skip ServiceNow callback (not configured or disabled)
+  ansible.builtin.debug:
+    msg: "ServiceNow callback skipped (not configured/enabled): {{ snow_status_message }}"
+  delegate_to: localhost
+  become: false
+  run_once: true
+  when: not _snow_configured
+
+- name: Post status update to the ServiceNow change ticket
+  ansible.builtin.uri:
+    url: "{{ snow_url }}/api/now/table/{{ snow_table }}/{{ snow_ticket_sys_id }}"
+    method: PATCH
+    url_username: "{{ snow_username }}"
+    url_password: "{{ snow_password }}"
+    force_basic_auth: true
+    validate_certs: "{{ snow_validate_certs | bool }}"
+    timeout: "{{ snow_timeout | int }}"
+    body_format: json
+    body:
+      work_notes: "{{ snow_status_message }}"
+      state: "{{ snow_ticket_state | default(omit, true) }}"
+    status_code:
+      - 200
+      - 201
+  register: _snow_update_result
+  delegate_to: localhost
+  become: false
+  run_once: true
+  when: _snow_configured
+  failed_when: false
+  changed_when: _snow_update_result.status | default(0) in [200, 201]
+
+- name: Report ServiceNow callback outcome
+  ansible.builtin.debug:
+    msg: >-
+      {{ (_snow_update_result.status | default(0) in [200, 201])
+         | ternary('ServiceNow ticket updated: ' ~ snow_status_message,
+                    'ServiceNow update FAILED (status=' ~ (_snow_update_result.status | default('n/a')) ~ '): ' ~ snow_status_message) }}
+  delegate_to: localhost
+  become: false
+  run_once: true
+  when: _snow_configured
