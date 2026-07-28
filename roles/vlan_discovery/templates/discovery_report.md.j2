@@ -16,13 +16,15 @@ Generated: {{ hostvars[ansible_play_hosts | first]._vlan_discovery.timestamp | d
 ## Detailed Per-Host Findings
 
 {% for host in ansible_play_hosts %}
-### {{ hostvars[host]._vlan_discovery.hostname }}
+{% set d = hostvars[host]._vlan_discovery | default(None) %}
+{% if d %}
+### {{ d.hostname }}
 
-- **Data center:** {{ hostvars[host]._vlan_discovery.data_center }}
-- **OS family:** {{ hostvars[host]._vlan_discovery.os_family }}
-- **Timestamp:** {{ hostvars[host]._vlan_discovery.timestamp }}
+- **Data center:** {{ d.data_center }}
+- **OS family:** {{ d.os_family }}
+- **Timestamp:** {{ d.timestamp }}
 
-{% for vlan in hostvars[host]._vlan_discovery.per_vlan | default([]) %}
+{% for vlan in d.per_vlan | default([]) %}
 #### VLAN {{ vlan.vlan_id }} ({{ vlan.vlan_name }})
 
 - **Present on device:** {{ 'yes' if vlan.vlan_present else 'no' }}
@@ -50,6 +52,7 @@ Generated: {{ hostvars[ansible_play_hosts | first]._vlan_discovery.timestamp | d
 ```
 
 {% endfor %}
+{% endif %}
 {% endfor %}
 
 ## External Cleanup Hand-off
