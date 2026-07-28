@@ -1,0 +1,118 @@
+---
+# -----------------------------------------------------------------------------
+# EOS post-change verification checks
+# -----------------------------------------------------------------------------
+
+# --- EVPN BGP peer status ----------------------------------------------------
+
+- name: EOS — show bgp evpn summary
+  ansible.netcommon.cli_command:
+    command: show bgp evpn summary
+  register: _eos_bgp_evpn
+  check_mode: false
+  changed_when: false
+  failed_when: false
+  when: verify_bgp_evpn | bool
+
+- name: EOS — count established EVPN peers
+  ansible.builtin.set_fact:
+    _evpn_established_count: "{{ (_eos_bgp_evpn.stdout | default('')) | regex_findall('Estab') | length }}"
+  when: verify_bgp_evpn | bool
+
+# --- VTEP reachability (underlay) --------------------------------------------
+
+- name: EOS — show vxlan vtep (discover remote VTEPs learned via EVPN)
+  ansible.netcommon.cli_command:
+    command: show vxlan vtep
+  register: _eos_vxlan_vtep
+  check_mode: false
+  changed_when: false
+  failed_when: false
+  when: verify_vtep_reachability | bool
+
+- name: EOS — extract remote VTEP IPv4 addresses
+  ansible.builtin.set_fact:
+    _remote_vteps: "{{ (_eos_vxlan_vtep.stdout | default('')) | regex_findall('\\b\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\b') | unique }}"
+  when: verify_vtep_reachability | bool
+
+- name: EOS — ping each remote VTEP over the underlay
+  ansible.netcommon.cli_command:
+    command: "ping {{ item }} source {{ vtep_source_interface }}"
+  loop: "{{ _remote_vteps | default([]) }}"
+  loop_control:
+    label: "{{ item }}"
+  register: _eos_vtep_ping
+  check_mode: false
+  changed_when: false
+  failed_when: false
+  when: verify_vtep_reachability | bool
+
+- name: EOS — identify unreachable VTEPs
+  ansible.builtin.set_fact:
+    _vtep_unreachable: "{{ _eos_vtep_ping.results | default([]) | rejectattr('stdout', 'search', '[1-9][0-9]*\\s+received|bytes from') | map(attribute='item') | list }}"
+  when: verify_vtep_reachability | bool
+
+# --- VNI mapping + MAC/ARP learning, per VLAN --------------------------------
+
+- name: EOS — show vxlan vlan-to-vni
+  ansible.netcommon.cli_command:
+    command: show vxlan vlan-to-vni
+  register: _eos_vxlan_vni
+  check_mode: false
+  changed_when: false
+  failed_when: false
+  when: verify_vni_mapping | bool
+
+- name: EOS — show MAC address table for verified VLANs
+  ansible.netcommon.cli_command:
+    command: "show mac address-table vlan {{ item }}"
+  loop: "{{ verify_vlan_ids }}"
+  loop_control:
+    label: "{{ item }}"
+  register: _eos_mac_verify
+  check_mode: false
+  changed_when: false
+  failed_when: false
+  when: verify_mac_arp_learning | bool
+
+- name: EOS — show ARP table for target VRF
+  ansible.netcommon.cli_command:
+    command: "show ip arp vrf {{ target_vrf | default('default') }}"
+  register: _eos_arp_verify
+  check_mode: false
+  changed_when: false
+  failed_when: false
+  when: verify_mac_arp_learning | bool
+
+- name: EOS — assemble per-VLAN VNI/MAC/ARP verification results
+  ansible.builtin.set_fact:
+    _per_vlan_verification: "{{ verify_vlan_ids | map('build_vlan_verification', {
+        'vni_output': _eos_vxlan_vni.stdout | default(''),
+        'mac_outputs': _eos_mac_verify.results | default([]),
+        'arp_output': _eos_arp_verify.stdout | default(''),
+        'registry': vlan_registry.vlans | default([])
+      }) | list }}"
+
+# --- Aggregate result ---------------------------------------------------------
+
+- name: EOS — assemble overall verification result
+  ansible.builtin.set_fact:
+    _verification_results:
+      bgp_evpn:
+        passed: "{{ (not verify_bgp_evpn | bool) or (_evpn_established_count | default(0) | int > 0) }}"
+        detail: "{{ _evpn_established_count | default(0) }} EVPN peer(s) Established"
+      vtep_reachability:
+        passed: "{{ (not verify_vtep_reachability | bool) or (_vtep_unreachable | default([]) | length == 0) }}"
+        detail: >-
+          {{ (_vtep_unreachable | default([]) | length > 0)
+             | ternary('Unreachable VTEPs: ' ~ (_vtep_unreachable | default([]) | join(', ')), 'All remote VTEPs reachable') }}
+      vni_mapping:
+        passed: "{{ (not verify_vni_mapping | bool) or (_per_vlan_verification | default([]) | rejectattr('vni_mapped') | list | length == 0) }}"
+        detail: "VLANs missing VNI mapping: {{ _per_vlan_verification | default([]) | rejectattr('vni_mapped') | map(attribute='vlan_id') | list }}"
+      mac_arp_learning:
+        passed: "{{ (not verify_mac_arp_learning | bool) or (_per_vlan_verification | default([]) | rejectattr('mac_or_arp_learned') | list | length == 0) }}"
+        detail: "VLANs with no MAC/ARP learning: {{ _per_vlan_verification | default([]) | rejectattr('mac_or_arp_learned') | map(attribute='vlan_id') | list }}"
+
+- name: Determine overall verification pass/fail
+  ansible.builtin.set_fact:
+    _verification_passed: "{{ _verification_results.values() | selectattr('passed', 'equalto', false) | list | length == 0 }}"

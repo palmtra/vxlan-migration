@@ -99,6 +99,54 @@ def extract_vlan_discovery(vlan, outputs):
     }
 
 
+def build_vlan_verification(vlan_id, outputs):
+    """Build a post-change verification summary for a single VLAN.
+
+    Args:
+        vlan_id: the VLAN ID being verified
+        outputs: dict with keys:
+            vni_output: raw 'show vxlan vlan-to-vni' output
+            mac_outputs: list of result dicts from the looped MAC table commands
+            arp_output: raw ARP table output for the target VRF
+            registry: list of VLAN dictionaries from the canonical registry
+                      (used to look up the expected VNI for this VLAN)
+
+    Returns:
+        Dictionary with vlan_id, vni, vni_mapped, and mac_or_arp_learned.
+    """
+    vni_output = outputs.get("vni_output", "")
+    arp_output = outputs.get("arp_output", "")
+    registry = outputs.get("registry", []) or []
+
+    vni = None
+    for entry in registry:
+        if _str_equal(entry.get("id"), vlan_id):
+            vni = entry.get("vni")
+            break
+
+    vni_mapped = False
+    if vni is not None:
+        vni_mapped = _vlan_present(vlan_id, vni_output) and _vlan_present(vni, vni_output)
+
+    mac_outputs = outputs.get("mac_outputs", []) or []
+    mac_output = ""
+    for entry in mac_outputs:
+        if _str_equal(entry.get("item"), vlan_id):
+            mac_output = entry.get("stdout", "")
+            break
+
+    mac_pattern = r"([0-9a-fA-F]{2}[:.\-]){5}[0-9a-fA-F]{2}"
+    mac_learned = bool(re.search(mac_pattern, mac_output))
+    arp_learned = bool(re.search(r"\d+\.\d+\.\d+\.\d+", arp_output))
+
+    return {
+        "vlan_id": vlan_id,
+        "vni": vni,
+        "vni_mapped": vni_mapped,
+        "mac_or_arp_learned": mac_learned or arp_learned,
+    }
+
+
 def has_vlan_present(discovery_record):
     """Return True if a per-host discovery record has any VLAN present."""
     for vlan in discovery_record.get("per_vlan", []):
@@ -112,5 +160,6 @@ class FilterModule(object):
         return {
             "select_vlans_for_run": select_vlans_for_run,
             "extract_vlan_discovery": extract_vlan_discovery,
+            "build_vlan_verification": build_vlan_verification,
             "has_vlan_present": has_vlan_present,
         }

@@ -1,0 +1,18 @@
+---
+# -----------------------------------------------------------------------------
+# post_change_verification defaults
+# -----------------------------------------------------------------------------
+# Full post-change verification checklist for a VLAN -> VXLAN/EVPN migration.
+# Only Arista EOS is currently supported, matching the rest of the VXLAN
+# migration tooling in this repo (see roles/avd_vxlan_config, roles/cvp_deploy).
+# -----------------------------------------------------------------------------
+
+# Individually toggleable so a caller can narrow the checklist if needed.
+verify_bgp_evpn: true
+verify_vtep_reachability: true
+verify_vni_mapping: true
+verify_mac_arp_learning: true
+
+# VLAN IDs to run the per-VLAN checks (VNI mapping + MAC/ARP learning)
+# against. Defaults to every VLAN selected for this run.
+verify_vlan_ids: "{{ _effective_vlans | default([]) | map(attribute='id') | list }}"

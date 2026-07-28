@@ -82,27 +82,24 @@
   hosts: network_devices
   gather_facts: false
 
+  vars:
+    target_vrf: "{{ hostvars['localhost']['target_vrf'] | default('default') }}"
+    verify_vlan_ids:
+      - "{{ hostvars['localhost']['target_vlan_id'] | int }}"
+
+  roles:
+    - post_change_verification
+
   tasks:
-    - name: Compute expected VNI for validation
-      ansible.builtin.set_fact:
-        _target_vlan_id: "{{ hostvars['localhost']['target_vlan_id'] | int }}"
-        _target_vni: "{{ (vlan_registry.vlans | selectattr('id', 'equalto', hostvars['localhost']['target_vlan_id'] | int) | first | default({})).vni | default('') }}"
+    - name: Report post-change verification results
+      ansible.builtin.debug:
+        msg: "{{ _verification_results }}"
 
-    - name: Validate EOS VXLAN vlan-to-vni mapping
-      ansible.netcommon.cli_command:
-        command: show vxlan vlan-to-vni
-      register: _eos_vxlan_validate
-      check_mode: false
-      changed_when: false
-      failed_when: false
-      when: network_os_family == 'eos'
-
-    - name: Assert EOS VLAN/VNI present
+    - name: Fail closed if post-change verification did not pass
       ansible.builtin.fail:
-        msg: "VXLAN mapping for VLAN {{ _target_vlan_id }} / VNI {{ _target_vni }} not found on {{ inventory_hostname }}"
-      when:
-        - network_os_family == 'eos'
-        - _target_vni | string | length > 0
-        - _target_vlan_id | string not in (_eos_vxlan_validate.stdout | default(''))
-          or _target_vni | string not in (_eos_vxlan_validate.stdout | default(''))
+        msg:
+          - "Post-change verification failed on {{ inventory_hostname }}."
+          - "{{ _verification_results | dict2items | selectattr('value.passed', 'equalto', false) | map(attribute='key') | list }}"
+          - "Escalating to manual troubleshooting; rollback via CVP Change Control is a deferred improvement (see docs/WORKFLOW_V2.md)."
+      when: not _verification_passed | bool
 

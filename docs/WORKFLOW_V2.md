@@ -167,7 +167,7 @@ flowchart LR
 | 3 | CVP push + Change Control (pending state) | Implemented, with explicit-approval enforcement |
 | 3 | EDA-driven approval wait/resume | **Not implemented** — currently the play just fails if not approved |
 | 4 | Execute change | Implemented |
-| 4 | Post-change verification (full checklist) | **Partially implemented** — only VLAN/VNI mapping check exists today |
+| 4 | Post-change verification (full checklist) | Implemented (`roles/post_change_verification`) — EVPN BGP peer status, underlay VTEP reachability, VLAN↔VNI mapping, and MAC/ARP learning, wired into Step 6 of `workflow_vlan_to_vxlan.yml` |
 | 4 | Rollback via CVP Change Control | **Not implemented** |
 | 4 | Re-verify after rollback | **Not implemented** |
 | 4 | ServiceNow status callbacks | **Not implemented** |

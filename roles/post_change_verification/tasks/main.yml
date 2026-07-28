@@ -1,0 +1,27 @@
+---
+# -----------------------------------------------------------------------------
+# post_change_verification
+# -----------------------------------------------------------------------------
+# Full post-change verification checklist for a VLAN -> VXLAN/EVPN migration:
+#   - EVPN BGP peer status established
+#   - VTEP reachability (underlay ping to remote VTEPs discovered via EVPN)
+#   - VXLAN VNI status / VLAN<->VNI mapping present
+#   - MAC/ARP learning observed for the migrated VLAN(s)
+#
+# Sets:
+#   _verification_results: per-check {passed, detail} dict
+#   _verification_passed:  overall bool (AND of all enabled checks)
+# -----------------------------------------------------------------------------
+
+- name: Include EOS post-change verification checks
+  ansible.builtin.include_tasks: eos_verify.yml
+  when: network_os_family == 'eos'
+
+- name: Default verification result for unsupported platforms
+  ansible.builtin.set_fact:
+    _verification_results:
+      platform_supported:
+        passed: false
+        detail: "Post-change verification is not implemented for os family '{{ network_os_family }}'."
+    _verification_passed: false
+  when: network_os_family != 'eos'
