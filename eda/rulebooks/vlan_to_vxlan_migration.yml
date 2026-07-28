@@ -1,0 +1,100 @@
+---
+# -----------------------------------------------------------------------------
+# vlan_to_vxlan_migration.yml
+# -----------------------------------------------------------------------------
+# Event-Driven Ansible rulebook implementing Phase 0 (ServiceNow intake) and
+# the approval-wait/resume design from docs/WORKFLOW_V2.md:
+#
+#   - A webhook from ServiceNow (ticket created/approved) launches Steps 1-5
+#     of the migration (playbooks/workflow_vlan_to_vxlan_deploy.yml), which
+#     stops after pushing configlets to CVP and creating a PENDING change
+#     control.
+#   - A second webhook, fired when CVP reports that change control as
+#     approved/executed, resumes the workflow at Step 6
+#     (playbooks/workflow_vlan_to_vxlan_verify.yml) using the VLAN ID to look
+#     up the state persisted by the deploy stage under
+#     reports/workflow_state/.
+#
+# This deliberately avoids having a single long-running playbook process
+# poll or block while waiting for a human to approve the change control in
+# CVP -- the deploy stage returns immediately after creating the change
+# control, and the rulebook's second rule resumes the workflow only when the
+# approval event actually arrives.
+#
+# Run with (requires the ansible-rulebook package and the ansible.eda
+# collection to be installed):
+#   ansible-rulebook --rulebook eda/rulebooks/vlan_to_vxlan_migration.yml \
+#     -i inventory/hosts.yml --vars eda/extra_vars.yml
+#
+# Webhook payload contracts:
+#   ServiceNow intake (POST /vlan_migration):
+#     {"snow_vlan_id": 100, "snow_data_center": "lisle",
+#      "snow_target_vrf": "default", "snow_ticket_sys_id": "<sys_id>"}
+#   CVP change-control approval (POST /cvp_approval):
+#     {"vlan_id": 100, "change_control_status": "approved"}
+# -----------------------------------------------------------------------------
+
+- name: VLAN to VXLAN migration - ServiceNow intake
+  hosts: localhost
+
+  sources:
+    - ansible.eda.webhook:
+        host: 0.0.0.0
+        port: 5000
+        endpoint: vlan_migration
+
+  rules:
+    - name: Launch deploy stage on a valid ServiceNow migration request
+      condition: >-
+        event.payload.snow_vlan_id is defined and
+        event.payload.snow_data_center is defined and
+        event.payload.snow_target_vrf is defined
+      action:
+        run_playbook:
+          name: playbooks/workflow_vlan_to_vxlan_deploy.yml
+          extra_vars:
+            snow_vlan_id: "{{ event.payload.snow_vlan_id }}"
+            snow_data_center: "{{ event.payload.snow_data_center }}"
+            snow_target_vrf: "{{ event.payload.snow_target_vrf }}"
+            snow_ticket_sys_id: "{{ event.payload.snow_ticket_sys_id | default('') }}"
+
+    - name: Reject an incomplete ServiceNow migration request
+      condition: >-
+        event.payload.snow_vlan_id is not defined or
+        event.payload.snow_data_center is not defined or
+        event.payload.snow_target_vrf is not defined
+      action:
+        debug:
+          msg: >-
+            Rejected incomplete migration request payload: {{ event.payload }}.
+            Required fields: snow_vlan_id, snow_data_center, snow_target_vrf.
+
+- name: VLAN to VXLAN migration - CVP change control approval resume
+  hosts: localhost
+
+  sources:
+    - ansible.eda.webhook:
+        host: 0.0.0.0
+        port: 5001
+        endpoint: cvp_approval
+
+  rules:
+    - name: Resume verification once the change control is approved/executed
+      condition: >-
+        event.payload.vlan_id is defined and
+        event.payload.change_control_status in ["approved", "executed", "approve_and_execute"]
+      action:
+        run_playbook:
+          name: playbooks/workflow_vlan_to_vxlan_verify.yml
+          extra_vars:
+            resume_vlan_id: "{{ event.payload.vlan_id }}"
+
+    - name: Log a change control event that isn't an approval yet
+      condition: >-
+        event.payload.vlan_id is defined and
+        event.payload.change_control_status not in ["approved", "executed", "approve_and_execute"]
+      action:
+        debug:
+          msg: >-
+            CVP change control event for VLAN {{ event.payload.vlan_id }} is
+            '{{ event.payload.change_control_status }}', not yet approved; not resuming.

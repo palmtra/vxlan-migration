@@ -11,6 +11,7 @@ vault.yml
 vault.yaml
 .secrets/
 .env
+eda/extra_vars.yml
 __pycache__/
 *.pyc
 .vscode/

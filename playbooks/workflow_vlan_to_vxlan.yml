@@ -2,13 +2,27 @@
 # -----------------------------------------------------------------------------
 # workflow_vlan_to_vxlan.yml
 # -----------------------------------------------------------------------------
-# End-to-end workflow triggered by a ServiceNow change ticket to migrate a
-# single legacy VLAN to VXLAN.
+# End-to-end, single-run entry point for the VLAN->VXLAN migration workflow.
+# Runs both stages back-to-back in one ansible-playbook process:
+#   1. workflow_vlan_to_vxlan_deploy.yml  (Steps 1-5: intake through CVP
+#      configlet push / change control creation)
+#   2. workflow_vlan_to_vxlan_verify.yml  (Step 6: post-change verification,
+#      rollback + re-verify on failure)
+#
+# This is convenient for local/CLI testing and for environments without a
+# CVP change-control approval gate to wait on. In production, prefer running
+# the two stages separately, driven by
+# eda/rulebooks/vlan_to_vxlan_migration.yml: the deploy stage runs on the
+# ServiceNow webhook event and stops after creating a PENDING change control;
+# the verify stage only runs once CVP reports that change control as
+# approved/executed, instead of this playbook blocking or polling in a single
+# long-running process while waiting for a human to approve it in CVP.
 #
 # Expected input (ServiceNow webhook / extra vars):
 #   snow_vlan_id: <vlan-id>
 #   snow_data_center: <dc-name>
 #   snow_target_vrf: <vrf-name>
+#   snow_ticket_sys_id: <sys_id>
 #
 # For local testing you may instead pass:
 #   -e manual_vlan_id=100 -e manual_data_center=lisle -e manual_target_vrf=default
@@ -19,208 +33,6 @@
 # arista.avd.eos_cli_config_gen role instead of the legacy custom Jinja path.
 # -----------------------------------------------------------------------------
 
-- name: Step 1-4 — Normalize input, discover state, hand off cleanup, check NetBox
-  hosts: network_devices
-  gather_facts: false
-
-  vars:
-    snow_ticket_sys_id: "{{ hostvars['localhost']['target_ticket_sys_id'] | default('') }}"
-
-  pre_tasks:
-    - name: Step 1 — Normalize change-ticket input
-      ansible.builtin.include_role:
-        name: servicenow_input
-      run_once: true
-
-    - name: Set workflow-scoped target VLAN list
-      ansible.builtin.set_fact:
-        target_vlan_ids:
-          - "{{ hostvars['localhost']['target_vlan_id'] | int }}"
-
-  tasks:
-    - name: Steps 2-4 — discovery, cleanup hand-off, NetBox validation
-      block:
-        - name: Step 2a — Gather common network facts / backup
-          ansible.builtin.include_role:
-            name: network_common
-
-        - name: Step 2b — Discover legacy VLAN state
-          ansible.builtin.include_role:
-            name: vlan_discovery
-
-        - name: Step 3 — Hand off discovered VLAN to external cleanup tool
-          ansible.builtin.include_role:
-            name: external_cleanup
-          vars:
-            target_vlan_id: "{{ hostvars['localhost']['target_vlan_id'] | int }}"
-            target_data_center: "{{ hostvars['localhost']['target_data_center'] | default('') }}"
-            target_vrf: "{{ hostvars['localhost']['target_vrf'] | default('') }}"
-          run_once: true
-
-        - name: Step 4 — Verify VLAN exists in NetBox (or local registry fallback)
-          ansible.builtin.include_role:
-            name: netbox_check
-          vars:
-            target_vlan_id: "{{ hostvars['localhost']['target_vlan_id'] | int }}"
-          run_once: true
-      rescue:
-        - name: Notify ServiceNow of failure during discovery/cleanup/NetBox validation
-          ansible.builtin.include_role:
-            name: servicenow_update
-          vars:
-            snow_status_message: >-
-              VLAN {{ hostvars['localhost']['target_vlan_id'] }} migration failed during
-              discovery/cleanup/NetBox validation on {{ inventory_hostname }}:
-              {{ ansible_failed_result.msg | default('see task output for details') }}
-            snow_ticket_state: "escalated"
-          run_once: true
-
-        - name: Re-raise the original failure
-          ansible.builtin.fail:
-            msg: "{{ ansible_failed_result.msg | default('Steps 2-4 failed on ' + inventory_hostname) }}"
-
-- name: Step 5 — Deploy VXLAN migration configlets to Arista CVP
-  hosts: "{{ use_avd | default(false) | bool | ternary('eos_devices', 'localhost') }}"
-  gather_facts: false
-
-  vars:
-    snow_ticket_sys_id: "{{ hostvars['localhost']['target_ticket_sys_id'] | default('') }}"
-
-  tasks:
-    - name: Step 5 — Generate and push VXLAN configlets
-      block:
-        - name: Step 5a — Legacy Jinja configlet generation
-          ansible.builtin.include_role:
-            name: cvp_deploy
-          vars:
-            target_vlan_id: "{{ hostvars['localhost']['target_vlan_id'] | int }}"
-            target_data_center: "{{ hostvars['localhost']['target_data_center'] | default('') }}"
-            target_vrf: "{{ hostvars['localhost']['target_vrf'] | default('') }}"
-          when: not use_avd | default(false) | bool
-
-        - name: Step 5b — AVD-based configlet generation
-          ansible.builtin.include_role:
-            name: avd_vxlan_config
-          vars:
-            target_vlan_id: "{{ hostvars['localhost']['target_vlan_id'] | int }}"
-            target_data_center: "{{ hostvars['localhost']['target_data_center'] | default('') }}"
-            target_vrf: "{{ hostvars['localhost']['target_vrf'] | default('') }}"
-          when: use_avd | default(false) | bool
-      rescue:
-        - name: Notify ServiceNow of failure during CVP configlet deployment
-          ansible.builtin.include_role:
-            name: servicenow_update
-          vars:
-            snow_status_message: >-
-              VLAN {{ hostvars['localhost']['target_vlan_id'] }} migration failed during
-              CVP configlet generation/deployment on {{ inventory_hostname }}:
-              {{ ansible_failed_result.msg | default('see task output for details') }}
-            snow_ticket_state: "escalated"
-          run_once: true
-
-        - name: Re-raise the original failure
-          ansible.builtin.fail:
-            msg: "{{ ansible_failed_result.msg | default('Step 5 failed on ' + inventory_hostname) }}"
-
-- name: Step 6 — Validate post-migration state
-  hosts: network_devices
-  gather_facts: false
-
-  vars:
-    target_vrf: "{{ hostvars['localhost']['target_vrf'] | default('default') }}"
-    verify_vlan_ids:
-      - "{{ hostvars['localhost']['target_vlan_id'] | int }}"
-    snow_ticket_sys_id: "{{ hostvars['localhost']['target_ticket_sys_id'] | default('') }}"
-
-  tasks:
-    - name: Step 6 — Post-change verification
-      block:
-        - name: Run the full post-change verification checklist
-          ansible.builtin.include_role:
-            name: post_change_verification
-
-        - name: Report post-change verification results
-          ansible.builtin.debug:
-            msg: "{{ _verification_results }}"
-
-        - name: Fail closed if post-change verification did not pass
-          ansible.builtin.fail:
-            msg:
-              - "Post-change verification failed on {{ inventory_hostname }}."
-              - "{{ _verification_results | dict2items | selectattr('value.passed', 'equalto', false) | map(attribute='key') | list }}"
-              - "Escalating to manual troubleshooting; rollback via CVP Change Control is a deferred improvement (see docs/WORKFLOW_V2.md)."
-          when: not _verification_passed | bool
-      rescue:
-        - name: Attempt rollback via CVP Change Control, then re-verify
-          block:
-            - name: Skip rollback if it is disabled for this run
-              ansible.builtin.fail:
-                msg: "auto_rollback_on_verification_failure is false; skipping rollback and escalating directly."
-              when: not auto_rollback_on_verification_failure | bool
-
-            - name: Roll back the VXLAN migration configlets via CVP Change Control
-              ansible.builtin.include_role:
-                name: cvp_rollback
-
-            - name: Re-run the full verification checklist against the restored state
-              ansible.builtin.include_role:
-                name: post_change_verification
-              vars:
-                verify_expect_vlan_present: false
-                verify_mac_arp_learning: false
-
-            - name: Fail if rollback re-verification did not pass
-              ansible.builtin.fail:
-                msg:
-                  - "Rollback re-verification failed on {{ inventory_hostname }}."
-                  - "{{ _verification_results | dict2items | selectattr('value.passed', 'equalto', false) | map(attribute='key') | list }}"
-              when: not _verification_passed | bool
-
-            - name: Notify ServiceNow that the migration was rolled back successfully
-              ansible.builtin.include_role:
-                name: servicenow_update
-              vars:
-                snow_status_message: >-
-                  VLAN {{ hostvars['localhost']['target_vlan_id'] }} migration failed post-change
-                  verification and was rolled back successfully via CVP Change Control on
-                  {{ inventory_hostname }}. Original failure: {{ ansible_failed_result.msg | default('see task output') }}
-                snow_ticket_state: "rolled_back"
-              run_once: true
-
-            - name: Mark the run as unsuccessful even though rollback succeeded
-              ansible.builtin.fail:
-                msg: >-
-                  VLAN {{ hostvars['localhost']['target_vlan_id'] }} migration was rolled back
-                  successfully after a failed post-change verification on {{ inventory_hostname }}.
-                  The migration did not proceed; see ServiceNow for details.
-          rescue:
-            - name: Notify ServiceNow that verification failed and rollback did not resolve it (escalation)
-              ansible.builtin.include_role:
-                name: servicenow_update
-              vars:
-                snow_status_message: >-
-                  VLAN {{ hostvars['localhost']['target_vlan_id'] }} migration escalated:
-                  post-change verification failed on {{ inventory_hostname }} and either rollback
-                  was disabled/failed or rollback re-verification did not pass.
-                  {{ ansible_failed_result.msg | default('see task output for details') }}
-                snow_ticket_state: "escalated"
-              run_once: true
-
-            - name: Re-raise the original failure
-              ansible.builtin.fail:
-                msg: "{{ ansible_failed_result.msg | default('Step 6 failed on ' + inventory_hostname) }}"
-
-    # Only reached by hosts whose block above succeeded; hosts that failed and
-    # were re-raised in rescue are dropped from ansible_play_hosts by Ansible,
-    # so this fires once, only when every remaining host passed verification.
-    # In a partial-failure run across multiple hosts, this may still fire for
-    # the surviving hosts even though another host was escalated separately --
-    # both statuses will be visible as separate work notes on the ticket.
-    - name: Notify ServiceNow that the migration completed successfully
-      ansible.builtin.include_role:
-        name: servicenow_update
-      vars:
-        snow_status_message: "VLAN {{ hostvars['localhost']['target_vlan_id'] }} migration to VXLAN completed and verified successfully."
-        snow_ticket_state: "complete"
-      run_once: true
+- ansible.builtin.import_playbook: workflow_vlan_to_vxlan_deploy.yml
+- ansible.builtin.import_playbook: workflow_vlan_to_vxlan_verify.yml
 

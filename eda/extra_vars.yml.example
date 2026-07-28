@@ -1,0 +1,18 @@
+---
+# -----------------------------------------------------------------------------
+# eda/extra_vars.yml.example
+# -----------------------------------------------------------------------------
+# Copy to eda/extra_vars.yml (gitignored -- do not commit real credentials)
+# and pass with `ansible-rulebook --vars eda/extra_vars.yml` when running the
+# rulebook directly (outside of AAP). Under AAP, use Credentials instead.
+# -----------------------------------------------------------------------------
+
+netbox_url: ""
+netbox_token: ""
+
+cvp_url: ""
+cvp_token: ""
+
+snow_url: ""
+snow_username: ""
+snow_password: ""

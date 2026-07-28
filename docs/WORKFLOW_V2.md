@@ -156,7 +156,7 @@ flowchart LR
 
 | Phase | Step | Status |
 |-------|------|--------|
-| 0 | ServiceNow webhook → EDA rulebook | **Not implemented** — currently manual/extra-var invocation only |
+| 0 | ServiceNow webhook → EDA rulebook | Implemented (`eda/rulebooks/vlan_to_vxlan_migration.yml`, "ServiceNow intake" ruleset) — untested live, see caveat below |
 | 0 | Input validation | Implemented (`roles/servicenow_input`) |
 | 1 | NetBox lookup | Implemented (`roles/netbox_check`) |
 | 1 | Local registry fallback on NetBox failure | Implemented (`roles/netbox_check`) — falls back to `vars/vlan_registry.yml` only when NetBox itself is unreachable; a reachable NetBox's "not found" still fails closed |
@@ -165,14 +165,18 @@ flowchart LR
 | 2 | External cleanup hand-off | Implemented (`roles/external_cleanup`) |
 | 3 | AVD config generation | Implemented (`roles/avd_vxlan_config`) |
 | 3 | CVP push + Change Control (pending state) | Implemented, with explicit-approval enforcement |
-| 3 | EDA-driven approval wait/resume | **Not implemented** — currently the play just fails if not approved |
+| 3 | EDA-driven approval wait/resume | Implemented (`eda/rulebooks/vlan_to_vxlan_migration.yml`) — `playbooks/workflow_vlan_to_vxlan.yml` split into `_deploy.yml` (Steps 1-5, stops after creating the pending change control and persists state to `reports/workflow_state/`) and `_verify.yml` (Step 6, resumes from persisted state via `resume_vlan_id`); the rulebook launches deploy on the ServiceNow webhook and verify on a second "CVP approved" webhook. Untested live (`ansible-rulebook`/`ansible.eda` are not installed in this workspace) — see `eda/README.md`. The CVP-approval-detection webhook caller itself (polling CVP or a native CVP webhook) is also not included and is deployment-specific |
 | 4 | Execute change | Implemented |
 | 4 | Post-change verification (full checklist) | Implemented (`roles/post_change_verification`) — EVPN BGP peer status, underlay VTEP reachability, VLAN↔VNI mapping, and MAC/ARP learning, wired into Step 6 of `workflow_vlan_to_vxlan.yml` |
 | 4 | Rollback via CVP Change Control | Implemented (`roles/cvp_rollback`) — overwrites the same configlet names with "no ..." rollback content and creates a new change control, gated by the same `cvp_apply_configlets`/explicit-approval-required safety checks as `roles/cvp_deploy` |
 | 4 | Re-verify after rollback | Implemented — Step 6's rescue path re-runs `roles/post_change_verification` with `verify_expect_vlan_present: false`, escalating only if rollback is disabled or re-verification still fails |
 | 4 | ServiceNow status callbacks | Implemented (`roles/servicenow_update`) — `workflow_vlan_to_vxlan.yml` wraps each phase in block/rescue and posts a work-note update on failure (escalated) and on overall success (complete); safely no-ops when ServiceNow isn't configured |
 
-This table is the punch list for turning v2 into working automation. Suggested build
-order: (1) NetBox fallback, (2) full verification checklist, (3) ServiceNow callbacks,
-(4) rollback + re-verify, (5) EDA rulebook + approval-wait event source last, since it
-depends on all the synchronous playbook logic being correct first.
+This table was the punch list for turning v2 into working automation; every item is now
+implemented in some form. The main remaining gap is that the EDA rulebook and the
+webhook-driven paths have not been exercised against a live ServiceNow/CVP/EDA
+controller (neither `ansible-rulebook` nor the `ansible.eda` collection are installed in
+this workspace) -- everything else has been verified with simulated data or a local mock
+HTTP server. See `eda/README.md` for how to install and run the rulebook, and for the
+CVP-approval-detection piece (polling CVP or wiring a native CVP webhook) that is
+deployment-specific and intentionally left out.
