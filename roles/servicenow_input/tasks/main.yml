@@ -8,7 +8,7 @@
 
 - name: Compute effective target VLAN (ServiceNow, then manual)
   ansible.builtin.set_fact:
-    target_vlan_id: "{{ (snow_vlan_id | default('', true) | length > 0) | ternary(snow_vlan_id | int, (manual_vlan_id | default('', true) | length > 0) | ternary(manual_vlan_id | int, omit)) }}"
+    target_vlan_id: "{{ (snow_vlan_id | default('', true) | string | length > 0) | ternary(snow_vlan_id | int, (manual_vlan_id | default('', true) | string | length > 0) | ternary(manual_vlan_id | int, omit)) }}"
     target_data_center: "{{ snow_data_center | default(manual_data_center, true) | default('', true) }}"
     target_vrf: "{{ snow_target_vrf | default(manual_target_vrf, true) | default('default', true) }}"
     target_ticket_sys_id: "{{ snow_ticket_sys_id | default('', true) }}"

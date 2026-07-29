@@ -1,0 +1,10 @@
+---
+# -----------------------------------------------------------------------------
+# eda_verify_entrypoint.yml
+# -----------------------------------------------------------------------------
+# See eda_deploy_entrypoint.yml for why this shim exists at the repo root
+# instead of referencing playbooks/workflow_vlan_to_vxlan_verify.yml
+# directly from the rulebook.
+# -----------------------------------------------------------------------------
+
+- ansible.builtin.import_playbook: playbooks/workflow_vlan_to_vxlan_verify.yml

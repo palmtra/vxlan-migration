@@ -35,7 +35,15 @@
 # -----------------------------------------------------------------------------
 
 - name: VLAN to VXLAN migration - ServiceNow intake
-  hosts: localhost
+  # "all" here, NOT "localhost": ansible-rulebook derives the --limit passed
+  # to run_playbook from this ruleset's hosts field. workflow_vlan_to_vxlan_
+  # deploy.yml targets network_devices/eos_devices/localhost internally
+  # across its own plays, so --limit must not restrict beyond that -- "all"
+  # is a no-op limit that lets the sub-playbook's own play-level hosts:
+  # fully control targeting. Using "localhost" here would force
+  # --limit localhost onto the sub-playbook and break every play that
+  # targets network_devices.
+  hosts: all
 
   sources:
     - ansible.eda.webhook:
@@ -51,7 +59,7 @@
         event.payload.snow_target_vrf is defined
       action:
         run_playbook:
-          name: playbooks/workflow_vlan_to_vxlan_deploy.yml
+          name: eda_deploy_entrypoint.yml
           extra_vars:
             snow_vlan_id: "{{ event.payload.snow_vlan_id }}"
             snow_data_center: "{{ event.payload.snow_data_center }}"
@@ -70,7 +78,8 @@
             Required fields: snow_vlan_id, snow_data_center, snow_target_vrf.
 
 - name: VLAN to VXLAN migration - CVP change control approval resume
-  hosts: localhost
+  # See the comment on the ruleset above: "all", not "localhost".
+  hosts: all
 
   sources:
     - ansible.eda.webhook:
@@ -85,7 +94,7 @@
         event.payload.change_control_status in ["approved", "executed", "approve_and_execute"]
       action:
         run_playbook:
-          name: playbooks/workflow_vlan_to_vxlan_verify.yml
+          name: eda_verify_entrypoint.yml
           extra_vars:
             resume_vlan_id: "{{ event.payload.vlan_id }}"
 

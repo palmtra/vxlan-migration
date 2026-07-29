@@ -24,22 +24,34 @@ verify stage only runs once the approval event actually arrives.
 
 ## Prerequisites
 
-This repo does not vendor `ansible-rulebook` or the `ansible.eda` collection
-(neither is installed in this workspace). To run the rulebook for real:
+`ansible-rulebook` needs a JVM. Install:
 
 ```bash
-pip install ansible-rulebook
+sudo apt-get install default-jre-headless   # or any JRE/JDK >= 11
+uv tool install ansible-rulebook            # or: pip install ansible-rulebook
 ansible-galaxy collection install ansible.eda
 ```
 
 ## Running
 
 ```bash
-ansible-rulebook \
+ANSIBLE_COLLECTIONS_PATH=./collections ansible-rulebook \
   --rulebook eda/rulebooks/vlan_to_vxlan_migration.yml \
-  --inventory inventory/hosts.yml \
+  --inventory inventory \
   --vars eda/extra_vars.yml   # optional: credentials not carried by the webhook payload
 ```
+
+Notes on the flags above, both required for this repo's layout specifically:
+- `ANSIBLE_COLLECTIONS_PATH=./collections`: `ansible-rulebook` doesn't read
+  this project's `ansible.cfg`, so it needs the collections path (for
+  `ansible.eda.webhook`) set explicitly.
+- `--inventory inventory` (the **directory**, not `inventory/hosts.yml`):
+  `ansible-rulebook`'s `run_playbook` action copies whatever inventory path
+  you give it into an isolated temp dir before invoking `ansible-playbook`.
+  If you point it at the `hosts.yml` **file**, only that file is copied and
+  the sibling `inventory/group_vars/` is silently dropped (losing
+  `ansible_connection: network_cli` and everything else). Pointing it at the
+  `inventory/` **directory** copies the whole thing, group_vars included.
 
 This starts two webhook listeners:
 
@@ -58,6 +70,41 @@ CVP webhook/notification integration if available, or a small scheduled job
 created and POSTs to `/cvp_approval` once one flips to `approved`/`executed`.
 That polling piece is intentionally not included here since it depends on
 how change control approvals are tracked in your CVP/CVaaS deployment.
+
+## Why eda_deploy_entrypoint.yml / eda_verify_entrypoint.yml exist
+
+`run_playbook`'s directory-copy behavior described above applies to the
+playbook itself too, not just the inventory: it copies the **parent
+directory** of whatever playbook `name:` you give it. If the rulebook
+referenced `playbooks/workflow_vlan_to_vxlan_deploy.yml` directly, only
+`playbooks/` would get copied -- `roles/`, `vars/`, `plugins/`,
+`ansible.cfg`, etc. (everything one level up) would be missing, and role
+resolution would fail. `eda_deploy_entrypoint.yml` and
+`eda_verify_entrypoint.yml` are one-line `import_playbook` shims that live
+at the **repo root** for exactly this reason: their parent directory is the
+whole repo, so the copy picks up everything the real playbooks need. Under
+AAP (see below) this doesn't matter, since AAP syncs a full project instead.
+
+## Live-tested status
+
+This rulebook and both entrypoint shims have been run live end-to-end in
+this workspace (`ansible-rulebook`/`ansible.eda` installed locally, no AAP)
+against curl-simulated webhooks, with all four rules exercised: valid
+ServiceNow intake (successfully launched the deploy stage, which correctly
+ran through role/group_vars resolution and failed cleanly at device
+connectivity since there are no real switches here), an incomplete intake
+payload (correctly rejected without launching anything), a non-approved CVP
+event (correctly logged without resuming), and an approved CVP event
+(successfully launched the verify stage, which correctly attempted to load
+persisted state and failed cleanly since no prior deploy run had reached the
+point of persisting state). Fixed along the way: `roles/servicenow_input`
+assumed `snow_vlan_id` would always be string-typed (webhook JSON delivers
+it as a native int); the rulebook's ruleset-level `hosts:` was `localhost`,
+which `run_playbook` uses to derive `--limit`, incorrectly restricting the
+launched sub-playbooks to `localhost` only (changed to `all`); and
+`inventory/hosts.yml` had no explicit `localhost` entry, so Ansible's
+*implicit* localhost did not reliably survive `--limit all` for the
+`hosts: localhost` plays (added an explicit entry).
 
 ## Running under AAP / Controller
 

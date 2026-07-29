@@ -156,7 +156,7 @@ flowchart LR
 
 | Phase | Step | Status |
 |-------|------|--------|
-| 0 | ServiceNow webhook → EDA rulebook | Implemented (`eda/rulebooks/vlan_to_vxlan_migration.yml`, "ServiceNow intake" ruleset) — untested live, see caveat below |
+| 0 | ServiceNow webhook → EDA rulebook | Implemented and live-tested (`eda/rulebooks/vlan_to_vxlan_migration.yml`, "ServiceNow intake" ruleset) — see `eda/README.md` |
 | 0 | Input validation | Implemented (`roles/servicenow_input`) |
 | 1 | NetBox lookup | Implemented (`roles/netbox_check`) |
 | 1 | Local registry fallback on NetBox failure | Implemented (`roles/netbox_check`) — falls back to `vars/vlan_registry.yml` only when NetBox itself is unreachable; a reachable NetBox's "not found" still fails closed |
@@ -165,7 +165,7 @@ flowchart LR
 | 2 | External cleanup hand-off | Implemented (`roles/external_cleanup`) |
 | 3 | AVD config generation | Implemented (`roles/avd_vxlan_config`) |
 | 3 | CVP push + Change Control (pending state) | Implemented, with explicit-approval enforcement |
-| 3 | EDA-driven approval wait/resume | Implemented (`eda/rulebooks/vlan_to_vxlan_migration.yml`) — `playbooks/workflow_vlan_to_vxlan.yml` split into `_deploy.yml` (Steps 1-5, stops after creating the pending change control and persists state to `reports/workflow_state/`) and `_verify.yml` (Step 6, resumes from persisted state via `resume_vlan_id`); the rulebook launches deploy on the ServiceNow webhook and verify on a second "CVP approved" webhook. Untested live (`ansible-rulebook`/`ansible.eda` are not installed in this workspace) — see `eda/README.md`. The CVP-approval-detection webhook caller itself (polling CVP or a native CVP webhook) is also not included and is deployment-specific |
+| 3 | EDA-driven approval wait/resume | Implemented and live-tested end-to-end with `ansible-rulebook`/`ansible.eda` installed locally and curl-simulated webhooks (`eda/rulebooks/vlan_to_vxlan_migration.yml`) — `playbooks/workflow_vlan_to_vxlan.yml` split into `_deploy.yml` (Steps 1-5, stops after creating the pending change control and persists state to `reports/workflow_state/`) and `_verify.yml` (Step 6, resumes from persisted state via `resume_vlan_id`); the rulebook launches deploy on the ServiceNow webhook and verify on a second "CVP approved" webhook. See `eda/README.md` for the ansible-rulebook quirks this surfaced and fixed (inventory group_vars, project directory copying, `--limit` derivation). The CVP-approval-detection webhook caller itself (polling CVP or a native CVP webhook) is still not included and is deployment-specific |
 | 4 | Execute change | Implemented |
 | 4 | Post-change verification (full checklist) | Implemented (`roles/post_change_verification`) — EVPN BGP peer status, underlay VTEP reachability, VLAN↔VNI mapping, and MAC/ARP learning, wired into Step 6 of `workflow_vlan_to_vxlan.yml` |
 | 4 | Rollback via CVP Change Control | Implemented (`roles/cvp_rollback`) — overwrites the same configlet names with "no ..." rollback content and creates a new change control, gated by the same `cvp_apply_configlets`/explicit-approval-required safety checks as `roles/cvp_deploy` |
@@ -173,10 +173,12 @@ flowchart LR
 | 4 | ServiceNow status callbacks | Implemented (`roles/servicenow_update`) — `workflow_vlan_to_vxlan.yml` wraps each phase in block/rescue and posts a work-note update on failure (escalated) and on overall success (complete); safely no-ops when ServiceNow isn't configured |
 
 This table was the punch list for turning v2 into working automation; every item is now
-implemented in some form. The main remaining gap is that the EDA rulebook and the
-webhook-driven paths have not been exercised against a live ServiceNow/CVP/EDA
-controller (neither `ansible-rulebook` nor the `ansible.eda` collection are installed in
-this workspace) -- everything else has been verified with simulated data or a local mock
-HTTP server. See `eda/README.md` for how to install and run the rulebook, and for the
-CVP-approval-detection piece (polling CVP or wiring a native CVP webhook) that is
-deployment-specific and intentionally left out.
+implemented and has been exercised, either with simulated data / a local mock HTTP
+server, or (for the EDA rulebook) live with `ansible-rulebook` and curl-simulated
+webhooks. The remaining gaps are: (1) none of this has been exercised against a real
+ServiceNow instance, real CVP, or an AAP EDA controller specifically -- only local
+mocks/webhooks -- and (2) the CVP-approval-detection piece (polling CVP or wiring a
+native CVP webhook to actually call the rulebook's `/cvp_approval` endpoint) is
+deployment-specific and intentionally left out. See `eda/README.md` for how to install
+and run the rulebook, and for a few `ansible-rulebook`-specific quirks that were found
+and fixed along the way.

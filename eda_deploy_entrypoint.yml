@@ -1,0 +1,19 @@
+---
+# -----------------------------------------------------------------------------
+# eda_deploy_entrypoint.yml
+# -----------------------------------------------------------------------------
+# Standalone ansible-rulebook's run_playbook action copies the ENTIRE parent
+# directory of whatever playbook it's given into an isolated project dir for
+# ansible-runner (it has no other way to know this repo also needs roles/,
+# vars/, plugins/, inventory/, and ansible.cfg -- that only happens
+# automatically under an AAP EDA controller, which syncs a full project
+# tarball). Since playbooks/workflow_vlan_to_vxlan_deploy.yml's parent dir is
+# just playbooks/, referencing it directly from the rulebook would silently
+# drop roles/ etc. and break role resolution.
+#
+# This tiny shim lives at the repo root instead, so its parent dir IS the
+# repo root -- ansible-rulebook copies everything the real playbook needs.
+# See eda/rulebooks/vlan_to_vxlan_migration.yml and eda/README.md.
+# -----------------------------------------------------------------------------
+
+- ansible.builtin.import_playbook: playbooks/workflow_vlan_to_vxlan_deploy.yml
