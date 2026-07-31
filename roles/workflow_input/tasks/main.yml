@@ -1,0 +1,43 @@
+---
+# -----------------------------------------------------------------------------
+# workflow_input
+# -----------------------------------------------------------------------------
+# Normalizes manual CLI / survey input for the Core workflow.
+# Advanced workflow uses servicenow_input instead, which sets the same facts.
+# -----------------------------------------------------------------------------
+
+- name: Compute effective workflow input from manual extra vars
+  ansible.builtin.set_fact:
+    target_vlan_id: "{{ manual_vlan_id | int }}"
+    target_data_center: "{{ manual_data_center | default('', true) | trim }}"
+    target_vrf: "{{ manual_target_vrf | default('default', true) }}"
+  delegate_to: localhost
+  delegate_facts: true
+  become: false
+  run_once: true
+
+- name: Fail if manual_vlan_id was not supplied
+  ansible.builtin.fail:
+    msg: "Core workflow requires -e manual_vlan_id=<id>."
+  delegate_to: localhost
+  become: false
+  run_once: true
+  when: manual_vlan_id is not defined
+
+- name: Fail if manual_data_center was not supplied
+  ansible.builtin.fail:
+    msg: "Core workflow requires -e manual_data_center=<dc> (e.g. lisle, omaha)."
+  delegate_to: localhost
+  become: false
+  run_once: true
+  when: target_data_center | length == 0
+
+- name: Display normalized Core workflow input
+  ansible.builtin.debug:
+    msg:
+      - "Target VLAN: {{ target_vlan_id }}"
+      - "Data center: {{ target_data_center }}"
+      - "Target VRF: {{ target_vrf }}"
+  delegate_to: localhost
+  become: false
+  run_once: true

@@ -1,66 +1,26 @@
 ---
 # -----------------------------------------------------------------------------
-# Arista EOS state gathering
+# Arista EOS state gathering — one targeted query per VLAN in _effective_vlans
 # -----------------------------------------------------------------------------
 
-- name: EOS — show vlan
-  ansible.netcommon.cli_command:
-    command: show vlan
-  register: _eos_show_vlan
-  check_mode: false
-  changed_when: false
-  failed_when: false
+- name: EOS — initialize per-VLAN discovery results
+  ansible.builtin.set_fact:
+    _eos_per_vlan_results: []
 
-- name: EOS — show SVIs
-  ansible.netcommon.cli_command:
-    command: show ip interface brief | include Vlan
-  register: _eos_show_svi
-  check_mode: false
-  changed_when: false
-  failed_when: false
+- name: EOS — collect trunk interface configs for prune analysis
+  ansible.builtin.include_tasks: gather_eos_trunks.yml
 
-- name: EOS — show switchport / trunk info
-  ansible.netcommon.cli_command:
-    command: show interfaces switchport
-  register: _eos_show_switchport
-  check_mode: false
-  changed_when: false
-  failed_when: false
+- name: EOS — targeted discovery per VLAN
+  ansible.builtin.include_tasks: gather_eos_vlan.yml
+  loop: "{{ _effective_vlans }}"
+  loop_control:
+    loop_var: _disc_vlan
+    label: "{{ _disc_vlan.id }}"
 
-- name: EOS — show VXLAN vlan-to-vni mappings
+- name: EOS — show VXLAN vlan-to-vni mappings (reference)
   ansible.netcommon.cli_command:
     command: show vxlan vlan-to-vni
   register: _eos_show_vxlan
-  check_mode: false
-  changed_when: false
-  failed_when: false
-
-- name: EOS — show MAC address table for target VLANs
-  ansible.netcommon.cli_command:
-    command: "show mac address-table vlan {{ item }}"
-  loop: "{{ _effective_vlans | map(attribute='id') | list }}"
-  register: _eos_mac_table
-  check_mode: false
-  changed_when: false
-  failed_when: false
-  loop_control:
-    label: "{{ item }}"
-
-- name: EOS — show spanning-tree for target VLANs
-  ansible.netcommon.cli_command:
-    command: "show spanning-tree vlan {{ item }}"
-  loop: "{{ _effective_vlans | map(attribute='id') | list }}"
-  register: _eos_stp
-  check_mode: false
-  changed_when: false
-  failed_when: false
-  loop_control:
-    label: "{{ item }}"
-
-- name: EOS — show ARP table for target VRF
-  ansible.netcommon.cli_command:
-    command: "show ip arp vrf {{ target_vrf | default('default') }}"
-  register: _eos_arp
   check_mode: false
   changed_when: false
   failed_when: false
@@ -72,19 +32,6 @@
       data_center: "{{ data_center | default('unknown') }}"
       os_family: "{{ network_os_family }}"
       timestamp: "{{ ansible_date_time.iso8601 }}"
-      vlans_raw: "{{ _eos_show_vlan.stdout | default('') }}"
-      svi_raw: "{{ _eos_show_svi.stdout | default('') }}"
-      trunks_raw: "{{ _eos_show_switchport.stdout | default('') }}"
       vxlan_raw: "{{ _eos_show_vxlan.stdout | default('') }}"
-      mac_table_raw: "{{ _eos_mac_table.results | default([]) | map(attribute='stdout') | reject('undefined') | list }}"
-      stp_raw: "{{ _eos_stp.results | default([]) | map(attribute='stdout') | reject('undefined') | list }}"
-      arp_raw: "{{ _eos_arp.stdout | default('') }}"
-      per_vlan: "{{ _effective_vlans | map('extract_vlan_discovery', {
-        'vlan_output': _eos_show_vlan.stdout | default(''),
-        'svi_output': _eos_show_svi.stdout | default(''),
-        'trunk_output': _eos_show_switchport.stdout | default(''),
-        'mac_outputs': _eos_mac_table.results | default([]),
-        'stp_outputs': _eos_stp.results | default([]),
-        'arp_output': _eos_arp.stdout | default(''),
-        'target_vrf': target_vrf | default('')
-      }) | list }}"
+      trunk_interface_configs: "{{ _trunk_interface_configs | default([]) }}"
+      per_vlan: "{{ _eos_per_vlan_results | default([]) }}"

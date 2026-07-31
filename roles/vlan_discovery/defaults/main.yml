@@ -4,12 +4,16 @@
 # -----------------------------------------------------------------------------
 
 discovery_reports_dir: "{{ playbook_dir }}/../reports"
-discovery_write_json: true
+
+# VLAN-centric reports (primary output format).
+discovery_write_vlan_reports: true
 discovery_write_csv: true
 discovery_write_markdown: true
+discovery_write_json: true
+discovery_write_vlan_db_snippet: true
+
+# Legacy per-device JSON reports (disabled by default).
+discovery_write_per_host_json: false
 
 # Whether to capture a device configuration backup before discovery.
-# Discovery is read-only, so backups are skipped by default.
 vlan_discovery_backup_enabled: false
-
-# Raw command set is platform-specific in gather_*.yml files.

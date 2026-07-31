@@ -1,0 +1,53 @@
+---
+# -----------------------------------------------------------------------------
+# export_vlan_to_netbox.yml — standalone NetBox export (not part of migration workflow)
+# -----------------------------------------------------------------------------
+# Exports VLAN attributes from the local per-DC VLAN database to NetBox.
+# Safe default is dry-run (no NetBox writes).
+#
+# Preview export for one VLAN:
+#   ansible-playbook -i inventory/hosts.yml playbooks/export_vlan_to_netbox.yml \
+#     -e manual_data_center=lisle \
+#     -e manual_vlan_id=100
+#
+# Apply export (writes to NetBox):
+#   ansible-playbook -i inventory/hosts.yml playbooks/export_vlan_to_netbox.yml \
+#     -e manual_data_center=lisle \
+#     -e manual_vlan_id=100 \
+#     -e netbox_export_dry_run=false
+#
+# Export all VLANs in a DC database:
+#   ansible-playbook -i inventory/hosts.yml playbooks/export_vlan_to_netbox.yml \
+#     -e manual_data_center=lisle \
+#     -e netbox_export_dry_run=false
+# -----------------------------------------------------------------------------
+
+- name: Load local VLAN database
+  hosts: localhost
+  gather_facts: false
+
+  tasks:
+    - name: Normalize export input
+      ansible.builtin.set_fact:
+        target_data_center: "{{ manual_data_center | default(target_data_center, true) | default('', true) | trim }}"
+        target_vlan_ids: "{{ [manual_vlan_id | int] if (manual_vlan_id is defined) else (target_vlan_ids | default([])) }}"
+
+    - name: Fail if data center is not specified
+      ansible.builtin.fail:
+        msg: "Pass -e manual_data_center=lisle (or omaha)."
+      when: target_data_center | length == 0
+
+    - name: Load per-DC VLAN database
+      ansible.builtin.include_role:
+        name: vlan_db
+
+- name: Export VLAN records to NetBox
+  hosts: localhost
+  gather_facts: false
+
+  vars:
+    target_data_center: "{{ hostvars['localhost']['target_data_center'] }}"
+    target_vlan_id: "{{ hostvars['localhost']['target_vlan_id'] | default(manual_vlan_id | default(omit)) }}"
+
+  roles:
+    - netbox_export

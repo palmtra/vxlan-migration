@@ -2,23 +2,14 @@
 # -----------------------------------------------------------------------------
 # netbox_check
 # -----------------------------------------------------------------------------
-# Verifies the target VLAN exists in the canonical SSOT before a migration
-# proceeds. NetBox is the primary SSOT. If NetBox itself cannot be reached
-# (not configured, connection error, timeout, non-2xx response) this role
-# falls back to the local VLAN registry (vars/vlan_registry.yml) as a
-# secondary/backup source.
+# Secondary NetBox validation after the local per-DC VLAN database has already
+# validated the target VLAN (roles/vlan_db). NetBox is used to detect drift and
+# to prepare future sync-back after migration — it does not override the local
+# VLAN DB unless netbox_ssot_required is true.
 #
-# The local registry is a backup, not a peer, to NetBox:
-#   - If NetBox is reachable and says the VLAN does not exist, that is
-#     authoritative and this role fails closed. The local registry is NOT
-#     consulted in that case.
-#   - The local registry is only consulted when NetBox itself is unreachable.
-#   - If the local registry also has no match, this role fails closed with a
-#     conflict/not-found error, ending the run.
-#
-# On success, sets:
-#   _ssot_vlan:   normalized VLAN record (id, name, vrf, vni, site/data_center)
-#   _ssot_source: 'netbox' or 'local_registry'
+# Sets:
+#   _netbox_sync_status: not_configured | unreachable | found | missing
+#   _netbox_vlan:        NetBox object when found
 # -----------------------------------------------------------------------------
 
 - name: Determine whether NetBox is configured
@@ -27,6 +18,14 @@
   delegate_to: localhost
   become: false
   run_once: true
+
+- name: Skip NetBox lookup when not configured
+  ansible.builtin.set_fact:
+    _netbox_sync_status: not_configured
+  delegate_to: localhost
+  become: false
+  run_once: true
+  when: not _netbox_configured
 
 - name: Search NetBox for the target VLAN by VID
   ansible.builtin.uri:
@@ -46,7 +45,7 @@
   failed_when: false
   changed_when: false
 
-- name: Determine whether NetBox was actually reachable
+- name: Determine NetBox reachability
   ansible.builtin.set_fact:
     _netbox_reachable: >-
       {{ _netbox_configured
@@ -56,18 +55,19 @@
   delegate_to: localhost
   become: false
   run_once: true
+  when: _netbox_configured
 
-- name: Report NetBox unreachable and fall back to local registry
-  ansible.builtin.debug:
-    msg:
-      - "NetBox unreachable or not configured (configured={{ _netbox_configured }}, status={{ _netbox_vlan_lookup.status | default('n/a') }})."
-      - "Falling back to local VLAN registry: {{ vlan_registry_file }}"
+- name: Record NetBox unreachable status
+  ansible.builtin.set_fact:
+    _netbox_sync_status: unreachable
   delegate_to: localhost
   become: false
   run_once: true
-  when: not _netbox_reachable
+  when:
+    - _netbox_configured
+    - not _netbox_reachable
 
-- name: Record VLAN fact from NetBox
+- name: Record NetBox VLAN object when found
   ansible.builtin.set_fact:
     _netbox_vlan: "{{ _netbox_vlan_lookup.json.results | default([]) | first | default({}) }}"
   delegate_to: localhost
@@ -75,83 +75,58 @@
   run_once: true
   when: _netbox_reachable
 
-- name: Fail closed if NetBox is reachable but the VLAN does not exist there
+- name: Set NetBox sync status to found
+  ansible.builtin.set_fact:
+    _netbox_sync_status: found
+  delegate_to: localhost
+  become: false
+  run_once: true
+  when:
+    - _netbox_reachable
+    - _netbox_vlan | default({}) | length > 0
+
+- name: Set NetBox sync status to missing
+  ansible.builtin.set_fact:
+    _netbox_sync_status: missing
+  delegate_to: localhost
+  become: false
+  run_once: true
+  when:
+    - _netbox_reachable
+    - _netbox_vlan | default({}) | length == 0
+
+- name: Warn when NetBox has no record for the VLAN
+  ansible.builtin.debug:
+    msg:
+      - "NetBox has no VLAN record for VID {{ target_vlan_id }}."
+      - "Proceeding with local VLAN DB ({{ _ssot_source | default('local_registry') }})."
+      - "Populate NetBox from the local DB after migration when ready."
+  delegate_to: localhost
+  become: false
+  run_once: true
+  when:
+    - netbox_warn_on_missing_record | bool
+    - _netbox_sync_status == 'missing'
+
+- name: Fail only when NetBox is explicitly required and the record is missing
   ansible.builtin.fail:
     msg:
       - "VLAN {{ target_vlan_id }} does not exist in NetBox."
-      - "NetBox is reachable and authoritative here, so the local registry is not consulted."
-      - "Automated VLAN creation and customer/VRF mapping is a deferred improvement."
+      - "netbox_ssot_required is true, so the run cannot proceed."
+      - "Disable netbox_ssot_required for Core workflow, or create the NetBox record first."
   when:
-    - _netbox_reachable
-    - not netbox_create_missing_vlan | bool
-    - _netbox_vlan | length == 0
+    - netbox_ssot_required | bool
+    - _netbox_sync_status == 'missing'
   delegate_to: localhost
   become: false
   run_once: true
 
-- name: Set SSOT fact from NetBox
-  ansible.builtin.set_fact:
-    _ssot_vlan:
-      id: "{{ _netbox_vlan.vid | default(target_vlan_id) }}"
-      name: "{{ _netbox_vlan.name | default('') }}"
-      vrf: "{{ _netbox_vlan.tenant.name | default('') }}"
-      site: "{{ _netbox_vlan.site.name | default('') }}"
-    _ssot_source: netbox
-  delegate_to: localhost
-  become: false
-  run_once: true
-  when: _netbox_reachable
-
-- name: Load local VLAN registry as a fallback SSOT
-  ansible.builtin.include_vars:
-    file: "{{ vlan_registry_file }}"
-    name: _local_vlan_registry
-  delegate_to: localhost
-  become: false
-  run_once: true
-  when: not _netbox_reachable
-
-- name: Look up the target VLAN in the local registry
-  ansible.builtin.set_fact:
-    _local_registry_vlan: "{{ _local_vlan_registry.vlans | selectattr('id', 'equalto', target_vlan_id | int) | first | default({}) }}"
-  delegate_to: localhost
-  become: false
-  run_once: true
-  when: not _netbox_reachable
-
-- name: Fail closed if the VLAN is not found in NetBox (unreachable) or the local registry
-  ansible.builtin.fail:
-    msg:
-      - "NetBox was unreachable, and VLAN {{ target_vlan_id }} was not found in the local registry ({{ vlan_registry_file }}) either."
-      - "This is a conflict/not-found condition; ending the run rather than proceeding without a validated SSOT record."
-  when:
-    - not _netbox_reachable
-    - _local_registry_vlan | default({}) | length == 0
-  delegate_to: localhost
-  become: false
-  run_once: true
-
-- name: Set SSOT fact from the local registry
-  ansible.builtin.set_fact:
-    _ssot_vlan:
-      id: "{{ _local_registry_vlan.id }}"
-      name: "{{ _local_registry_vlan.vlan_name | default(_local_registry_vlan.name | default('')) }}"
-      vrf: "{{ _local_registry_vlan.vrf | default('') }}"
-      site: "{{ _local_registry_vlan.site | default('') }}"
-    _ssot_source: local_registry
-  delegate_to: localhost
-  become: false
-  run_once: true
-  when: not _netbox_reachable
-
-- name: Report SSOT lookup result
+- name: Report NetBox sync status
   ansible.builtin.debug:
     msg:
-      - "SSOT source: {{ _ssot_source }}"
-      - "VLAN record: {{ _ssot_vlan.name | default('not found') }}"
-      - "VID: {{ _ssot_vlan.id | default(target_vlan_id) }}"
-      - "VRF: {{ _ssot_vlan.vrf | default('unknown') }}"
-      - "Site: {{ _ssot_vlan.site | default('unknown') }}"
+      - "Primary SSOT: {{ _ssot_source | default('local_registry') }}"
+      - "NetBox sync status: {{ _netbox_sync_status | default('not_configured') }}"
+      - "Local VLAN record: {{ _ssot_vlan.name | default('unknown') }} (VID {{ _ssot_vlan.id | default(target_vlan_id) }})"
   delegate_to: localhost
   become: false
   run_once: true

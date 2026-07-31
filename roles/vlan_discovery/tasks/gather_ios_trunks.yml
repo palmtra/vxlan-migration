@@ -1,0 +1,46 @@
+---
+# -----------------------------------------------------------------------------
+# IOS — collect trunk interface running-config snippets (once per host)
+# -----------------------------------------------------------------------------
+
+- name: IOS — show interfaces trunk
+  ansible.netcommon.cli_command:
+    command: show interfaces trunk
+  register: _ios_trunk_show
+  check_mode: false
+  changed_when: false
+  failed_when: false
+
+- name: IOS — parse trunk interface list
+  ansible.builtin.set_fact:
+    _ios_trunk_summaries: "{{ _ios_trunk_show.stdout | default('') | parse_trunk_interfaces('ios') }}"
+  check_mode: false
+
+- name: IOS — fetch running-config for each trunk interface
+  ansible.netcommon.cli_command:
+    command: "show running-config interface {{ item.interface }}"
+  register: _ios_trunk_run_results
+  loop: "{{ _ios_trunk_summaries | default([]) }}"
+  loop_control:
+    label: "{{ item.interface }}"
+  check_mode: false
+  changed_when: false
+  failed_when: false
+
+- name: IOS — build trunk interface config index
+  ansible.builtin.set_fact:
+    _trunk_interface_configs: "{{ _trunk_interface_configs | default([]) + [_trunk_entry] }}"
+  loop: "{{ _ios_trunk_run_results.results | default([]) }}"
+  vars:
+    _summary: "{{ (_ios_trunk_summaries | selectattr('interface', 'equalto', item.item.interface) | first) | default({}) }}"
+    _trunk_entry:
+      interface: "{{ item.item.interface }}"
+      allowed_summary: "{{ _summary.allowed_summary | default('') }}"
+      config: "{{ item.stdout | default('') }}"
+  when: item.stdout is defined
+  check_mode: false
+
+- name: IOS — default empty trunk interface config index
+  ansible.builtin.set_fact:
+    _trunk_interface_configs: []
+  when: _trunk_interface_configs is not defined

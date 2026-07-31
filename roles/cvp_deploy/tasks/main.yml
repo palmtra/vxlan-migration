@@ -17,45 +17,36 @@
   run_once: true
   check_mode: false
 
-- name: Load VLAN registry for CVP rendering
-  ansible.builtin.include_vars:
-    file: "{{ vlan_registry_file }}"
-    name: vlan_registry
-  delegate_to: localhost
-  become: false
-  run_once: true
-
 - name: Compute VLAN to migrate for CVP
   ansible.builtin.set_fact:
-    _vlan_to_migrate: "{{ vlan_registry.vlans | selectattr('id', 'equalto', target_vlan_id | int) | first | default({}) }}"
+    _vlan_to_migrate: "{{ hostvars['localhost']['_target_vlan_record'] | default({}) }}"
   delegate_to: localhost
   become: false
   run_once: true
 
-- name: Fail if target VLAN is not in registry
+- name: Fail if target VLAN record is not available on localhost
   ansible.builtin.fail:
-    msg: "VLAN {{ target_vlan_id }} is not declared in the VLAN registry."
+    msg: >-
+      No target VLAN record found on localhost. Run roles/vlan_db before cvp_deploy,
+      or ensure target_vlan_id is set.
   when: _vlan_to_migrate | length == 0
   delegate_to: localhost
   become: false
   run_once: true
 
-- name: Determine Arista devices where target VLAN was discovered
+- name: Determine CVP target devices from the local VLAN DB
   ansible.builtin.set_fact:
-    _cvp_target_devices: "{{ groups['eos_devices'] | default([]) |
-      map('extract', hostvars, '_vlan_discovery') |
-      selectattr('os_family', 'defined') |
-      selectattr('os_family', 'equalto', 'eos') |
-      select('has_vlan_present') |
-      map(attribute='hostname') | list }}"
+    _cvp_target_devices: "{{ _vlan_to_migrate.target_switches | default([]) }}"
   delegate_to: localhost
   become: false
   run_once: true
   check_mode: false
 
-- name: Fail if no Arista switches were discovered with the target VLAN
+- name: Fail if no CVP target switches were declared for the VLAN
   ansible.builtin.fail:
-    msg: "No Arista EOS devices were found carrying VLAN {{ target_vlan_id }}. Aborting CVP deployment."
+    msg: >-
+      VLAN {{ target_vlan_id }} has no target_switches in the local VLAN DB.
+      Aborting CVP deployment.
   when: _cvp_target_devices | length == 0
   delegate_to: localhost
   become: false

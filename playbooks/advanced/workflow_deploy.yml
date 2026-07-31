@@ -1,0 +1,18 @@
+---
+# -----------------------------------------------------------------------------
+# Advanced workflow — deploy stage (Core + ServiceNow)
+# -----------------------------------------------------------------------------
+# Wraps the Core deploy playbook with workflow_tier=advanced so ServiceNow
+# intake and status callbacks are enabled.
+#
+# Example (manual SNOW fields for local testing):
+#   ansible-playbook -i inventory/hosts.yml playbooks/advanced/workflow_deploy.yml \
+#     -e snow_vlan_id=100 \
+#     -e snow_data_center=lisle \
+#     -e snow_target_vrf=default \
+#     -e cvp_apply_configlets=false
+# -----------------------------------------------------------------------------
+
+- ansible.builtin.import_playbook: ../core/workflow_deploy.yml
+  vars:
+    workflow_tier: advanced

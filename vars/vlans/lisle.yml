@@ -1,0 +1,47 @@
+---
+# -----------------------------------------------------------------------------
+# Lisle data center — local VLAN database (primary SSOT for Core workflow)
+# -----------------------------------------------------------------------------
+# Each record must contain everything required to migrate that VLAN.
+# After migration, these records can be used to populate NetBox.
+#
+# Required fields:
+#   id, name, action, service_type, vni, vrf, target_switches
+#
+# service_type: l2 | l3 | l2_l3
+# -----------------------------------------------------------------------------
+
+vlans:
+  - id: 100
+    name: legacy_web
+    action: migrate
+    service_type: l3
+    vlan_name: WEB_VXLAN
+    vni: 50100
+    vrf: default
+    mcast_group: "239.1.1.100"
+    target_switches:
+      - eos-leaf-lis-01
+      - eos-leaf-lis-02
+    discovery_switches:
+      - eos-leaf-lis-01
+      - eos-leaf-lis-02
+      - nxos-spine-lis-01
+      - nxos-spine-lis-02
+
+  - id: 200
+    name: legacy_app
+    action: migrate
+    service_type: l2_l3
+    vlan_name: APP_VXLAN
+    vni: 50200
+    vrf: default
+    mcast_group: "239.1.1.200"
+    target_switches:
+      - eos-leaf-lis-01
+      - eos-leaf-lis-02
+    discovery_switches:
+      - eos-leaf-lis-01
+      - eos-leaf-lis-02
+      - nxos-spine-lis-01
+      - nxos-spine-lis-02

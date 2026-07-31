@@ -16,4 +16,4 @@
 # See eda/rulebooks/vlan_to_vxlan_migration.yml and eda/README.md.
 # -----------------------------------------------------------------------------
 
-- ansible.builtin.import_playbook: playbooks/workflow_vlan_to_vxlan_deploy.yml
+- ansible.builtin.import_playbook: playbooks/advanced/workflow_deploy.yml

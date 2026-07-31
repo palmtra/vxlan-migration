@@ -1,61 +1,21 @@
 ---
 # -----------------------------------------------------------------------------
-# Cisco IOS/IOS-XE state gathering
+# Cisco IOS/IOS-XE state gathering — one targeted query per VLAN in _effective_vlans
 # -----------------------------------------------------------------------------
 
-- name: IOS — show vlan brief
-  ansible.netcommon.cli_command:
-    command: show vlan brief
-  register: _ios_show_vlan
-  check_mode: false
-  changed_when: false
-  failed_when: false
+- name: IOS — initialize per-VLAN discovery results
+  ansible.builtin.set_fact:
+    _ios_per_vlan_results: []
 
-- name: IOS — show SVIs
-  ansible.netcommon.cli_command:
-    command: show ip interface brief | include Vlan
-  register: _ios_show_svi
-  check_mode: false
-  changed_when: false
-  failed_when: false
+- name: IOS — collect trunk interface configs for prune analysis
+  ansible.builtin.include_tasks: gather_ios_trunks.yml
 
-- name: IOS — show trunk interfaces
-  ansible.netcommon.cli_command:
-    command: show interfaces trunk
-  register: _ios_show_trunk
-  check_mode: false
-  changed_when: false
-  failed_when: false
-
-- name: IOS — show MAC address table for target VLANs
-  ansible.netcommon.cli_command:
-    command: "show mac address-table vlan {{ item }}"
-  loop: "{{ _effective_vlans | map(attribute='id') | list }}"
-  register: _ios_mac_table
-  check_mode: false
-  changed_when: false
-  failed_when: false
+- name: IOS — targeted discovery per VLAN
+  ansible.builtin.include_tasks: gather_ios_vlan.yml
+  loop: "{{ _effective_vlans }}"
   loop_control:
-    label: "{{ item }}"
-
-- name: IOS — show spanning-tree for target VLANs
-  ansible.netcommon.cli_command:
-    command: "show spanning-tree vlan {{ item }}"
-  loop: "{{ _effective_vlans | map(attribute='id') | list }}"
-  register: _ios_stp
-  check_mode: false
-  changed_when: false
-  failed_when: false
-  loop_control:
-    label: "{{ item }}"
-
-- name: IOS — show ARP table for target VRF
-  ansible.netcommon.cli_command:
-    command: "show ip arp vrf {{ target_vrf | default('default') }}"
-  register: _ios_arp
-  check_mode: false
-  changed_when: false
-  failed_when: false
+    loop_var: _disc_vlan
+    label: "{{ _disc_vlan.id }}"
 
 - name: IOS — assemble discovery fact
   ansible.builtin.set_fact:
@@ -64,18 +24,5 @@
       data_center: "{{ data_center | default('unknown') }}"
       os_family: "{{ network_os_family }}"
       timestamp: "{{ ansible_date_time.iso8601 }}"
-      vlans_raw: "{{ _ios_show_vlan.stdout | default('') }}"
-      svi_raw: "{{ _ios_show_svi.stdout | default('') }}"
-      trunks_raw: "{{ _ios_show_trunk.stdout | default('') }}"
-      mac_table_raw: "{{ _ios_mac_table.results | default([]) | map(attribute='stdout') | reject('undefined') | list }}"
-      stp_raw: "{{ _ios_stp.results | default([]) | map(attribute='stdout') | reject('undefined') | list }}"
-      arp_raw: "{{ _ios_arp.stdout | default('') }}"
-      per_vlan: "{{ _effective_vlans | map('extract_vlan_discovery', {
-        'vlan_output': _ios_show_vlan.stdout | default(''),
-        'svi_output': _ios_show_svi.stdout | default(''),
-        'trunk_output': _ios_show_trunk.stdout | default(''),
-        'mac_outputs': _ios_mac_table.results | default([]),
-        'stp_outputs': _ios_stp.results | default([]),
-        'arp_output': _ios_arp.stdout | default(''),
-        'target_vrf': target_vrf | default('')
-      }) | list }}"
+      trunk_interface_configs: "{{ _trunk_interface_configs | default([]) }}"
+      per_vlan: "{{ _ios_per_vlan_results | default([]) }}"

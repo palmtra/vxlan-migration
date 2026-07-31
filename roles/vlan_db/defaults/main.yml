@@ -1,0 +1,24 @@
+---
+# -----------------------------------------------------------------------------
+# vlan_db defaults
+# -----------------------------------------------------------------------------
+# Per-DC VLAN databases live under vars/vlans/<data_center>.yml and are the
+# primary source of truth for the Core workflow.
+# -----------------------------------------------------------------------------
+
+vlan_db_dir: "{{ playbook_dir }}/../vars/vlans"
+
+# Allowed service_type values for migration VLAN records.
+vlan_db_valid_service_types:
+  - l2
+  - l3
+  - l2_l3
+
+# When true, every target_switches entry must exist in the Ansible inventory.
+vlan_db_validate_target_switches: true
+
+# When true, discovery can run for a VLAN ID not yet present in the DC database.
+discovery_allow_probe: false
+
+# Default service_type for probe (not-yet-in-DB) VLAN records.
+discovery_probe_service_type: l3

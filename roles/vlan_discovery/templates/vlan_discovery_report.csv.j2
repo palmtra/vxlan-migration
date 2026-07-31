@@ -1,0 +1,4 @@
+vlan_id,vlan_name,service_type,data_center,hostname,os_family,vlan_present,mac_learned,svi_present,svi_vrf,arp_learned,trunk_cleanup_recommendations,timestamp
+{% for device in report.devices %}
+{{ report.vlan_id }},{{ report.vlan_name }},{{ report.service_type | default('') }},{{ report.data_center | default('') }},{{ device.hostname }},{{ device.os_family }},{{ 'yes' if device.vlan_present else 'no' }},{{ 'yes' if device.mac_learned else 'no' }},{{ 'yes' if device.svi_present else 'no' }},{{ device.svi_vrf | default('') }},{{ 'yes' if device.arp_learned else 'no' }},{{ device.trunk_cleanup_recommendations | default([]) | length }},{{ _report_timestamp_ms }}
+{% endfor %}

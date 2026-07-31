@@ -7,4 +7,4 @@
 # directly from the rulebook.
 # -----------------------------------------------------------------------------
 
-- ansible.builtin.import_playbook: playbooks/workflow_vlan_to_vxlan_verify.yml
+- ansible.builtin.import_playbook: playbooks/advanced/workflow_verify.yml

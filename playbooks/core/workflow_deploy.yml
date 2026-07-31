@@ -1,0 +1,196 @@
+---
+# -----------------------------------------------------------------------------
+# Core workflow — deploy stage (Steps 1-5, no ServiceNow)
+# -----------------------------------------------------------------------------
+# Intake via manual extra vars, local VLAN DB as primary SSOT, discovery,
+# cleanup hand-off, and CVP configlet generation. The run ends when configlets
+# are in CVP with a pending change control — operator approval is manual.
+#
+# Post-CVP verification is a separate playbook: workflow_verify.yml
+#
+# Example:
+#   ansible-playbook -i inventory/hosts.yml playbooks/core/workflow_deploy.yml \
+#     -e manual_vlan_id=100 \
+#     -e manual_data_center=lisle \
+#     -e manual_target_vrf=default \
+#     -e cvp_apply_configlets=false
+# -----------------------------------------------------------------------------
+
+- name: Core — normalize input and load local VLAN database
+  hosts: localhost
+  gather_facts: false
+
+  tasks:
+    - name: Step 1a — Normalize manual workflow input (Core)
+      ansible.builtin.include_role:
+        name: workflow_input
+      when: workflow_tier | default('core') == 'core'
+
+    - name: Step 1b — Normalize ServiceNow workflow input (Advanced)
+      ansible.builtin.include_role:
+        name: servicenow_input
+      when: workflow_tier | default('core') == 'advanced'
+
+    - name: Load per-DC VLAN database
+      ansible.builtin.include_role:
+        name: vlan_db
+
+    - name: Set workflow-scoped target VLAN list
+      ansible.builtin.set_fact:
+        target_vlan_ids:
+          - "{{ target_vlan_id | int }}"
+
+- name: Core — Steps 2-4 discovery, cleanup hand-off, NetBox sync check
+  hosts: network_devices
+  gather_facts: false
+
+  vars:
+    target_vrf: "{{ hostvars['localhost']['target_vrf'] | default('default') }}"
+    _effective_vlans: "{{ hostvars['localhost']['_effective_vlans'] }}"
+    target_vlan_ids: "{{ hostvars['localhost']['target_vlan_ids'] | default([]) }}"
+    _discovery_hosts: "{{ hostvars['localhost']['_workflow_discovery_hosts'] | default([]) }}"
+
+  pre_tasks:
+    - name: Limit discovery to switches declared in the VLAN DB
+      ansible.builtin.meta: end_host
+      when:
+        - _discovery_hosts | length > 0
+        - inventory_hostname not in _discovery_hosts
+
+  tasks:
+    - name: Steps 2-4 — discovery, cleanup, NetBox
+      block:
+        - name: Step 2a — Gather common network facts / backup
+          ansible.builtin.include_role:
+            name: network_common
+
+        - name: Step 2b — Discover legacy VLAN state
+          ansible.builtin.include_role:
+            name: vlan_discovery
+
+        - name: Step 3 — Hand off discovered VLAN to external cleanup tool
+          ansible.builtin.include_role:
+            name: external_cleanup
+          vars:
+            target_vlan_id: "{{ hostvars['localhost']['target_vlan_id'] | int }}"
+            target_data_center: "{{ hostvars['localhost']['target_data_center'] | default('') }}"
+            target_vrf: "{{ hostvars['localhost']['target_vrf'] | default('') }}"
+          run_once: true
+
+        - name: Step 4 — Optional NetBox sync check (secondary SSOT)
+          ansible.builtin.include_role:
+            name: netbox_check
+          vars:
+            target_vlan_id: "{{ hostvars['localhost']['target_vlan_id'] | int }}"
+          run_once: true
+      rescue:
+        - name: Notify ServiceNow of failure during discovery/cleanup/NetBox validation (Advanced)
+          ansible.builtin.include_role:
+            name: servicenow_update
+          vars:
+            snow_status_message: >-
+              VLAN {{ hostvars['localhost']['target_vlan_id'] }} migration failed during
+              discovery/cleanup/NetBox validation on {{ inventory_hostname }}:
+              {{ ansible_failed_result.msg | default('see task output for details') }}
+            snow_ticket_state: "escalated"
+          run_once: true
+          when:
+            - workflow_tier | default('core') == 'advanced'
+            - snow_enable_callbacks | default(true) | bool
+
+        - name: Re-raise the original failure
+          ansible.builtin.fail:
+            msg: "{{ ansible_failed_result.msg | default('Steps 2-4 failed on ' + inventory_hostname) }}"
+
+- name: Core — Step 5 deploy VXLAN migration configlets to Arista CVP
+  hosts: eos_devices
+  gather_facts: false
+
+  vars:
+    _cvp_hosts: "{{ hostvars['localhost']['_workflow_cvp_target_switches'] | default([]) }}"
+
+  pre_tasks:
+    - name: Limit CVP deploy to target_switches from the VLAN DB
+      ansible.builtin.meta: end_host
+      when:
+        - _cvp_hosts | length > 0
+        - inventory_hostname not in _cvp_hosts
+
+  tasks:
+    - name: Step 5 — Generate and push VXLAN configlets
+      block:
+        - name: Step 5a — Legacy Jinja configlet generation
+          ansible.builtin.include_role:
+            name: cvp_deploy
+          vars:
+            target_vlan_id: "{{ hostvars['localhost']['target_vlan_id'] | int }}"
+            target_data_center: "{{ hostvars['localhost']['target_data_center'] | default('') }}"
+            target_vrf: "{{ hostvars['localhost']['target_vrf'] | default('') }}"
+          when: not use_avd | default(false) | bool
+
+        - name: Step 5b — AVD-based configlet generation
+          ansible.builtin.include_role:
+            name: avd_vxlan_config
+          vars:
+            target_vlan_id: "{{ hostvars['localhost']['target_vlan_id'] | int }}"
+            target_data_center: "{{ hostvars['localhost']['target_data_center'] | default('') }}"
+            target_vrf: "{{ hostvars['localhost']['target_vrf'] | default('') }}"
+          when: use_avd | default(false) | bool
+      rescue:
+        - name: Notify ServiceNow of failure during CVP configlet deployment (Advanced)
+          ansible.builtin.include_role:
+            name: servicenow_update
+          vars:
+            snow_status_message: >-
+              VLAN {{ hostvars['localhost']['target_vlan_id'] }} migration failed during
+              CVP configlet generation/deployment on {{ inventory_hostname }}:
+              {{ ansible_failed_result.msg | default('see task output for details') }}
+            snow_ticket_state: "escalated"
+          run_once: true
+          when:
+            - workflow_tier | default('core') == 'advanced'
+            - snow_enable_callbacks | default(true) | bool
+
+        - name: Re-raise CVP deployment failure
+          ansible.builtin.fail:
+            msg: "{{ ansible_failed_result.msg | default('Step 5 failed on ' + inventory_hostname) }}"
+
+- name: Core — persist workflow state for asynchronous verification
+  hosts: localhost
+  gather_facts: false
+
+  vars:
+    workflow_state_dir: "{{ playbook_dir }}/../../reports/workflow_state"
+
+  tasks:
+    - name: Ensure workflow state directory exists
+      ansible.builtin.file:
+        path: "{{ workflow_state_dir }}"
+        state: directory
+        mode: '0755'
+
+    - name: Write workflow state for VLAN {{ target_vlan_id }}
+      ansible.builtin.copy:
+        dest: "{{ workflow_state_dir }}/vlan_{{ target_vlan_id }}.yml"
+        mode: '0644'
+        content: |
+          ---
+          workflow_tier: "{{ workflow_tier | default('core') }}"
+          target_vlan_id: {{ target_vlan_id }}
+          target_data_center: "{{ target_data_center | default('') }}"
+          target_vrf: "{{ target_vrf | default('default') }}"
+          target_ticket_sys_id: "{{ target_ticket_sys_id | default('') }}"
+          target_switches: {{ hostvars['localhost']['_workflow_cvp_target_switches'] | default([]) | to_json }}
+          persisted_at: "{{ lookup('pipe', 'date -u +%Y-%m-%dT%H:%M:%SZ') }}"
+
+    - name: Notify ServiceNow that the change control is pending approval (Advanced)
+      ansible.builtin.include_role:
+        name: servicenow_update
+      vars:
+        snow_status_message: >-
+          VLAN {{ target_vlan_id }} VXLAN migration configlets generated and pushed to CVP.
+          A change control is pending approval in CVP before verification runs.
+        snow_ticket_state: "wait_for_approval"
+      when:
+        - workflow_tier | default('core') == 'advanced'
+        - snow_enable_callbacks | default(true) | bool

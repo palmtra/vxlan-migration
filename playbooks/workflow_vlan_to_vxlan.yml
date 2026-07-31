@@ -1,38 +1,9 @@
 ---
 # -----------------------------------------------------------------------------
-# workflow_vlan_to_vxlan.yml
+# workflow_vlan_to_vxlan.yml (DEPRECATED)
 # -----------------------------------------------------------------------------
-# End-to-end, single-run entry point for the VLAN->VXLAN migration workflow.
-# Runs both stages back-to-back in one ansible-playbook process:
-#   1. workflow_vlan_to_vxlan_deploy.yml  (Steps 1-5: intake through CVP
-#      configlet push / change control creation)
-#   2. workflow_vlan_to_vxlan_verify.yml  (Step 6: post-change verification,
-#      rollback + re-verify on failure)
-#
-# This is convenient for local/CLI testing and for environments without a
-# CVP change-control approval gate to wait on. In production, prefer running
-# the two stages separately, driven by
-# eda/rulebooks/vlan_to_vxlan_migration.yml: the deploy stage runs on the
-# ServiceNow webhook event and stops after creating a PENDING change control;
-# the verify stage only runs once CVP reports that change control as
-# approved/executed, instead of this playbook blocking or polling in a single
-# long-running process while waiting for a human to approve it in CVP.
-#
-# Expected input (ServiceNow webhook / extra vars):
-#   snow_vlan_id: <vlan-id>
-#   snow_data_center: <dc-name>
-#   snow_target_vrf: <vrf-name>
-#   snow_ticket_sys_id: <sys_id>
-#
-# For local testing you may instead pass:
-#   -e manual_vlan_id=100 -e manual_data_center=lisle -e manual_target_vrf=default
-#
-# Scope to a data center with --limit, e.g. --limit dc_lisle.
-#
-# Set -e use_avd=true to generate Arista CVP configlets with the
-# arista.avd.eos_cli_config_gen role instead of the legacy custom Jinja path.
+# Core (demo, no ServiceNow):  playbooks/core/workflow.yml
+# Advanced (ServiceNow):       playbooks/advanced/workflow.yml
 # -----------------------------------------------------------------------------
 
-- ansible.builtin.import_playbook: workflow_vlan_to_vxlan_deploy.yml
-- ansible.builtin.import_playbook: workflow_vlan_to_vxlan_verify.yml
-
+- ansible.builtin.import_playbook: advanced/workflow.yml

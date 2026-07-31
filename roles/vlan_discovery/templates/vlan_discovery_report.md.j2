@@ -1,0 +1,104 @@
+# VLAN {{ report.vlan_name }} (VID {{ report.vlan_id }}) — Discovery Report
+
+Generated: {{ _report_timestamp_ms }}
+Data center: {{ report.data_center | default('unknown') }}
+Service type: {{ report.service_type | default('unknown') }}
+
+> **Read-only discovery.** This report collects state and recommends cleanup areas.
+> It does **not** generate or apply configuration changes. Trunk cleanup is planned
+> separately (e.g. `cvg-decomm-vlan`) after migration.
+
+## Switches where this VLAN was found
+
+Use these lists to populate `target_switches`, `discovery_switches`, and migration scope in `vars/vlans/{{ report.data_center }}.yml`.
+
+| Category | Switches |
+|----------|----------|
+| **VLAN L2 present** | {{ report.switches_found | join(', ') if report.switches_found | length > 0 else '*(none)*' }} |
+| **Learned MAC addresses** | {{ report.switches_with_mac_learning | join(', ') if report.switches_with_mac_learning | length > 0 else '*(none)*' }} |
+| **SVI (L3) present** | {{ report.switches_with_svi | join(', ') if report.switches_with_svi | length > 0 else '*(none)*' }} |
+| **ARP entries on SVI** | {{ report.switches_with_arp | join(', ') if report.switches_with_arp | length > 0 else '*(none)*' }} |
+| **Already in VLAN DB** | {{ report.target_switches | join(', ') if report.target_switches | length > 0 else '*(not set)*' }} |
+
+A copy-paste YAML snippet was written alongside this report:
+`{{ report.vlan_slug }}_vlan_db_snippet_{{ _report_timestamp_ms }}.yml`
+
+## Summary
+
+| Switch | OS | VLAN | MAC learned | SVI | SVI VRF | ARP | Trunk cleanup rec. |
+|--------|----|------|-------------|-----|---------|-----|--------------------|
+{% for device in report.devices %}
+| {{ device.hostname }} | {{ device.os_family }} | {{ 'yes' if device.vlan_present else 'no' }} | {{ 'yes' if device.mac_learned else 'no' }} | {{ 'yes' if device.svi_present else 'no' }} | {{ device.svi_vrf | default('-') }} | {{ 'yes' if device.arp_learned else 'no' }} | {{ device.trunk_cleanup_recommendations | default([]) | length }} |
+{% endfor %}
+
+## Trunk VLAN carriage — cleanup recommendations
+
+Discovery runs `show interfaces trunk` and inspects each trunk's allowed-VLAN configuration.
+When a trunk **allows all VLANs** (no explicit list), no cleanup is recommended here.
+When the VLAN is **explicitly allowed** on a pruned trunk, it is flagged for future decommission planning.
+
+{% if report.trunk_cleanup_candidates | default([]) | length > 0 %}
+| Switch | Interface | Mode | Recommendation |
+|--------|-----------|------|----------------|
+{% for item in report.trunk_cleanup_candidates %}
+| {{ item.hostname }} | {{ item.interface }} | {{ item.pruning_mode }} | {{ item.recommendation }} |
+{% endfor %}
+{% else %}
+*(No trunk cleanup recommendations — VLAN is not explicitly listed on pruned trunks, or no trunk data was collected.)*
+{% endif %}
+
+## Per-Switch Detail
+
+{% for device in report.devices %}
+### {{ device.hostname }} ({{ device.os_family }})
+
+- **VLAN present (`show vlan id {{ report.vlan_id }}`):** {{ 'yes' if device.vlan_present else 'no' }}
+- **MAC addresses learned:** {{ 'yes' if device.mac_learned else 'no' }}
+- **SVI present (`show run interface Vlan{{ report.vlan_id }}`):** {{ 'yes' if device.svi_present else 'no' }}
+- **SVI VRF (from interface config):** {{ device.svi_vrf | default('n/a') }}
+- **ARP learned in SVI VRF:** {{ 'yes' if device.arp_learned else 'no' }}
+
+#### `show vlan id {{ report.vlan_id }}`
+
+```
+{{ device.vlan_id_raw | default('No data collected.') }}
+```
+
+#### `show running-config interface Vlan{{ report.vlan_id }}`
+
+```
+{{ device.svi_raw | default('No data collected.') }}
+```
+
+#### MAC Address Table
+
+```
+{{ device.mac_table_raw | default('No data collected.') }}
+```
+
+{% if device.svi_present %}
+#### ARP (VRF {{ device.svi_vrf | default('default') }})
+
+```
+{{ device.arp_raw | default('No data collected.') }}
+```
+{% endif %}
+
+{% if device.trunk_vlan_status | default([]) | length > 0 %}
+#### Trunk VLAN carriage
+
+| Interface | Mode | VLAN carried | Cleanup recommended | Allowed summary | Reason |
+|-----------|------|--------------|---------------------|-----------------|--------|
+{% for entry in device.trunk_vlan_status %}
+| {{ entry.interface }} | {{ entry.pruning_mode }} | {{ 'yes' if entry.vlan_carried else 'no' }} | {{ 'yes' if entry.cleanup_recommended else 'no' }} | {{ entry.allowed_summary | default('-') }} | {{ entry.reason }} |
+{% endfor %}
+{% endif %}
+
+{% endfor %}
+
+## Migration Readiness Notes
+
+- Primary SSOT: local VLAN DB (`vars/vlans/{{ report.data_center | default('unknown') }}.yml`)
+- NetBox sync status: {{ hostvars['localhost']['_netbox_sync_status'] | default('not checked') }}
+- Prefer `switches_with_mac_learning` for `target_switches` when migrating active L2 services
+- Trunk cleanup is **informational only**; execute via decommission tooling after VXLAN migration

@@ -2,8 +2,8 @@
 # -----------------------------------------------------------------------------
 # network_common
 # -----------------------------------------------------------------------------
-# Shared tasks used by both migrate and decommission playbooks:
-#   - load canonical VLAN registry
+# Shared tasks used by discovery and migration playbooks:
+#   - reuse VLAN registry loaded by vlan_db (or load per-DC file as fallback)
 #   - filter to the VLANs targeted by the current playbook
 #   - gather network facts
 #   - capture a configuration backup
@@ -24,14 +24,47 @@
   ansible.builtin.set_fact:
     ansible_date_time: "{{ _localhost_facts.ansible_facts.ansible_date_time }}"
 
-- name: Load canonical VLAN registry
-  ansible.builtin.include_vars:
-    file: "{{ vlan_registry_file }}"
-    name: vlan_registry
-
-- name: Compute effective VLAN list for this run
+- name: Reuse VLAN registry loaded by vlan_db on localhost
   ansible.builtin.set_fact:
-    _effective_vlans: "{{ vlan_registry.vlans | select_vlans_for_run(target_vlan_ids | default([]), target_actions | default([])) }}"
+    vlan_registry: "{{ hostvars['localhost']['vlan_registry'] }}"
+    _effective_vlans: "{{ hostvars['localhost']['_effective_vlans'] }}"
+  when:
+    - hostvars['localhost']['_effective_vlans'] is defined
+    - hostvars['localhost']['vlan_registry'] is defined
+
+- name: Fail when vlan_db did not populate _effective_vlans on localhost
+  ansible.builtin.fail:
+    msg: >-
+      _effective_vlans is not set on localhost. Run roles/vlan_db in a prior play first.
+  when:
+    - hostvars['localhost']['_effective_vlans'] is not defined
+    - _effective_vlans is not defined
+
+- name: Load per-DC VLAN registry when vlan_db was not run
+  when:
+    - hostvars['localhost']['_effective_vlans'] is not defined
+    - _effective_vlans is not defined
+  block:
+    - name: Resolve data center for standalone VLAN registry load
+      ansible.builtin.set_fact:
+        _local_dc: "{{ target_data_center | default(manual_data_center, true) | default(data_center, true) | default('', true) | trim }}"
+
+    - name: Fail when data center cannot be determined for VLAN registry load
+      ansible.builtin.fail:
+        msg: >-
+          Could not determine the data center for VLAN registry loading.
+          Run the vlan_db role first, or pass target_data_center / manual_data_center,
+          or ensure each host defines data_center.
+      when: _local_dc | length == 0
+
+    - name: Load per-DC VLAN registry file
+      ansible.builtin.include_vars:
+        file: "{{ vlan_db_dir | default(playbook_dir ~ '/../vars/vlans') }}/{{ _local_dc }}.yml"
+        name: vlan_registry
+
+    - name: Compute effective VLAN list for this run
+      ansible.builtin.set_fact:
+        _effective_vlans: "{{ vlan_registry.vlans | select_vlans_for_run(hostvars['localhost']['target_vlan_ids'] | default(target_vlan_ids | default([])), target_actions | default([])) }}"
 
 - name: Display VLANs selected for this host
   ansible.builtin.debug:

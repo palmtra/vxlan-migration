@@ -3,8 +3,17 @@
 # Global variables for cvg-vxlan
 # -----------------------------------------------------------------------------
 
-# Load the canonical VLAN registry by default
+# Load the per-DC VLAN database directory (primary SSOT for Core workflow).
+vlan_db_dir: "{{ playbook_dir }}/../vars/vlans"
+
+# Deprecated monolithic registry path — kept for older playbooks only.
 vlan_registry_file: "{{ playbook_dir }}/../vars/vlan_registry.yml"
+
+# Workflow tier: core (no ServiceNow) or advanced (ServiceNow callbacks enabled).
+workflow_tier: core
+
+# NetBox is secondary in Core workflow. Set true in Advanced when NetBox is mature.
+netbox_ssot_required: false
 
 # When true, every change playbook will save a local backup per host.
 network_backup_enabled: true

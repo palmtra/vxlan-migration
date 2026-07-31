@@ -20,24 +20,18 @@
     - "{{ avd_output_dir }}"
     - "{{ avd_output_dir }}/structured_configs"
 
-- name: Load canonical VLAN registry
-  ansible.builtin.include_vars:
-    file: "{{ vlan_registry_file }}"
-    name: _avd_vlan_registry
-  delegate_to: localhost
-  become: false
-  run_once: true
-
-- name: Look up target VLAN in registry
+- name: Look up target VLAN in the local VLAN DB
   ansible.builtin.set_fact:
-    _avd_vlan: "{{ _avd_vlan_registry.vlans | selectattr('id', 'equalto', target_vlan_id | int) | first | default({}) }}"
+    _avd_vlan: "{{ hostvars['localhost']['_target_vlan_record'] | default({}) }}"
   delegate_to: localhost
   become: false
   run_once: true
 
-- name: Fail when target VLAN is not in the registry
+- name: Fail when target VLAN record is not available on localhost
   ansible.builtin.fail:
-    msg: "VLAN {{ target_vlan_id }} not found in {{ vlan_registry_file }}"
+    msg: >-
+      VLAN {{ target_vlan_id }} not found on localhost. Run roles/vlan_db before
+      avd_vxlan_config.
   delegate_to: localhost
   become: false
   run_once: true

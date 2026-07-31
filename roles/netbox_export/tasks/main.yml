@@ -1,0 +1,108 @@
+---
+# -----------------------------------------------------------------------------
+# netbox_export
+# -----------------------------------------------------------------------------
+# Exports VLAN attributes from the local per-DC VLAN database to NetBox via API.
+# Read-only toward network devices; writes to NetBox only when dry_run is false.
+# -----------------------------------------------------------------------------
+
+- name: Verify NetBox credentials are configured
+  ansible.builtin.assert:
+    that:
+      - netbox_url | default('', true) | length > 0
+      - netbox_token | default('', true) | length > 0
+    fail_msg: >-
+      NetBox export requires netbox_url and netbox_token in vault or extra vars.
+  delegate_to: localhost
+  become: false
+  run_once: true
+
+- name: Resolve NetBox site slug for data center
+  ansible.builtin.set_fact:
+    _netbox_site_slug: "{{ netbox_export_site_map.get(target_data_center, target_data_center) }}"
+  delegate_to: localhost
+  become: false
+  run_once: true
+
+- name: Look up NetBox site by slug
+  ansible.builtin.uri:
+    url: "{{ netbox_url }}/api/dcim/sites/?slug={{ _netbox_site_slug }}"
+    method: GET
+    headers:
+      Authorization: "Token {{ netbox_token }}"
+      Accept: "application/json"
+    validate_certs: "{{ netbox_validate_certs | default(true) | bool }}"
+    timeout: "{{ netbox_export_timeout | int }}"
+    status_code: 200
+  register: _netbox_site_lookup
+  delegate_to: localhost
+  become: false
+  run_once: true
+  failed_when: false
+  changed_when: false
+
+- name: Set NetBox site ID
+  ansible.builtin.set_fact:
+    _netbox_site_id: "{{ (_netbox_site_lookup.json.results | default([]) | first).id | default(omit) }}"
+  delegate_to: localhost
+  become: false
+  run_once: true
+  when:
+    - _netbox_site_lookup.status | default(0) == 200
+    - _netbox_site_lookup.json.results | default([]) | length > 0
+
+- name: Warn when NetBox site was not found
+  ansible.builtin.debug:
+    msg: >-
+      NetBox site slug '{{ _netbox_site_slug }}' was not found.
+      VLAN export will proceed without a site association unless you create the site first.
+  delegate_to: localhost
+  become: false
+  run_once: true
+  when: _netbox_site_id is not defined
+
+- name: Initialize export results
+  ansible.builtin.set_fact:
+    _netbox_export_results: []
+  delegate_to: localhost
+  become: false
+  run_once: true
+
+- name: Export each VLAN record to NetBox
+  ansible.builtin.include_tasks: export_vlan_record.yml
+  loop: "{{ _effective_vlans | default([]) }}"
+  loop_control:
+    loop_var: _export_vlan
+    label: "VLAN {{ _export_vlan.id }} ({{ _export_vlan.name }})"
+  run_once: true
+
+- name: Ensure NetBox export artifact directory exists
+  ansible.builtin.file:
+    path: "{{ netbox_export_artifact_dir }}"
+    state: directory
+    mode: '0755'
+  delegate_to: localhost
+  become: false
+  run_once: true
+  when: netbox_export_write_artifact | bool
+
+- name: Write NetBox export artifact
+  ansible.builtin.copy:
+    dest: >-
+      {{ netbox_export_artifact_dir }}/netbox_export_{{ target_data_center }}_vlan{{ target_vlan_id | default('all') }}_{{ lookup('pipe', 'date +%Y%m%d_%H%M%S') }}.json
+    mode: '0644'
+    content: "{{ {'data_center': target_data_center, 'dry_run': netbox_export_dry_run | bool, 'results': _netbox_export_results | default([])} | to_nice_json }}"
+  delegate_to: localhost
+  become: false
+  run_once: true
+  when: netbox_export_write_artifact | bool
+
+- name: Display NetBox export summary
+  ansible.builtin.debug:
+    msg:
+      - "NetBox export complete (dry_run={{ netbox_export_dry_run | bool }})."
+      - "Records processed: {{ _netbox_export_results | default([]) | length }}"
+      - "{{ _netbox_export_results | default([]) | map(attribute='status') | list }}"
+  delegate_to: localhost
+  become: false
+  run_once: true

@@ -1,61 +1,21 @@
 ---
 # -----------------------------------------------------------------------------
-# Cisco NXOS state gathering
+# Cisco NXOS state gathering — one targeted query per VLAN in _effective_vlans
 # -----------------------------------------------------------------------------
 
-- name: NXOS — show vlan brief
-  ansible.netcommon.cli_command:
-    command: show vlan brief
-  register: _nxos_show_vlan
-  check_mode: false
-  changed_when: false
-  failed_when: false
+- name: NXOS — initialize per-VLAN discovery results
+  ansible.builtin.set_fact:
+    _nxos_per_vlan_results: []
 
-- name: NXOS — show SVIs
-  ansible.netcommon.cli_command:
-    command: show ip interface brief | include Vlan
-  register: _nxos_show_svi
-  check_mode: false
-  changed_when: false
-  failed_when: false
+- name: NXOS — collect trunk interface configs for prune analysis
+  ansible.builtin.include_tasks: gather_nxos_trunks.yml
 
-- name: NXOS — show trunk interfaces
-  ansible.netcommon.cli_command:
-    command: show interface trunk
-  register: _nxos_show_trunk
-  check_mode: false
-  changed_when: false
-  failed_when: false
-
-- name: NXOS — show MAC address table for target VLANs
-  ansible.netcommon.cli_command:
-    command: "show mac address-table vlan {{ item }}"
-  loop: "{{ _effective_vlans | map(attribute='id') | list }}"
-  register: _nxos_mac_table
-  check_mode: false
-  changed_when: false
-  failed_when: false
+- name: NXOS — targeted discovery per VLAN
+  ansible.builtin.include_tasks: gather_nxos_vlan.yml
+  loop: "{{ _effective_vlans }}"
   loop_control:
-    label: "{{ item }}"
-
-- name: NXOS — show spanning-tree for target VLANs
-  ansible.netcommon.cli_command:
-    command: "show spanning-tree vlan {{ item }}"
-  loop: "{{ _effective_vlans | map(attribute='id') | list }}"
-  register: _nxos_stp
-  check_mode: false
-  changed_when: false
-  failed_when: false
-  loop_control:
-    label: "{{ item }}"
-
-- name: NXOS — show ARP table for target VRF
-  ansible.netcommon.cli_command:
-    command: "show ip arp vrf {{ target_vrf | default('default') }}"
-  register: _nxos_arp
-  check_mode: false
-  changed_when: false
-  failed_when: false
+    loop_var: _disc_vlan
+    label: "{{ _disc_vlan.id }}"
 
 - name: NXOS — assemble discovery fact
   ansible.builtin.set_fact:
@@ -64,18 +24,5 @@
       data_center: "{{ data_center | default('unknown') }}"
       os_family: "{{ network_os_family }}"
       timestamp: "{{ ansible_date_time.iso8601 }}"
-      vlans_raw: "{{ _nxos_show_vlan.stdout | default('') }}"
-      svi_raw: "{{ _nxos_show_svi.stdout | default('') }}"
-      trunks_raw: "{{ _nxos_show_trunk.stdout | default('') }}"
-      mac_table_raw: "{{ _nxos_mac_table.results | default([]) | map(attribute='stdout') | reject('undefined') | list }}"
-      stp_raw: "{{ _nxos_stp.results | default([]) | map(attribute='stdout') | reject('undefined') | list }}"
-      arp_raw: "{{ _nxos_arp.stdout | default('') }}"
-      per_vlan: "{{ _effective_vlans | map('extract_vlan_discovery', {
-        'vlan_output': _nxos_show_vlan.stdout | default(''),
-        'svi_output': _nxos_show_svi.stdout | default(''),
-        'trunk_output': _nxos_show_trunk.stdout | default(''),
-        'mac_outputs': _nxos_mac_table.results | default([]),
-        'stp_outputs': _nxos_stp.results | default([]),
-        'arp_output': _nxos_arp.stdout | default(''),
-        'target_vrf': target_vrf | default('')
-      }) | list }}"
+      trunk_interface_configs: "{{ _trunk_interface_configs | default([]) }}"
+      per_vlan: "{{ _nxos_per_vlan_results | default([]) }}"

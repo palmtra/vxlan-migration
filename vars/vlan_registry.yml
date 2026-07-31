@@ -1,26 +1,33 @@
 ---
-# -----------------------------------------------------------------------------
-# Canonical VLAN registry for cvg-vxlan
-# -----------------------------------------------------------------------------
-# Each entry describes a legacy VLAN to provision in the VXLAN fabric.
+# DEPRECATED — use per-DC files under vars/vlans/ instead.
 #
-# Required fields:
-#   id, name, action, vni, vlan_name, vrf, mcast_group
-# -----------------------------------------------------------------------------
+#   vars/vlans/lisle.yml
+#   vars/vlans/omaha.yml
+#
+# This file remains temporarily for backward compatibility with older playbooks
+# that still reference vars/vlan_registry.yml directly.
 
 vlans:
   - id: 100
     name: legacy_web
     action: migrate
+    service_type: l3
     vlan_name: WEB_VXLAN
     vni: 50100
     vrf: default
     mcast_group: "239.1.1.100"
+    target_switches:
+      - eos-leaf-lis-01
+      - eos-leaf-lis-02
 
   - id: 200
     name: legacy_app
     action: migrate
+    service_type: l2_l3
     vlan_name: APP_VXLAN
     vni: 50200
     vrf: default
     mcast_group: "239.1.1.200"
+    target_switches:
+      - eos-leaf-lis-01
+      - eos-leaf-lis-02

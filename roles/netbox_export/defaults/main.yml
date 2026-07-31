@@ -1,0 +1,26 @@
+---
+# -----------------------------------------------------------------------------
+# netbox_export defaults
+# -----------------------------------------------------------------------------
+# Standalone export of local VLAN DB records to NetBox. Not part of the Core or
+# Advanced migration workflow — run manually when you want to sync inventory.
+# -----------------------------------------------------------------------------
+
+netbox_export_dry_run: true
+netbox_export_create_missing: true
+netbox_export_update_existing: true
+
+# Map data_center keys to NetBox site slugs (customize for your NetBox tenancy).
+netbox_export_site_map:
+  lisle: lisle
+  omaha: omaha
+
+# Optional NetBox tenant slug applied to exported VLANs.
+netbox_export_tenant_slug: ""
+
+# NetBox API timeout (seconds).
+netbox_export_timeout: 30
+
+# Write a JSON artifact of the export result under reports/netbox_export/.
+netbox_export_write_artifact: true
+netbox_export_artifact_dir: "{{ playbook_dir }}/../reports/netbox_export"

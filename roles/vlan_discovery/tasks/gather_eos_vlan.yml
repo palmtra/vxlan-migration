@@ -1,0 +1,76 @@
+---
+# -----------------------------------------------------------------------------
+# Arista EOS — targeted per-VLAN commands (one VLAN per include)
+# -----------------------------------------------------------------------------
+
+- name: "EOS — show vlan id {{ _disc_vlan.id }}"
+  ansible.netcommon.cli_command:
+    command: "show vlan id {{ _disc_vlan.id }}"
+  register: _eos_vlan_id_show
+  check_mode: false
+  changed_when: false
+  failed_when: false
+
+- name: "EOS — show running-config interface Vlan{{ _disc_vlan.id }}"
+  ansible.netcommon.cli_command:
+    command: "show running-config interface Vlan{{ _disc_vlan.id }}"
+  register: _eos_svi_show
+  check_mode: false
+  changed_when: false
+  failed_when: false
+
+- name: "EOS — derive SVI VRF for VLAN {{ _disc_vlan.id }}"
+  ansible.builtin.set_fact:
+    _disc_svi_present: "{{ _eos_svi_show.stdout | default('') | svi_command_indicates_present(_disc_vlan.id) }}"
+    _disc_svi_vrf: "{{ _eos_svi_show.stdout | default('') | parse_svi_vrf('eos') }}"
+
+- name: "EOS — show ip arp for SVI Vlan{{ _disc_vlan.id }} in VRF {{ _disc_svi_vrf }}"
+  ansible.netcommon.cli_command:
+    command: "{{ _disc_arp_command }}"
+  register: _eos_arp_show
+  vars:
+    _disc_arp_command: "{{ 'eos' | arp_discovery_command(_disc_vlan.id, _disc_svi_vrf, _disc_svi_present) }}"
+  when:
+    - _disc_svi_present | bool
+    - (_disc_vlan.service_type | default('l3')) in ['l3', 'l2_l3']
+    - _disc_arp_command | length > 0
+  check_mode: false
+  changed_when: false
+  failed_when: false
+
+- name: "EOS — default empty ARP output for VLAN {{ _disc_vlan.id }}"
+  ansible.builtin.set_fact:
+    _eos_arp_show:
+      stdout: ""
+  when: _eos_arp_show is not defined
+
+- name: "EOS — show mac address-table vlan {{ _disc_vlan.id }}"
+  ansible.netcommon.cli_command:
+    command: "show mac address-table vlan {{ _disc_vlan.id }}"
+  register: _eos_mac_show
+  check_mode: false
+  changed_when: false
+  failed_when: false
+
+- name: "EOS — show spanning-tree vlan {{ _disc_vlan.id }}"
+  ansible.netcommon.cli_command:
+    command: "show spanning-tree vlan {{ _disc_vlan.id }}"
+  register: _eos_stp_show
+  check_mode: false
+  changed_when: false
+  failed_when: false
+
+- name: "EOS — append discovery record for VLAN {{ _disc_vlan.id }}"
+  ansible.builtin.set_fact:
+    _eos_per_vlan_results: "{{ _eos_per_vlan_results | default([]) + [_eos_vlan_record] }}"
+  vars:
+    _eos_vlan_record: "{{ _disc_vlan | extract_vlan_targeted_discovery({
+      'platform': 'eos',
+      'vlan_id_output': _eos_vlan_id_show.stdout | default(''),
+      'svi_output': _eos_svi_show.stdout | default(''),
+      'mac_output': _eos_mac_show.stdout | default(''),
+      'stp_output': _eos_stp_show.stdout | default(''),
+      'arp_output': _eos_arp_show.stdout | default(''),
+      'trunk_interfaces': _trunk_interface_configs | default([]),
+      'target_vrf': target_vrf | default('')
+    }) }}"

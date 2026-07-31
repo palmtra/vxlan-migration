@@ -1,0 +1,67 @@
+---
+# -----------------------------------------------------------------------------
+# Core workflow — VLAN discovery (no ServiceNow)
+# -----------------------------------------------------------------------------
+# Read-only discovery using the per-DC local VLAN database.
+#
+# Discover one VLAN (including IDs not yet in the VLAN DB):
+#   ansible-playbook -i inventory/hosts.yml playbooks/core/discover_vlan.yml \
+#     -e manual_data_center=lisle \
+#     -e manual_vlan_id=2911 \
+#     -e discovery_allow_probe=true \
+#     --limit dc_lisle
+#
+# Discover all VLANs declared in the DC database:
+#   ansible-playbook -i inventory/hosts.yml playbooks/core/discover_vlan.yml \
+#     -e manual_data_center=lisle \
+#     --limit dc_lisle
+#
+# Reports are written per VLAN under:
+#   reports/<dc>/<vlan_name>/<vlan_name>_discovery_<timestamp>.{md,csv,json,yml}
+# -----------------------------------------------------------------------------
+
+- name: Load local VLAN database
+  hosts: localhost
+  gather_facts: false
+
+  tasks:
+    - name: Normalize discovery input
+      ansible.builtin.set_fact:
+        target_data_center: "{{ manual_data_center | default(target_data_center, true) | default('', true) | trim }}"
+        target_vlan_id: "{{ manual_vlan_id | int if (manual_vlan_id is defined) else omit }}"
+        target_vlan_ids: "{{ [manual_vlan_id | int] if (manual_vlan_id is defined) else (target_vlan_ids | default([])) }}"
+        discovery_allow_probe: "{{ discovery_allow_probe | default(true) | bool }}"
+
+    - name: Fail if data center is not specified
+      ansible.builtin.fail:
+        msg: "Pass -e manual_data_center=lisle (or omaha)."
+      when: target_data_center | length == 0
+
+    - name: Load per-DC VLAN database
+      ansible.builtin.include_role:
+        name: vlan_db
+
+- name: Discover VLAN state
+  hosts: network_devices
+  gather_facts: false
+
+  vars:
+    target_vrf: "{{ hostvars['localhost']['target_vrf'] | default('default') }}"
+    _effective_vlans: "{{ hostvars['localhost']['_effective_vlans'] }}"
+    target_vlan_ids: "{{ hostvars['localhost']['target_vlan_ids'] | default([]) }}"
+    _discovery_hosts: "{{ hostvars['localhost']['_workflow_discovery_hosts'] | default([]) }}"
+    discovery_scan_all_switches: "{{ hostvars['localhost']['_discovery_scan_all_switches'] | default(false) | bool }}"
+
+  pre_tasks:
+    - name: Limit discovery to switches declared in the VLAN DB
+      ansible.builtin.meta: end_host
+      when:
+        - not discovery_scan_all_switches
+        - _discovery_hosts | length > 0
+        - inventory_hostname not in _discovery_hosts
+
+  roles:
+    - role: network_common
+      vars:
+        network_backup_enabled: "{{ vlan_discovery_backup_enabled | default(false) }}"
+    - vlan_discovery

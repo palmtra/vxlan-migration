@@ -2,24 +2,20 @@
 # -----------------------------------------------------------------------------
 # netbox_check defaults
 # -----------------------------------------------------------------------------
-# Read-only SSOT lookup.  The role verifies that the target VLAN exists in
-# NetBox (primary SSOT) before the migration proceeds.  If NetBox itself is
-# unreachable (not configured, connection error, timeout, non-2xx response),
-# it falls back to the local VLAN registry (vlan_registry_file, see
-# inventory/group_vars/all/main.yml) as a secondary/backup SSOT.  A definitive
-# "not found" from a reachable NetBox is authoritative and does NOT trigger
-# the local-registry fallback.  VLAN creation / VRF mapping in NetBox is a
-# deferred improvement and is not performed here.
+# NetBox is a secondary SSOT in the Core workflow. The per-DC local VLAN
+# database (roles/vlan_db) is authoritative. NetBox lookups are informational
+# unless netbox_ssot_required is explicitly enabled for Advanced deployments.
 # -----------------------------------------------------------------------------
 
-# Supply via Ansible Vault, a variable file, or AAP credentials.
 netbox_url: ""
 netbox_token: ""
 netbox_validate_certs: true
 netbox_timeout: 30
-
-# When true, the role returns the NetBox object instead of failing.
 netbox_return_facts: true
-
-# Defer creation of missing VLANs.
 netbox_create_missing_vlan: false
+
+# When true, a missing NetBox record fails the run. Default false for Core.
+netbox_ssot_required: false
+
+# When true, log a warning if NetBox is reachable but has no matching VLAN.
+netbox_warn_on_missing_record: true

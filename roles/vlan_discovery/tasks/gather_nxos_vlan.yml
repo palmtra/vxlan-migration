@@ -1,0 +1,76 @@
+---
+# -----------------------------------------------------------------------------
+# Cisco NXOS — targeted per-VLAN commands (one VLAN per include)
+# -----------------------------------------------------------------------------
+
+- name: "NXOS — show vlan id {{ _disc_vlan.id }}"
+  ansible.netcommon.cli_command:
+    command: "show vlan id {{ _disc_vlan.id }}"
+  register: _nxos_vlan_id_show
+  check_mode: false
+  changed_when: false
+  failed_when: false
+
+- name: "NXOS — show running-config interface vlan{{ _disc_vlan.id }}"
+  ansible.netcommon.cli_command:
+    command: "show running-config interface vlan{{ _disc_vlan.id }}"
+  register: _nxos_svi_show
+  check_mode: false
+  changed_when: false
+  failed_when: false
+
+- name: "NXOS — derive SVI VRF for VLAN {{ _disc_vlan.id }}"
+  ansible.builtin.set_fact:
+    _disc_svi_present: "{{ _nxos_svi_show.stdout | default('') | svi_command_indicates_present(_disc_vlan.id) }}"
+    _disc_svi_vrf: "{{ _nxos_svi_show.stdout | default('') | parse_svi_vrf('nxos') }}"
+
+- name: "NXOS — show ip arp for SVI vlan{{ _disc_vlan.id }} in VRF {{ _disc_svi_vrf }}"
+  ansible.netcommon.cli_command:
+    command: "{{ _disc_arp_command }}"
+  register: _nxos_arp_show
+  vars:
+    _disc_arp_command: "{{ 'nxos' | arp_discovery_command(_disc_vlan.id, _disc_svi_vrf, _disc_svi_present) }}"
+  when:
+    - _disc_svi_present | bool
+    - (_disc_vlan.service_type | default('l3')) in ['l3', 'l2_l3']
+    - _disc_arp_command | length > 0
+  check_mode: false
+  changed_when: false
+  failed_when: false
+
+- name: "NXOS — default empty ARP output for VLAN {{ _disc_vlan.id }}"
+  ansible.builtin.set_fact:
+    _nxos_arp_show:
+      stdout: ""
+  when: _nxos_arp_show is not defined
+
+- name: "NXOS — show mac address-table vlan {{ _disc_vlan.id }}"
+  ansible.netcommon.cli_command:
+    command: "show mac address-table vlan {{ _disc_vlan.id }}"
+  register: _nxos_mac_show
+  check_mode: false
+  changed_when: false
+  failed_when: false
+
+- name: "NXOS — show spanning-tree vlan {{ _disc_vlan.id }}"
+  ansible.netcommon.cli_command:
+    command: "show spanning-tree vlan {{ _disc_vlan.id }}"
+  register: _nxos_stp_show
+  check_mode: false
+  changed_when: false
+  failed_when: false
+
+- name: "NXOS — append discovery record for VLAN {{ _disc_vlan.id }}"
+  ansible.builtin.set_fact:
+    _nxos_per_vlan_results: "{{ _nxos_per_vlan_results | default([]) + [_nxos_vlan_record] }}"
+  vars:
+    _nxos_vlan_record: "{{ _disc_vlan | extract_vlan_targeted_discovery({
+      'platform': 'nxos',
+      'vlan_id_output': _nxos_vlan_id_show.stdout | default(''),
+      'svi_output': _nxos_svi_show.stdout | default(''),
+      'mac_output': _nxos_mac_show.stdout | default(''),
+      'stp_output': _nxos_stp_show.stdout | default(''),
+      'arp_output': _nxos_arp_show.stdout | default(''),
+      'trunk_interfaces': _trunk_interface_configs | default([]),
+      'target_vrf': target_vrf | default('')
+    }) }}"

@@ -2,41 +2,13 @@
 # -----------------------------------------------------------------------------
 # vlan_discovery
 # -----------------------------------------------------------------------------
-# Gathers current VLAN/SVI/trunk/VXLAN state per device and writes
-# timestamped per-host JSON and combined CSV/Markdown reports under
-# reports/<dc>/<device>/ and reports/<scope>/ respectively.
+# Gathers current VLAN/SVI/trunk/VXLAN state per device and writes VLAN-centric
+# reports under reports/<dc>/<vlan_name>/.
 # -----------------------------------------------------------------------------
 
 - name: Set a millisecond timestamp for this discovery run
   ansible.builtin.set_fact:
     _report_timestamp_ms: "{{ hostvars[ansible_play_hosts[0]]._report_timestamp_ms | default(lookup('pipe', 'date +%Y%m%d_%H%M%S_%3N')) }}"
-  delegate_to: localhost
-  become: false
-  check_mode: false
-
-- name: Determine report scope from active hosts
-  ansible.builtin.set_fact:
-    _report_scope: "{{ _report_scope_computed }}"
-  delegate_to: localhost
-  become: false
-  check_mode: false
-  vars:
-    _report_scope_computed: >-
-      {%- set dcs = ansible_play_hosts | map('extract', hostvars) | map(attribute='data_center') | reject('undefined') | unique | list -%}
-      {%- if dcs | length == 1 -%}
-        {%- set dc = dcs[0] -%}
-        {%- set dc_group = 'dc_' ~ dc -%}
-        {%- set all_dc_hosts = groups[dc_group] | default([]) | sort -%}
-        {%- set active_hosts = ansible_play_hosts | sort -%}
-        {%- if all_dc_hosts == active_hosts -%}{{ dc }}{%- else -%}{{ dc }}_{{ active_hosts | join('_') }}{%- endif -%}
-      {%- else -%}{{ dcs | join('_') | default('unknown', true) }}{%- endif -%}
-
-- name: Ensure per-device report directory exists
-  ansible.builtin.file:
-    path: "{{ discovery_reports_dir }}/{{ data_center | default('unknown') }}/{{ inventory_hostname }}"
-    state: directory
-    mode: '0755'
-    recurse: true
   delegate_to: localhost
   become: false
   check_mode: false
@@ -53,42 +25,114 @@
   ansible.builtin.include_tasks: gather_ios.yml
   when: network_os_family == 'ios'
 
-- name: Write per-host JSON report
+- name: Write legacy per-host JSON report
   ansible.builtin.template:
     src: host_report.json.j2
     dest: "{{ discovery_reports_dir }}/{{ data_center | default('unknown') }}/{{ inventory_hostname }}/{{ inventory_hostname }}_vlan_state_{{ _report_timestamp_ms }}.json"
     mode: '0644'
   delegate_to: localhost
   become: false
-  when: discovery_write_json | bool
+  when:
+    - discovery_write_per_host_json | bool
+    - discovery_write_vlan_reports | bool
 
-- name: Ensure combined report directory exists
+- name: Build VLAN-centric discovery reports
+  ansible.builtin.set_fact:
+    _vlan_discovery_reports: "{{ hostvars['localhost']['_effective_vlans'] | build_vlan_discovery_reports(ansible_play_hosts, hostvars) | map('combine', {'data_center': hostvars['localhost']['_vlan_db_data_center'] | default(data_center | default('unknown'))}) | list }}"
+  delegate_to: localhost
+  become: false
+  run_once: true
+  check_mode: false
+  when: discovery_write_vlan_reports | bool
+
+- name: Ensure VLAN report directory exists
   ansible.builtin.file:
-    path: "{{ discovery_reports_dir }}/{{ _report_scope }}"
+    path: "{{ discovery_reports_dir }}/{{ item.data_center | default('unknown') }}/{{ item.vlan_slug }}"
     state: directory
     mode: '0755'
     recurse: true
   delegate_to: localhost
   become: false
   run_once: true
-  check_mode: false
+  loop: "{{ _vlan_discovery_reports | default([]) }}"
+  loop_control:
+    label: "{{ item.vlan_name }}"
+  when: discovery_write_vlan_reports | bool
 
-- name: Write combined CSV report
+- name: Write VLAN-centric Markdown report
   ansible.builtin.template:
-    src: combined_report.csv.j2
-    dest: "{{ discovery_reports_dir }}/{{ _report_scope }}/combined_vlan_state_{{ _report_timestamp_ms }}.csv"
+    src: vlan_discovery_report.md.j2
+    dest: "{{ discovery_reports_dir }}/{{ report.data_center | default('unknown') }}/{{ report.vlan_slug }}/{{ report.vlan_slug }}_discovery_{{ _report_timestamp_ms }}.md"
     mode: '0644'
   delegate_to: localhost
   become: false
   run_once: true
-  when: discovery_write_csv | bool
+  loop: "{{ _vlan_discovery_reports | default([]) }}"
+  loop_control:
+    loop_var: report
+    label: "{{ report.vlan_name }}"
+  when:
+    - discovery_write_vlan_reports | bool
+    - discovery_write_markdown | bool
 
-- name: Write Markdown discovery report
+- name: Write VLAN-centric CSV report
   ansible.builtin.template:
-    src: discovery_report.md.j2
-    dest: "{{ discovery_reports_dir }}/{{ _report_scope }}/discovery_report_{{ _report_timestamp_ms }}.md"
+    src: vlan_discovery_report.csv.j2
+    dest: "{{ discovery_reports_dir }}/{{ report.data_center | default('unknown') }}/{{ report.vlan_slug }}/{{ report.vlan_slug }}_discovery_{{ _report_timestamp_ms }}.csv"
     mode: '0644'
   delegate_to: localhost
   become: false
   run_once: true
-  when: discovery_write_markdown | bool
+  loop: "{{ _vlan_discovery_reports | default([]) }}"
+  loop_control:
+    loop_var: report
+    label: "{{ report.vlan_name }}"
+  when:
+    - discovery_write_vlan_reports | bool
+    - discovery_write_csv | bool
+
+- name: Write VLAN-centric JSON report
+  ansible.builtin.template:
+    src: vlan_discovery_report.json.j2
+    dest: "{{ discovery_reports_dir }}/{{ report.data_center | default('unknown') }}/{{ report.vlan_slug }}/{{ report.vlan_slug }}_discovery_{{ _report_timestamp_ms }}.json"
+    mode: '0644'
+  delegate_to: localhost
+  become: false
+  run_once: true
+  loop: "{{ _vlan_discovery_reports | default([]) }}"
+  loop_control:
+    loop_var: report
+    label: "{{ report.vlan_name }}"
+  when:
+    - discovery_write_vlan_reports | bool
+    - discovery_write_json | bool
+
+- name: Write VLAN DB snippet for pasting into vars/vlans/{{ report.data_center }}.yml
+  ansible.builtin.template:
+    src: vlan_db_snippet.yml.j2
+    dest: "{{ discovery_reports_dir }}/{{ report.data_center | default('unknown') }}/{{ report.vlan_slug }}/{{ report.vlan_slug }}_vlan_db_snippet_{{ _report_timestamp_ms }}.yml"
+    mode: '0644'
+  delegate_to: localhost
+  become: false
+  run_once: true
+  loop: "{{ _vlan_discovery_reports | default([]) }}"
+  loop_control:
+    loop_var: report
+    label: "{{ report.vlan_name }}"
+  when:
+    - discovery_write_vlan_reports | bool
+    - discovery_write_vlan_db_snippet | bool
+
+- name: Display VLAN report output paths
+  ansible.builtin.debug:
+    msg: >-
+      Wrote VLAN discovery reports under
+      {{ discovery_reports_dir }}/{{ item.data_center | default('unknown') }}/{{ item.vlan_slug }}/
+      (prefix {{ item.vlan_slug }}_discovery_{{ _report_timestamp_ms }})
+  delegate_to: localhost
+  become: false
+  run_once: true
+  loop: "{{ _vlan_discovery_reports | default([]) }}"
+  loop_control:
+    label: "{{ item.vlan_name }}"
+  when: discovery_write_vlan_reports | bool
