@@ -1,0 +1,16 @@
+---
+description: Documentation layout and maintenance rules for cvg-vxlan
+alwaysApply: false
+globs: docs/**/*
+---
+
+# cvg-vxlan documentation
+
+When editing files under `docs/`, follow [docs/AGENTS.md](../docs/AGENTS.md):
+
+- Keep **architecture** in `WORKFLOWS.md`, **flags/reference** in `USAGE_GUIDE.md`
+- Put **runnable one-task examples** in `docs/examples/<task>.md`
+- Update `docs/README.md` and `docs/examples/README.md` indexes when adding docs
+- Do not duplicate long command blocks across files — link to examples instead
+
+Documentation index: [docs/README.md](../docs/README.md)

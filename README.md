@@ -10,11 +10,15 @@ Ansible automation to **migrate legacy VLANs to VXLAN/EVPN** on Arista EOS via C
 
 ## Documentation
 
+**Index:** [docs/README.md](docs/README.md) — architecture, usage guides, and runnable examples.
+
 | Doc | Purpose |
 |---|---|
 | [docs/WORKFLOWS.md](docs/WORKFLOWS.md) | Core vs Advanced architecture (mermaid diagrams) |
-| [docs/USAGE_GUIDE.md](docs/USAGE_GUIDE.md) | Flags, options, and CLI examples |
+| [docs/USAGE_GUIDE.md](docs/USAGE_GUIDE.md) | Flags, options, and CLI reference |
+| [docs/examples/](docs/examples/) | Short task-focused examples (discover, generate-only CVP, NetBox export) |
 | [docs/ROADMAP.md](docs/ROADMAP.md) | Open features |
+| [docs/AGENTS.md](docs/AGENTS.md) | Instructions for maintaining this documentation tree |
 
 ## Quick start (Core)
 
@@ -37,6 +41,8 @@ ansible-playbook -i inventory/hosts.yml playbooks/core/workflow_verify.yml \
 ```
 
 Per-DC VLAN databases: `vars/vlans/<data_center>.yml` (primary SSOT).
+
+Generate config without CVP push: [docs/examples/generate-config-without-cvp-push.md](docs/examples/generate-config-without-cvp-push.md).
 
 ## Standalone utilities
 

@@ -120,6 +120,8 @@ The VLAN must exist in `vars/vlans/<dc>.yml` with `target_switches`, `vni`, `ser
 |---|---|---|
 | `use_avd` | `false` | `true` → `roles/avd_vxlan_config` (Arista AVD); `false` → legacy Jinja |
 | `cvp_apply_configlets` | `false` | `true` → push to CVP; `false` → render files only under `reports/cvp_configlets/` |
+
+Detailed generate-only walkthrough: [examples/generate-config-without-cvp-push.md](examples/generate-config-without-cvp-push.md).
 | `cvp_change_control_state` | `set` | CVP change control action (`set` = pending approval) |
 | `cvp_change_control_auto_execute_allowed` | `false` | Must stay `false` unless explicitly overriding after review |
 | `cvp_build_borderleaf_config` | `true` | Generate border-leaf import configlet |
