@@ -4,17 +4,22 @@ Generated: {{ _report_timestamp_ms }}
 Data center: {{ report.data_center | default('unknown') }}
 Service type: {{ report.service_type | default('unknown') }}
 
-> **Read-only discovery.** This report collects state and recommends cleanup areas.
-> It does **not** generate or apply configuration changes. Trunk cleanup is planned
-> separately (e.g. `cvg-decomm-vlan`) after migration.
+> **Read-only discovery.** This report collects state from `show vlan id`, MAC, SVI, and ARP.
+> Trunk vs access ports are derived from the VLAN **Ports** column cross-referenced with
+> `show interfaces trunk`. Empty Ports means no L2 attachment on that switch.
+> EOS `switchport trunk group mlagpeer` and NXOS `vpc peer-link` trunks are excluded
+> from maintenance/prune lists.
 
-## Switches where this VLAN was found
+## Switches where this VLAN matters
 
 Use these lists to populate `target_switches`, `discovery_switches`, and migration scope in `vars/vlans/{{ report.data_center }}.yml`.
 
 | Category | Switches |
 |----------|----------|
-| **VLAN L2 present** | {{ report.switches_found | join(', ') if report.switches_found | length > 0 else '*(none)*' }} |
+| **L2 port attachment** (`show vlan id` Ports column non-empty) | {{ report.switches_found | join(', ') if report.switches_found | length > 0 else '*(none)*' }} |
+| **VLAN defined (no ports listed)** | {{ (report.switches_vlan_defined | default([]) | difference(report.switches_found | default([]))) | join(', ') if (report.switches_vlan_defined | default([]) | difference(report.switches_found | default([]))) | length > 0 else '*(none)*' }} |
+| **Access / endpoint ports** | {{ report.switches_with_access_ports | default([]) | join(', ') if report.switches_with_access_ports | default([]) | length > 0 else '*(none)*' }} |
+| **Trunk ports (prune candidates)** | {{ report.switches_with_trunk_ports | default([]) | join(', ') if report.switches_with_trunk_ports | default([]) | length > 0 else '*(none)*' }} |
 | **Learned MAC addresses** | {{ report.switches_with_mac_learning | join(', ') if report.switches_with_mac_learning | length > 0 else '*(none)*' }} |
 | **SVI (L3) present** | {{ report.switches_with_svi | join(', ') if report.switches_with_svi | length > 0 else '*(none)*' }} |
 | **ARP entries on SVI** | {{ report.switches_with_arp | join(', ') if report.switches_with_arp | length > 0 else '*(none)*' }} |
@@ -25,26 +30,25 @@ A copy-paste YAML snippet was written alongside this report:
 
 ## Summary
 
-| Switch | OS | VLAN | MAC learned | SVI | SVI VRF | ARP | Trunk cleanup rec. |
-|--------|----|------|-------------|-----|---------|-----|--------------------|
+| Switch | OS | Ports | Access | Trunk | MAC | SVI | SVI VRF | ARP |
+|--------|----|-------|--------|-------|-----|-----|---------|-----|
 {% for device in report.devices %}
-| {{ device.hostname }} | {{ device.os_family }} | {{ 'yes' if device.vlan_present else 'no' }} | {{ 'yes' if device.mac_learned else 'no' }} | {{ 'yes' if device.svi_present else 'no' }} | {{ device.svi_vrf | default('-') }} | {{ 'yes' if device.arp_learned else 'no' }} | {{ device.trunk_cleanup_recommendations | default([]) | length }} |
+| {{ device.hostname }} | {{ device.os_family }} | {{ 'yes' if device.has_port_membership else 'no' }} | {{ device.access_ports | default([]) | length }} | {{ device.trunk_ports | default([]) | length }} | {{ 'yes' if device.mac_learned else 'no' }} | {{ 'yes' if device.svi_present else 'no' }} | {{ device.svi_vrf | default('-') }} | {{ 'yes' if device.arp_learned else 'no' }} |
 {% endfor %}
 
-## Trunk VLAN carriage - cleanup recommendations
+## Trunk ports - prune during decommission
 
-Discovery runs `show interfaces trunk` and inspects each trunk's allowed-VLAN configuration.
-When a trunk **allows all VLANs** (no explicit list), no cleanup is recommended here.
-When the VLAN is **explicitly allowed** on a pruned trunk, it is flagged for future decommission planning.
+Ports listed below came from the VLAN `show vlan id` Ports column and matched `show interfaces trunk`.
+**MLAG peer (EOS) and vPC peer-link (NXOS) trunks are excluded** and do not appear here.
 
 {% if report.trunk_cleanup_candidates | default([]) | length > 0 %}
-| Switch | Interface | Mode | Recommendation |
-|--------|-----------|------|----------------|
+| Switch | Trunk interface | Notes |
+|--------|-----------------|-------|
 {% for item in report.trunk_cleanup_candidates %}
-| {{ item.hostname }} | {{ item.interface }} | {{ item.pruning_mode }} | {{ item.recommendation }} |
+| {{ item.hostname }} | {{ item.interface }} | {{ item.recommendation }} |
 {% endfor %}
 {% else %}
-*(No trunk cleanup recommendations - VLAN is not explicitly listed on pruned trunks, or no trunk data was collected.)*
+*(No trunk ports carrying this VLAN were found.)*
 {% endif %}
 
 ## Per-Switch Detail
@@ -52,7 +56,13 @@ When the VLAN is **explicitly allowed** on a pruned trunk, it is flagged for fut
 {% for device in report.devices %}
 ### {{ device.hostname }} ({{ device.os_family }})
 
-- **VLAN present (`show vlan id {{ report.vlan_id }}`):** {{ 'yes' if device.vlan_present else 'no' }}
+- **VLAN in database (`show vlan id {{ report.vlan_id }}`):** {{ 'yes' if device.vlan_present else 'no' }}
+- **L2 port attachment (Ports column):** {{ 'yes' if device.has_port_membership else 'no' }}
+- **Access / endpoint ports:** {{ device.access_ports | default([]) | join(', ') if device.access_ports | default([]) | length > 0 else '*(none)*' }}
+- **Trunk ports (maintenance candidates):** {{ device.trunk_ports | default([]) | join(', ') if device.trunk_ports | default([]) | length > 0 else '*(none)*' }}
+{% if device.exempt_trunk_ports | default([]) | length > 0 %}
+- **Exempt trunks (MLAG/vPC peer-link - not for prune):** {{ device.exempt_trunk_ports | join(', ') }}
+{% endif %}
 - **MAC addresses learned:** {{ 'yes' if device.mac_learned else 'no' }}
 - **SVI present (`show run interface Vlan{{ report.vlan_id }}`):** {{ 'yes' if device.svi_present else 'no' }}
 - **SVI VRF (from interface config):** {{ device.svi_vrf | default('n/a') }}
@@ -70,7 +80,7 @@ When the VLAN is **explicitly allowed** on a pruned trunk, it is flagged for fut
 {{ device.svi_raw | default('No data collected.') }}
 ```
 
-#### MAC Address Table
+#### Dynamic MAC Address Table
 
 ```
 {{ device.mac_table_raw | default('No data collected.') }}
@@ -82,16 +92,6 @@ When the VLAN is **explicitly allowed** on a pruned trunk, it is flagged for fut
 ```
 {{ device.arp_raw | default('No data collected.') }}
 ```
-{% endif %}
-
-{% if device.trunk_vlan_status | default([]) | length > 0 %}
-#### Trunk VLAN carriage
-
-| Interface | Mode | VLAN carried | Cleanup recommended | Allowed summary | Reason |
-|-----------|------|--------------|---------------------|-----------------|--------|
-{% for entry in device.trunk_vlan_status %}
-| {{ entry.interface }} | {{ entry.pruning_mode }} | {{ 'yes' if entry.vlan_carried else 'no' }} | {{ 'yes' if entry.cleanup_recommended else 'no' }} | {{ entry.allowed_summary | default('-') }} | {{ entry.reason }} |
-{% endfor %}
 {% endif %}
 
 {% endfor %}

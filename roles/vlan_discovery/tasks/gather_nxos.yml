@@ -7,7 +7,7 @@
   ansible.builtin.set_fact:
     _nxos_per_vlan_results: []
 
-- name: NXOS - collect trunk interface configs for prune analysis
+- name: NXOS - collect trunk interface names for port classification
   ansible.builtin.include_tasks: gather_nxos_trunks.yml
 
 - name: NXOS - targeted discovery per VLAN
@@ -24,5 +24,4 @@
       data_center: "{{ data_center | default('unknown') }}"
       os_family: "{{ network_os_family }}"
       timestamp: "{{ ansible_date_time.iso8601 }}"
-      trunk_interface_configs: "{{ _trunk_interface_configs | default([]) }}"
       per_vlan: "{{ _nxos_per_vlan_results | default([]) }}"

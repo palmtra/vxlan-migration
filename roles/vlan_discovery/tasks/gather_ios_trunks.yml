@@ -1,6 +1,6 @@
 ---
 # -----------------------------------------------------------------------------
-# IOS - collect trunk interface running-config snippets (once per host)
+# IOS-XE - trunk interface names for classifying show vlan id Ports column
 # -----------------------------------------------------------------------------
 
 - name: IOS - show interfaces trunk
@@ -11,36 +11,14 @@
   changed_when: false
   failed_when: false
 
-- name: IOS - parse trunk interface list
+- name: IOS - cache trunk interface names
   ansible.builtin.set_fact:
-    _ios_trunk_summaries: "{{ _ios_trunk_show.stdout | default('') | parse_trunk_interfaces('ios') }}"
+    _trunk_interface_names: "{{ _ios_trunk_show.stdout | default('') | trunk_interface_names('ios') }}"
+    _trunk_exempt_interface_names: []
   check_mode: false
 
-- name: IOS - fetch running-config for each trunk interface
-  ansible.netcommon.cli_command:
-    command: "show running-config interface {{ item.interface }}"
-  register: _ios_trunk_run_results
-  loop: "{{ _ios_trunk_summaries | default([]) }}"
-  loop_control:
-    label: "{{ item.interface }}"
-  check_mode: false
-  changed_when: false
-  failed_when: false
-
-- name: IOS - build trunk interface config index
+- name: IOS - default empty trunk interface lists
   ansible.builtin.set_fact:
-    _trunk_interface_configs: "{{ _trunk_interface_configs | default([]) + [_trunk_entry] }}"
-  loop: "{{ _ios_trunk_run_results.results | default([]) }}"
-  vars:
-    _summary: "{{ (_ios_trunk_summaries | selectattr('interface', 'equalto', item.item.interface) | first) | default({}) }}"
-    _trunk_entry:
-      interface: "{{ item.item.interface }}"
-      allowed_summary: "{{ _summary.allowed_summary | default('') }}"
-      config: "{{ item.stdout | default('') }}"
-  when: item.stdout is defined
-  check_mode: false
-
-- name: IOS - default empty trunk interface config index
-  ansible.builtin.set_fact:
-    _trunk_interface_configs: []
-  when: _trunk_interface_configs is not defined
+    _trunk_interface_names: []
+    _trunk_exempt_interface_names: []
+  when: _trunk_interface_names is not defined

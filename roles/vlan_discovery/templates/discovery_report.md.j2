@@ -4,12 +4,12 @@ Generated: {{ hostvars[ansible_play_hosts | first]._vlan_discovery.timestamp | d
 
 ## Summary
 
-| Host | Data Center | OS Family | VLAN ID | VLAN Name | VLAN Present | SVI | Trunks/Access | MAC Table | STP | ARP | Cleanup Ready |
-|------|-------------|-----------|---------|-----------|--------------|-----|---------------|-----------|-----|-----|---------------|
+| Host | Data Center | OS Family | VLAN ID | VLAN Name | VLAN Present | SVI | Trunks/Access | MAC Table | ARP | Cleanup Ready |
+|------|-------------|-----------|---------|-----------|--------------|-----|---------------|-----------|-----|---------------|
 {% for host in ansible_play_hosts %}
 {% set d = hostvars[host]._vlan_discovery %}
 {% for vlan in d.per_vlan | default([]) %}
-| {{ d.hostname }} | {{ d.data_center }} | {{ d.os_family }} | {{ vlan.vlan_id }} | {{ vlan.vlan_name }} | {{ 'yes' if vlan.vlan_present else 'no' }} | {{ 'yes' if vlan.svi_present else 'no' }} | {{ 'yes' if vlan.trunks_present else 'no' }} | {{ 'yes' if vlan.mac_table_raw else 'no' }} | {{ 'yes' if vlan.stp_raw else 'no' }} | {{ 'yes' if vlan.arp_raw else 'no' }} | {{ 'yes' if vlan.vlan_present else 'no' }} |
+| {{ d.hostname }} | {{ d.data_center }} | {{ d.os_family }} | {{ vlan.vlan_id }} | {{ vlan.vlan_name }} | {{ 'yes' if vlan.vlan_present else 'no' }} | {{ 'yes' if vlan.svi_present else 'no' }} | {{ 'yes' if vlan.trunks_present else 'no' }} | {{ 'yes' if vlan.mac_table_raw else 'no' }} | {{ 'yes' if vlan.arp_raw else 'no' }} | {{ 'yes' if vlan.vlan_present else 'no' }} |
 {% endfor %}
 {% endfor %}
 
@@ -39,13 +39,8 @@ Generated: {{ hostvars[ansible_play_hosts | first]._vlan_discovery.timestamp | d
 {{ vlan.mac_table_raw | default('No data collected.') }}
 ```
 
-##### Spanning Tree
-
-```
-{{ vlan.stp_raw | default('No data collected.') }}
-```
-
-##### ARP Table (VRF: {{ vlan.target_vrf | default('default') }})
+{% if vlan.svi_present %}
+##### ARP (VRF: {{ vlan.target_vrf | default('default') }})
 
 ```
 {{ vlan.arp_raw | default('No data collected.') }}
@@ -73,4 +68,4 @@ cleanup.  No configuration changes are made by this discovery playbook.
 
 - Automated creation of missing VLANs in NetBox with customer and VRF mapping.
 - Tightened integration with external cleanup / decommission tooling.
-- Structured parsing of MAC, STP, and interface tables instead of raw output.
+- Structured parsing of MAC and interface tables instead of raw output.

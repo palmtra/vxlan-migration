@@ -10,6 +10,7 @@ discovery_write_vlan_reports: true
 discovery_write_csv: true
 discovery_write_markdown: true
 discovery_write_json: true
+discovery_write_yaml: true
 discovery_write_vlan_db_snippet: true
 
 # Legacy per-device JSON reports (disabled by default).

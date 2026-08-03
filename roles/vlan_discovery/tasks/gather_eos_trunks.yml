@@ -1,6 +1,6 @@
 ---
 # -----------------------------------------------------------------------------
-# EOS - collect trunk interface running-config snippets (once per host)
+# EOS - trunk interface names + MLAG peer-link exemption (mlagpeer)
 # -----------------------------------------------------------------------------
 
 - name: EOS - show interfaces trunk
@@ -16,7 +16,7 @@
     _eos_trunk_summaries: "{{ _eos_trunk_show.stdout | default('') | parse_trunk_interfaces('eos') }}"
   check_mode: false
 
-- name: EOS - fetch running-config for each trunk interface
+- name: EOS - fetch running-config for trunk maintenance exemption check
   ansible.netcommon.cli_command:
     command: "show running-config interface {{ item.interface }}"
   register: _eos_trunk_run_results
@@ -27,20 +27,14 @@
   changed_when: false
   failed_when: false
 
-- name: EOS - build trunk interface config index
+- name: EOS - cache trunk interface names
   ansible.builtin.set_fact:
-    _trunk_interface_configs: "{{ _trunk_interface_configs | default([]) + [_trunk_entry] }}"
-  loop: "{{ _eos_trunk_run_results.results | default([]) }}"
-  vars:
-    _summary: "{{ (_eos_trunk_summaries | selectattr('interface', 'equalto', item.item.interface) | first) | default({}) }}"
-    _trunk_entry:
-      interface: "{{ item.item.interface }}"
-      allowed_summary: "{{ _summary.allowed_summary | default('') }}"
-      config: "{{ item.stdout | default('') }}"
-  when: item.stdout is defined
+    _trunk_interface_names: "{{ _eos_trunk_summaries | default([]) | map(attribute='interface') | list }}"
+    _trunk_exempt_interface_names: "{{ _eos_trunk_run_results.results | default([]) | build_trunk_exempt_interface_names('eos') }}"
   check_mode: false
 
-- name: EOS - default empty trunk interface config index
+- name: EOS - default empty trunk interface lists
   ansible.builtin.set_fact:
-    _trunk_interface_configs: []
-  when: _trunk_interface_configs is not defined
+    _trunk_interface_names: []
+    _trunk_exempt_interface_names: []
+  when: _trunk_interface_names is not defined

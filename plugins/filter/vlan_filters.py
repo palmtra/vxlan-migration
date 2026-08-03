@@ -109,6 +109,211 @@ def vlan_id_command_indicates_present(stdout, vlan_id):
     return any(re.search(pattern, text, re.I | re.M) for pattern in patterns)
 
 
+_VLAN_STATUS_RE = re.compile(
+    r"\b(active|inactive|suspend(?:ed)?|act/unsup|unsupport(?:ed)?)\b",
+    re.I,
+)
+_PORT_NAME_RE = re.compile(
+    r"(?:"
+    r"Ethernet[\w./-]+|Et[\d./-]+|"
+    r"Port-Channel[\d./-]+|Po[\d./-]+|"
+    r"GigabitEthernet[\w./-]+|Gi[\d./-]+|"
+    r"TenGigabitEthernet[\w./-]+|Te[\d./-]+|"
+    r"FastEthernet[\w./-]+|Fa[\d./-]+|"
+    r"Eth[\w./-]+"
+    r")",
+    re.I,
+)
+
+
+def _normalize_interface_name(name, platform="eos"):
+    """Normalize interface names so vlan-id ports can match trunk summaries."""
+    normalized = re.sub(r"\s+", "", str(name).strip().lower())
+    prefixes = (
+        ("port-channel", "po"),
+        ("portchannel", "po"),
+        ("tengigabitethernet", "te"),
+        ("gigabitethernet", "gi"),
+        ("fastethernet", "fa"),
+        ("ethernet", "et"),
+    )
+    for prefix, short in prefixes:
+        if normalized.startswith(prefix):
+            return short + normalized[len(prefix):]
+    return normalized
+
+
+def _parse_vlan_row_ports_fragment(row_body):
+    """Return the Ports column fragment from a show vlan id table row body."""
+    status_match = _VLAN_STATUS_RE.search(row_body)
+    if not status_match:
+        return ""
+    ports_fragment = row_body[status_match.end():].strip()
+    if ports_fragment.lower() in {"", "-", "none", "n/a"}:
+        return ""
+    return ports_fragment
+
+
+def _collect_vlan_id_port_fragments(vlan_output, vlan_id):
+    """Collect Ports column text for a VLAN from show vlan id output."""
+    text = str(vlan_output or "")
+    vid = str(int(vlan_id))
+    fragments = []
+    collecting = False
+
+    for line in text.splitlines():
+        row_match = re.match(rf"^\s*{re.escape(vid)}\s+(?P<body>.+)$", line)
+        if row_match:
+            collecting = True
+            fragment = _parse_vlan_row_ports_fragment(row_match.group("body"))
+            if fragment:
+                fragments.append(fragment)
+            continue
+
+        if not collecting:
+            continue
+
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if re.match(r"^\d+\s+\S", stripped):
+            break
+        if re.match(r"^-+$", stripped):
+            continue
+        if stripped.lower().startswith(("vlan", "----")):
+            continue
+        fragments.append(stripped)
+
+    return fragments
+
+
+def _extract_port_names_from_fragments(fragments):
+    """Extract unique interface names from one or more Ports column fragments."""
+    ports = []
+    seen = set()
+    for fragment in fragments or []:
+        for match in _PORT_NAME_RE.finditer(fragment):
+            port = match.group(0)
+            key = port.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            ports.append(port)
+    return ports
+
+
+def parse_vlan_id_ports(
+    vlan_output,
+    vlan_id,
+    platform="eos",
+    trunk_interface_names=None,
+    exempt_trunk_interface_names=None,
+):
+    """Parse show vlan id output into access vs trunk port membership.
+
+    Uses the VLAN Ports column as the source of truth. An empty Ports field means
+    the VLAN exists but has no access or trunk attachment on the switch. Trunk
+    membership is determined by cross-referencing port names with show interfaces
+    trunk (interface names only).
+
+    MLAG/VPC peer trunks (EOS mlagpeer, NXOS vpc peer-link) are tracked separately
+    in exempt_trunk_ports and are excluded from trunk_ports maintenance candidates.
+    """
+    trunk_names = trunk_interface_names or []
+    trunk_set = {
+        _normalize_interface_name(name, platform)
+        for name in trunk_names
+        if str(name).strip()
+    }
+    exempt_set = {
+        _normalize_interface_name(name, platform)
+        for name in (exempt_trunk_interface_names or [])
+        if str(name).strip()
+    }
+
+    if _output_indicates_missing(vlan_output):
+        return {
+            "vlan_present": False,
+            "has_port_membership": False,
+            "ports_raw": "",
+            "all_ports": [],
+            "access_ports": [],
+            "trunk_ports": [],
+            "exempt_trunk_ports": [],
+        }
+
+    vlan_present = vlan_id_command_indicates_present(vlan_output, vlan_id)
+    fragments = _collect_vlan_id_port_fragments(vlan_output, vlan_id)
+    ports_raw = ", ".join(fragments)
+    all_ports = _extract_port_names_from_fragments(fragments)
+
+    access_ports = []
+    trunk_ports = []
+    exempt_trunk_ports = []
+    for port in all_ports:
+        normalized = _normalize_interface_name(port, platform)
+        if normalized in trunk_set:
+            if normalized in exempt_set:
+                exempt_trunk_ports.append(port)
+            else:
+                trunk_ports.append(port)
+        else:
+            access_ports.append(port)
+
+    return {
+        "vlan_present": vlan_present,
+        "has_port_membership": bool(all_ports),
+        "ports_raw": ports_raw,
+        "all_ports": all_ports,
+        "access_ports": access_ports,
+        "trunk_ports": trunk_ports,
+        "exempt_trunk_ports": exempt_trunk_ports,
+    }
+
+
+def trunk_interface_is_maintenance_exempt(interface_config, platform="eos"):
+    """Return True when a trunk must not be flagged for VLAN prune/maintenance."""
+    text = str(interface_config or "")
+    plat = str(platform).lower()
+    if plat == "eos":
+        return bool(
+            re.search(
+                r"^\s*switchport\s+trunk\s+group\s+mlagpeer\b",
+                text,
+                re.I | re.M,
+            )
+        )
+    if plat == "nxos":
+        return bool(re.search(r"^\s*vpc\s+peer-link\b", text, re.I | re.M))
+    return False
+
+
+def build_trunk_exempt_interface_names(trunk_config_results, platform="eos"):
+    """Return trunk interfaces excluded from maintenance (MLAG/VPC peer-link)."""
+    exempt = []
+    for entry in trunk_config_results or []:
+        if not isinstance(entry, dict):
+            continue
+        config = entry.get("stdout") or entry.get("config") or ""
+        item = entry.get("item")
+        if isinstance(item, dict):
+            iface = item.get("interface", "")
+        else:
+            iface = entry.get("interface", "")
+        if iface and trunk_interface_is_maintenance_exempt(config, platform):
+            exempt.append(iface)
+    return exempt
+
+
+def trunk_interface_names(show_trunk_output, platform="eos"):
+    """Return trunk interface names from show interfaces trunk output."""
+    return [
+        entry.get("interface", "")
+        for entry in parse_trunk_interfaces(show_trunk_output, platform)
+        if entry.get("interface")
+    ]
+
+
 def svi_command_indicates_present(stdout, vlan_id):
     """Return True when 'show run interface VlanX' (or equivalent) shows an SVI."""
     if _output_indicates_missing(stdout):
@@ -133,7 +338,19 @@ def mac_table_has_learned_addresses(mac_output):
     text = str(mac_output)
     for line in text.splitlines():
         lower = line.lower()
-        if any(skip in lower for skip in ("mac address", "----", "total", "multicast", "router", "cpu")):
+        if any(
+            skip in lower
+            for skip in (
+                "mac address",
+                "----",
+                "total mac",
+                "multicast",
+                "router",
+                "cpu",
+                "last move",
+                "moves",
+            )
+        ):
             continue
         if _MAC_ADDRESS_RE.search(line):
             return True
@@ -179,6 +396,15 @@ def arp_discovery_command(platform, vlan_id, svi_vrf=None, svi_present=False):
     if plat == "ios":
         return f"show ip arp vrf {vrf} | include Vlan{vid}"
     return f"show ip arp vrf {vrf}"
+
+
+def mac_discovery_command(platform, vlan_id):
+    """Build a platform-appropriate dynamic MAC table command for a VLAN."""
+    vid = int(vlan_id)
+    plat = str(platform).lower()
+    if plat in ("eos", "nxos", "ios"):
+        return f"show mac address-table dynamic vlan {vid}"
+    return f"show mac address-table vlan {vid}"
 
 
 def expand_vlan_spec(spec):
@@ -245,7 +471,7 @@ def _trunk_entry(
     if cleanup_recommended:
         recommendation = (
             f"{reason} Plan trunk cleanup during legacy decommission "
-            f"(see cvg-decomm-vlan); discovery does not generate config commands."
+            f"(see decomm-vlan); discovery does not generate config commands."
         )
     return {
         "interface": interface,
@@ -427,30 +653,38 @@ def extract_vlan_targeted_discovery(vlan, outputs):
     vlan_output = outputs.get("vlan_id_output", "")
     svi_output = outputs.get("svi_output", "")
     mac_output = outputs.get("mac_output", "")
-    stp_output = outputs.get("stp_output", "")
     arp_output = outputs.get("arp_output", "")
     platform = outputs.get("platform", "eos")
-    trunk_interfaces = outputs.get("trunk_interfaces", []) or []
+    trunk_interface_names = outputs.get("trunk_interface_names", []) or []
+    exempt_trunk_interface_names = outputs.get("exempt_trunk_interface_names", []) or []
 
-    vlan_present = vlan_id_command_indicates_present(vlan_output, vlan_id)
+    port_membership = parse_vlan_id_ports(
+        vlan_output,
+        vlan_id,
+        platform,
+        trunk_interface_names,
+        exempt_trunk_interface_names,
+    )
+    vlan_present = port_membership.get("vlan_present", False)
     svi_present = svi_command_indicates_present(svi_output, vlan_id)
     svi_vrf = parse_svi_vrf(svi_output, platform) if svi_present else ""
     mac_learned = mac_table_has_learned_addresses(mac_output)
     arp_learned = arp_table_has_learned_neighbors(arp_output, vlan_id) if svi_present else False
 
-    trunk_vlan_status = analyze_trunk_vlan_carriage(vlan_id, trunk_interfaces, platform)
+    access_ports = port_membership.get("access_ports", [])
+    trunk_ports = port_membership.get("trunk_ports", [])
+    exempt_trunk_ports = port_membership.get("exempt_trunk_ports", [])
     trunk_cleanup_recommendations = [
-        entry for entry in trunk_vlan_status if entry.get("cleanup_recommended")
+        {
+            "interface": iface,
+            "port_role": "trunk",
+            "recommendation": (
+                "VLAN is carried on trunk "
+                f"{iface}. Plan trunk prune during legacy decommission (decomm-vlan)."
+            ),
+        }
+        for iface in trunk_ports
     ]
-
-    trunks_present = bool(trunk_cleanup_recommendations) or bool(
-        trunk_vlan_status
-        and any(entry.get("vlan_carried") for entry in trunk_vlan_status)
-    )
-    if not trunks_present and vlan_present and vlan_output:
-        trunks_present = bool(
-            re.search(r"(Et|Eth|Ethernet|Po|Port-Channel|Gi|Te|Fa)\d", vlan_output, re.I)
-        )
 
     return {
         "vlan_id": vlan_id,
@@ -458,16 +692,20 @@ def extract_vlan_targeted_discovery(vlan, outputs):
         "target_vrf": svi_vrf or outputs.get("target_vrf", vlan.get("vrf", "")),
         "svi_vrf": svi_vrf,
         "vlan_present": vlan_present,
+        "has_port_membership": port_membership.get("has_port_membership", False),
         "svi_present": svi_present,
-        "trunks_present": trunks_present,
+        "trunks_present": bool(trunk_ports),
+        "access_ports": access_ports,
+        "trunk_ports": trunk_ports,
+        "exempt_trunk_ports": exempt_trunk_ports,
+        "all_ports": port_membership.get("all_ports", []),
+        "ports_raw": port_membership.get("ports_raw", ""),
         "mac_learned": mac_learned,
         "arp_learned": arp_learned,
         "vlan_id_raw": vlan_output,
         "svi_raw": svi_output,
         "mac_table_raw": mac_output,
-        "stp_raw": stp_output,
         "arp_raw": arp_output,
-        "trunk_vlan_status": trunk_vlan_status,
         "trunk_cleanup_recommendations": trunk_cleanup_recommendations,
     }
 
@@ -490,7 +728,6 @@ def extract_vlan_discovery(vlan, outputs):
         outputs: dict with keys:
             vlan_output, svi_output, trunk_output,
             mac_outputs (list of result dicts from looped commands),
-            stp_outputs (list of result dicts from looped commands),
             arp_output
 
     Returns:
@@ -505,18 +742,12 @@ def extract_vlan_discovery(vlan, outputs):
     trunk_output = outputs.get("trunk_output", "")
     arp_output = outputs.get("arp_output", "")
 
-    # Locate the mac/stp outputs that belong to this VLAN ID.
+    # Locate the mac table output that belongs to this VLAN ID.
     mac_outputs = outputs.get("mac_outputs", []) or []
-    stp_outputs = outputs.get("stp_outputs", []) or []
     mac_output = ""
-    stp_output = ""
     for entry in mac_outputs:
         if _str_equal(entry.get("item"), vlan_id):
             mac_output = entry.get("stdout", "")
-            break
-    for entry in stp_outputs:
-        if _str_equal(entry.get("item"), vlan_id):
-            stp_output = entry.get("stdout", "")
             break
 
     return {
@@ -527,7 +758,6 @@ def extract_vlan_discovery(vlan, outputs):
         "svi_present": _vlan_present(vlan_id, svi_output),
         "trunks_present": _vlan_present(vlan_id, trunk_output),
         "mac_table_raw": mac_output,
-        "stp_raw": stp_output,
         "arp_raw": arp_output,
     }
 
@@ -741,8 +971,14 @@ def build_vlan_discovery_reports(vlans, play_hosts, hostvars):
                     "os_family": discovery.get("os_family", ""),
                     "timestamp": discovery.get("timestamp", ""),
                     "vlan_present": per_vlan.get("vlan_present", False),
+                    "has_port_membership": per_vlan.get("has_port_membership", False),
                     "svi_present": per_vlan.get("svi_present", False),
                     "trunks_present": per_vlan.get("trunks_present", False),
+                    "access_ports": per_vlan.get("access_ports", []),
+                    "trunk_ports": per_vlan.get("trunk_ports", []),
+                    "exempt_trunk_ports": per_vlan.get("exempt_trunk_ports", []),
+                    "all_ports": per_vlan.get("all_ports", []),
+                    "ports_raw": per_vlan.get("ports_raw", ""),
                     "mac_learned": per_vlan.get("mac_learned", False),
                     "arp_learned": per_vlan.get("arp_learned", False),
                     "svi_vrf": per_vlan.get("svi_vrf", ""),
@@ -751,9 +987,7 @@ def build_vlan_discovery_reports(vlans, play_hosts, hostvars):
                     "target_vrf": per_vlan.get("svi_vrf")
                     or per_vlan.get("target_vrf", vlan.get("vrf", "default")),
                     "mac_table_raw": per_vlan.get("mac_table_raw", ""),
-                    "stp_raw": per_vlan.get("stp_raw", ""),
                     "arp_raw": per_vlan.get("arp_raw", ""),
-                    "trunk_vlan_status": per_vlan.get("trunk_vlan_status", []),
                     "trunk_cleanup_recommendations": per_vlan.get(
                         "trunk_cleanup_recommendations", []
                     ),
@@ -768,7 +1002,7 @@ def build_vlan_discovery_reports(vlans, play_hosts, hostvars):
                     {
                         "hostname": device["hostname"],
                         "interface": entry.get("interface"),
-                        "pruning_mode": entry.get("pruning_mode"),
+                        "port_role": entry.get("port_role", "trunk"),
                         "recommendation": entry.get("recommendation"),
                     }
                 )
@@ -776,7 +1010,22 @@ def build_vlan_discovery_reports(vlans, play_hosts, hostvars):
         switches_found = [
             device["hostname"]
             for device in devices
+            if device.get("has_port_membership")
+        ]
+        switches_vlan_defined = [
+            device["hostname"]
+            for device in devices
             if device.get("vlan_present")
+        ]
+        switches_with_access_ports = [
+            device["hostname"]
+            for device in devices
+            if device.get("access_ports")
+        ]
+        switches_with_trunk_ports = [
+            device["hostname"]
+            for device in devices
+            if device.get("trunk_ports")
         ]
         switches_with_mac_learning = [
             device["hostname"]
@@ -802,6 +1051,9 @@ def build_vlan_discovery_reports(vlans, play_hosts, hostvars):
                 "service_type": vlan.get("service_type", ""),
                 "target_switches": vlan.get("target_switches", []),
                 "switches_found": switches_found,
+                "switches_vlan_defined": switches_vlan_defined,
+                "switches_with_access_ports": switches_with_access_ports,
+                "switches_with_trunk_ports": switches_with_trunk_ports,
                 "switches_with_mac_learning": switches_with_mac_learning,
                 "switches_with_svi": switches_with_svi,
                 "switches_with_arp": switches_with_arp,
@@ -892,9 +1144,14 @@ class FilterModule(object):
             "extract_vlan_discovery": extract_vlan_discovery,
             "extract_vlan_targeted_discovery": extract_vlan_targeted_discovery,
             "vlan_id_command_indicates_present": vlan_id_command_indicates_present,
+            "parse_vlan_id_ports": parse_vlan_id_ports,
+            "trunk_interface_is_maintenance_exempt": trunk_interface_is_maintenance_exempt,
+            "build_trunk_exempt_interface_names": build_trunk_exempt_interface_names,
+            "trunk_interface_names": trunk_interface_names,
             "svi_command_indicates_present": svi_command_indicates_present,
             "parse_svi_vrf": parse_svi_vrf,
             "arp_discovery_command": arp_discovery_command,
+            "mac_discovery_command": mac_discovery_command,
             "mac_table_has_learned_addresses": mac_table_has_learned_addresses,
             "parse_trunk_interfaces": parse_trunk_interfaces,
             "analyze_trunk_vlan_carriage": analyze_trunk_vlan_carriage,

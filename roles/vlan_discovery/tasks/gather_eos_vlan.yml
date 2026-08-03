@@ -44,18 +44,10 @@
       stdout: ""
   when: _eos_arp_show is not defined
 
-- name: "EOS - show mac address-table vlan {{ _disc_vlan.id }}"
+- name: "EOS - show dynamic MAC table for VLAN {{ _disc_vlan.id }}"
   ansible.netcommon.cli_command:
-    command: "show mac address-table vlan {{ _disc_vlan.id }}"
+    command: "{{ 'eos' | mac_discovery_command(_disc_vlan.id) }}"
   register: _eos_mac_show
-  check_mode: false
-  changed_when: false
-  failed_when: false
-
-- name: "EOS - show spanning-tree vlan {{ _disc_vlan.id }}"
-  ansible.netcommon.cli_command:
-    command: "show spanning-tree vlan {{ _disc_vlan.id }}"
-  register: _eos_stp_show
   check_mode: false
   changed_when: false
   failed_when: false
@@ -69,8 +61,8 @@
       'vlan_id_output': _eos_vlan_id_show.stdout | default(''),
       'svi_output': _eos_svi_show.stdout | default(''),
       'mac_output': _eos_mac_show.stdout | default(''),
-      'stp_output': _eos_stp_show.stdout | default(''),
       'arp_output': _eos_arp_show.stdout | default(''),
-      'trunk_interfaces': _trunk_interface_configs | default([]),
+      'trunk_interface_names': _trunk_interface_names | default([]),
+      'exempt_trunk_interface_names': _trunk_exempt_interface_names | default([]),
       'target_vrf': target_vrf | default('')
     }) }}"

@@ -16,7 +16,7 @@ Two workflow tiers share the same roles. **Build and harden Core first**, then e
 | AVD or Jinja → CVP configlet generation | NetBox export as part of the migration run |
 | CVP change control creation (pending approval) | Executing CVP change control automatically |
 
-Legacy VLAN cleanup and trunk pruning are **reported** during discovery and handed off to **`cvg-decomm-vlan`** — not applied here.
+Legacy VLAN cleanup and trunk pruning are **reported** during discovery and handed off to **`decomm-vlan`** - not applied here.
 
 ---
 
@@ -120,13 +120,13 @@ Per switch, per VLAN (read-only):
 
 | Attribute | Source |
 |---|---|
-| VLAN L2 present | `show vlan id <id>` |
-| Learned MACs | `show mac address-table vlan <id>` |
+| VLAN + L2 ports | `show vlan id <id>` (Ports column; empty = no access/trunk) |
+| Access vs trunk | Ports from `show vlan id` vs `show interfaces trunk` names |
+| Learned MACs | `show mac address-table dynamic vlan <id>` |
 | SVI / L3 | `show run interface Vlan<id>` |
 | SVI VRF + ARP | VRF from SVI config; `show ip arp vrf <vrf> …` |
-| Trunk carriage | `show interfaces trunk` + per-trunk run-config |
 
-**Trunk reporting is discovery-only.** When a VLAN is explicitly allowed on a pruned trunk, the report flags a **cleanup recommendation** for decommission planning. No configuration commands are generated.
+**Port logic:** Empty **Ports** on `show vlan id` means no L2 attachment. Remaining ports are access/endpoints unless they appear in `show interfaces trunk`, in which case they are trunk prune candidates — except EOS MLAG peer (`switchport trunk group mlagpeer`) and NXOS vPC peer-link trunks, which are excluded from maintenance lists.
 
 Reports land under:
 

@@ -1,7 +1,7 @@
-hostname,data_center,os_family,timestamp,vlan_id,vlan_name,vlan_present,svi_present,trunks_present,vxlan_present,mac_table_present,stp_present,arp_present,cleanup_ready
+hostname,data_center,os_family,timestamp,vlan_id,vlan_name,vlan_present,svi_present,trunks_present,vxlan_present,mac_table_present,arp_present,cleanup_ready
 {% for host in ansible_play_hosts %}
 {% set d = hostvars[host]._vlan_discovery %}
 {% for vlan in d.per_vlan | default([]) %}
-{{ d.hostname }},{{ d.data_center }},{{ d.os_family }},{{ d.timestamp }},{{ vlan.vlan_id }},{{ vlan.vlan_name }},{{ 'yes' if vlan.vlan_present else 'no' }},{{ 'yes' if vlan.svi_present else 'no' }},{{ 'yes' if vlan.trunks_present else 'no' }},{{ 'yes' if d.vxlan_raw | default('') else 'no' }},{{ 'yes' if vlan.mac_table_raw else 'no' }},{{ 'yes' if vlan.stp_raw else 'no' }},{{ 'yes' if vlan.arp_raw else 'no' }},{{ 'yes' if vlan.vlan_present else 'no' }}
+{{ d.hostname }},{{ d.data_center }},{{ d.os_family }},{{ d.timestamp }},{{ vlan.vlan_id }},{{ vlan.vlan_name }},{{ 'yes' if vlan.vlan_present else 'no' }},{{ 'yes' if vlan.svi_present else 'no' }},{{ 'yes' if vlan.trunks_present else 'no' }},{{ 'yes' if d.vxlan_raw | default('') else 'no' }},{{ 'yes' if vlan.mac_table_raw else 'no' }},{{ 'yes' if vlan.arp_raw else 'no' }},{{ 'yes' if vlan.vlan_present else 'no' }}
 {% endfor %}
 {% endfor %}

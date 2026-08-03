@@ -103,6 +103,103 @@ class VlanDbLoaderTests(unittest.TestCase):
         ]
         self.assertEqual(union_vlan_discovery_hosts(vlans), ["a", "b", "c"])
 
+    def test_mac_discovery_command(self):
+        from vlan_filters import mac_discovery_command
+
+        self.assertEqual(
+            mac_discovery_command("eos", 810),
+            "show mac address-table dynamic vlan 810",
+        )
+        self.assertEqual(
+            mac_discovery_command("nxos", 100),
+            "show mac address-table dynamic vlan 100",
+        )
+
+    def test_mac_table_has_learned_addresses_eos_dynamic(self):
+        from vlan_filters import mac_table_has_learned_addresses
+
+        eos_output = """
+          Mac Address Table
+------------------------------------------------------------------
+Vlan    Mac Address       Type        Ports      Moves   Last Move
+----    -----------       ----        -----      -----   ---------
+ 810    0011.2233.4455    DYNAMIC     Et23
+Total Mac Addresses for this criterion: 1
+"""
+        self.assertTrue(mac_table_has_learned_addresses(eos_output))
+        self.assertFalse(mac_table_has_learned_addresses("Total Mac Addresses for this criterion: 0"))
+
+    def test_parse_vlan_id_ports_eos_access_and_trunk(self):
+        from vlan_filters import parse_vlan_id_ports
+
+        eos_output = """
+VLAN  Name                             Status    Ports
+----- -------------------------------- --------- -------------------------------
+810   vlan_810                         active    Et23, Et24
+                                                Po1
+"""
+        result = parse_vlan_id_ports(
+            eos_output,
+            810,
+            "eos",
+            ["Ethernet23", "Port-Channel1"],
+        )
+        self.assertTrue(result["vlan_present"])
+        self.assertTrue(result["has_port_membership"])
+        self.assertIn("Et24", result["access_ports"])
+        self.assertIn("Et23", result["trunk_ports"])
+        self.assertIn("Po1", result["trunk_ports"])
+
+    def test_parse_vlan_id_ports_empty_ports(self):
+        from vlan_filters import parse_vlan_id_ports
+
+        eos_output = """
+VLAN  Name                             Status    Ports
+----- -------------------------------- --------- -------------------------------
+810   vlan_810                         active
+"""
+        result = parse_vlan_id_ports(eos_output, 810, "eos", [])
+        self.assertTrue(result["vlan_present"])
+        self.assertFalse(result["has_port_membership"])
+        self.assertEqual(result["all_ports"], [])
+
+    def test_parse_vlan_id_ports_nxos(self):
+        from vlan_filters import parse_vlan_id_ports
+
+        nxos_output = """
+VLAN Name                             Status    Ports
+---- -------------------------------- --------- -------------------------------
+810  vlan810                           active    Eth1/23, Eth1/24
+"""
+        result = parse_vlan_id_ports(
+            nxos_output,
+            810,
+            "nxos",
+            ["Eth1/23"],
+            ["Eth1/23"],
+        )
+        self.assertEqual(result["trunk_ports"], [])
+        self.assertEqual(result["exempt_trunk_ports"], ["Eth1/23"])
+        self.assertEqual(result["access_ports"], ["Eth1/24"])
+
+    def test_trunk_interface_is_maintenance_exempt(self):
+        from vlan_filters import trunk_interface_is_maintenance_exempt
+
+        eos_cfg = """
+interface Port-Channel1
+ switchport mode trunk
+ switchport trunk group mlagpeer
+"""
+        nxos_cfg = """
+interface port-channel1
+ switchport mode trunk
+ vpc peer-link
+"""
+        self.assertTrue(trunk_interface_is_maintenance_exempt(eos_cfg, "eos"))
+        self.assertFalse(trunk_interface_is_maintenance_exempt("switchport mode trunk", "eos"))
+        self.assertTrue(trunk_interface_is_maintenance_exempt(nxos_cfg, "nxos"))
+        self.assertFalse(trunk_interface_is_maintenance_exempt("switchport mode trunk", "nxos"))
+
 
 if __name__ == "__main__":
     unittest.main()

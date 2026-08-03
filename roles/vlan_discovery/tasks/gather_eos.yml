@@ -7,7 +7,7 @@
   ansible.builtin.set_fact:
     _eos_per_vlan_results: []
 
-- name: EOS - collect trunk interface configs for prune analysis
+- name: EOS - collect trunk interface names for port classification
   ansible.builtin.include_tasks: gather_eos_trunks.yml
 
 - name: EOS - targeted discovery per VLAN
@@ -33,5 +33,4 @@
       os_family: "{{ network_os_family }}"
       timestamp: "{{ ansible_date_time.iso8601 }}"
       vxlan_raw: "{{ _eos_show_vxlan.stdout | default('') }}"
-      trunk_interface_configs: "{{ _trunk_interface_configs | default([]) }}"
       per_vlan: "{{ _eos_per_vlan_results | default([]) }}"
