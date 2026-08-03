@@ -20,6 +20,7 @@
     - "{{ avd_output_dir }}"
     - "{{ avd_output_dir }}/structured_configs"
     - "{{ avd_output_dir }}/configs"
+    - "{{ avd_tmp_dir }}"
 
 - name: Look up target VLAN in the local VLAN DB
   ansible.builtin.set_fact:
@@ -51,15 +52,41 @@
     _target_device: "{{ item }}"
     _is_borderleaf: "{{ item is match(avd_borderleaf_regex) }}"
 
+# AVD 5+/6+: validate_inputs writes validated JSON under tmp_dir; eos_cli_config_gen
+# reads that JSON. Older args (structured_config_filename, read_structured_config_from_file)
+# are no longer accepted and tmp_dir is required.
+- name: Validate AVD structured configs (eos_config schema)
+  arista.avd.validate_inputs:
+    tmp_dir: "{{ avd_tmp_dir }}"
+    schema_name: eos_config
+    input_dir: "{{ avd_output_dir }}/structured_configs"
+    input_suffix: yml
+    read_from_input_dir: true
+    device_list: "{{ ansible_play_hosts }}"
+    fail_on_validation_errors: true
+  delegate_to: localhost
+  become: false
+  run_once: true
+  check_mode: false
+
 - name: Render EOS configuration with AVD eos_cli_config_gen
   arista.avd.eos_cli_config_gen:
-    structured_config_filename: "{{ avd_output_dir }}/structured_configs/{{ inventory_hostname }}.yml"
+    tmp_dir: "{{ avd_tmp_dir }}"
     config_filename: "{{ avd_output_dir }}/configs/{{ inventory_hostname }}.cfg"
-    read_structured_config_from_file: true
     generate_device_config: true
     generate_device_doc: false
   delegate_to: localhost
   become: false
+
+- name: Clean up AVD temporary directory
+  ansible.builtin.file:
+    path: "{{ avd_tmp_dir }}"
+    state: absent
+  delegate_to: localhost
+  become: false
+  run_once: true
+  changed_when: false
+  when: not avd_keep_tmp_files | bool
 
 - name: Read generated EOS configuration files
   ansible.builtin.slurp:
@@ -80,7 +107,9 @@
 
 - name: Display generated configlets
   ansible.builtin.debug:
-    var: _avd_configlets
+    msg:
+      - "AVD output directory: {{ avd_output_dir }}"
+      - "Generated configlets for: {{ _avd_configlets.keys() | list }}"
   delegate_to: localhost
   become: false
   run_once: true

@@ -13,12 +13,17 @@ target_data_center: ""
 target_vrf: ""
 
 # Directory where AVD-generated configlets are stored.
-avd_configlet_build_dir: "{{ playbook_dir }}/../cvp_configlets"
+# Prefer reports_dir (set in group_vars) so core/ and advanced/ playbooks share one path.
+avd_configlet_build_dir: "{{ reports_dir | default(playbook_dir ~ '/../../reports') }}/cvp_configlets"
 avd_output_dir: "{{ avd_configlet_build_dir }}/avd"
+# Shared temp dir for arista.avd.validate_inputs + eos_cli_config_gen (AVD 5+/6+).
+avd_tmp_dir: "{{ avd_output_dir }}/tmp_eos_cli_config_gen"
+avd_keep_tmp_files: false
 
 # If true, add a per-VRF VNI import section for border-leaf devices.
 avd_build_borderleaf_config: false
-avd_borderleaf_regex: "(?i)border"
+# Match both "border" and common "blf" naming (e.g. chi01-blf01).
+avd_borderleaf_regex: "(?i)(border|blf)"
 
 # CVP deployment controls (same interface as cvp_deploy role).
 cvp_apply_configlets: false
