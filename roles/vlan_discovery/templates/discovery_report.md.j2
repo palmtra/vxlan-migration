@@ -64,7 +64,7 @@ cleanup.  No configuration changes are made by this discovery playbook.
 {% set d = hostvars[host]._vlan_discovery %}
 {% for vlan in d.per_vlan | default([]) %}
 {% if vlan.vlan_present %}
-- **VLAN {{ vlan.vlan_id }}** on `{{ d.hostname }}` — cleanup pending
+- **VLAN {{ vlan.vlan_id }}** on `{{ d.hostname }}` - cleanup pending
 {% endif %}
 {% endfor %}
 {% endfor %}

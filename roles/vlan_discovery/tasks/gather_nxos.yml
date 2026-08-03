@@ -1,23 +1,23 @@
 ---
 # -----------------------------------------------------------------------------
-# Cisco NXOS state gathering — one targeted query per VLAN in _effective_vlans
+# Cisco NXOS state gathering - one targeted query per VLAN in _effective_vlans
 # -----------------------------------------------------------------------------
 
-- name: NXOS — initialize per-VLAN discovery results
+- name: NXOS - initialize per-VLAN discovery results
   ansible.builtin.set_fact:
     _nxos_per_vlan_results: []
 
-- name: NXOS — collect trunk interface configs for prune analysis
+- name: NXOS - collect trunk interface configs for prune analysis
   ansible.builtin.include_tasks: gather_nxos_trunks.yml
 
-- name: NXOS — targeted discovery per VLAN
+- name: NXOS - targeted discovery per VLAN
   ansible.builtin.include_tasks: gather_nxos_vlan.yml
   loop: "{{ _effective_vlans }}"
   loop_control:
     loop_var: _disc_vlan
     label: "{{ _disc_vlan.id }}"
 
-- name: NXOS — assemble discovery fact
+- name: NXOS - assemble discovery fact
   ansible.builtin.set_fact:
     _vlan_discovery:
       hostname: "{{ inventory_hostname }}"

@@ -1,9 +1,9 @@
 ---
 # -----------------------------------------------------------------------------
-# Cisco IOS/IOS-XE — targeted per-VLAN commands (one VLAN per include)
+# Cisco IOS/IOS-XE - targeted per-VLAN commands (one VLAN per include)
 # -----------------------------------------------------------------------------
 
-- name: "IOS — show vlan id {{ _disc_vlan.id }}"
+- name: "IOS - show vlan id {{ _disc_vlan.id }}"
   ansible.netcommon.cli_command:
     command: "show vlan id {{ _disc_vlan.id }}"
   register: _ios_vlan_id_show
@@ -11,7 +11,7 @@
   changed_when: false
   failed_when: false
 
-- name: "IOS — show running-config interface vlan {{ _disc_vlan.id }}"
+- name: "IOS - show running-config interface vlan {{ _disc_vlan.id }}"
   ansible.netcommon.cli_command:
     command: "show running-config interface vlan {{ _disc_vlan.id }}"
   register: _ios_svi_show
@@ -19,12 +19,12 @@
   changed_when: false
   failed_when: false
 
-- name: "IOS — derive SVI VRF for VLAN {{ _disc_vlan.id }}"
+- name: "IOS - derive SVI VRF for VLAN {{ _disc_vlan.id }}"
   ansible.builtin.set_fact:
     _disc_svi_present: "{{ _ios_svi_show.stdout | default('') | svi_command_indicates_present(_disc_vlan.id) }}"
     _disc_svi_vrf: "{{ _ios_svi_show.stdout | default('') | parse_svi_vrf('ios') }}"
 
-- name: "IOS — show ip arp for SVI Vlan{{ _disc_vlan.id }} in VRF {{ _disc_svi_vrf }}"
+- name: "IOS - show ip arp for SVI Vlan{{ _disc_vlan.id }} in VRF {{ _disc_svi_vrf }}"
   ansible.netcommon.cli_command:
     command: "{{ _disc_arp_command }}"
   register: _ios_arp_show
@@ -38,13 +38,13 @@
   changed_when: false
   failed_when: false
 
-- name: "IOS — default empty ARP output for VLAN {{ _disc_vlan.id }}"
+- name: "IOS - default empty ARP output for VLAN {{ _disc_vlan.id }}"
   ansible.builtin.set_fact:
     _ios_arp_show:
       stdout: ""
   when: _ios_arp_show is not defined
 
-- name: "IOS — show mac address-table vlan {{ _disc_vlan.id }}"
+- name: "IOS - show mac address-table vlan {{ _disc_vlan.id }}"
   ansible.netcommon.cli_command:
     command: "show mac address-table vlan {{ _disc_vlan.id }}"
   register: _ios_mac_show
@@ -52,7 +52,7 @@
   changed_when: false
   failed_when: false
 
-- name: "IOS — show spanning-tree vlan {{ _disc_vlan.id }}"
+- name: "IOS - show spanning-tree vlan {{ _disc_vlan.id }}"
   ansible.netcommon.cli_command:
     command: "show spanning-tree vlan {{ _disc_vlan.id }}"
   register: _ios_stp_show
@@ -60,7 +60,7 @@
   changed_when: false
   failed_when: false
 
-- name: "IOS — append discovery record for VLAN {{ _disc_vlan.id }}"
+- name: "IOS - append discovery record for VLAN {{ _disc_vlan.id }}"
   ansible.builtin.set_fact:
     _ios_per_vlan_results: "{{ _ios_per_vlan_results | default([]) + [_ios_vlan_record] }}"
   vars:

@@ -1,23 +1,23 @@
 ---
 # -----------------------------------------------------------------------------
-# Arista EOS state gathering — one targeted query per VLAN in _effective_vlans
+# Arista EOS state gathering - one targeted query per VLAN in _effective_vlans
 # -----------------------------------------------------------------------------
 
-- name: EOS — initialize per-VLAN discovery results
+- name: EOS - initialize per-VLAN discovery results
   ansible.builtin.set_fact:
     _eos_per_vlan_results: []
 
-- name: EOS — collect trunk interface configs for prune analysis
+- name: EOS - collect trunk interface configs for prune analysis
   ansible.builtin.include_tasks: gather_eos_trunks.yml
 
-- name: EOS — targeted discovery per VLAN
+- name: EOS - targeted discovery per VLAN
   ansible.builtin.include_tasks: gather_eos_vlan.yml
   loop: "{{ _effective_vlans }}"
   loop_control:
     loop_var: _disc_vlan
     label: "{{ _disc_vlan.id }}"
 
-- name: EOS — show VXLAN vlan-to-vni mappings (reference)
+- name: EOS - show VXLAN vlan-to-vni mappings (reference)
   ansible.netcommon.cli_command:
     command: show vxlan vlan-to-vni
   register: _eos_show_vxlan
@@ -25,7 +25,7 @@
   changed_when: false
   failed_when: false
 
-- name: EOS — assemble discovery fact
+- name: EOS - assemble discovery fact
   ansible.builtin.set_fact:
     _vlan_discovery:
       hostname: "{{ inventory_hostname }}"

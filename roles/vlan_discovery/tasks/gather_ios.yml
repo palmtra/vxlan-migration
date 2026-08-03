@@ -1,23 +1,23 @@
 ---
 # -----------------------------------------------------------------------------
-# Cisco IOS/IOS-XE state gathering — one targeted query per VLAN in _effective_vlans
+# Cisco IOS/IOS-XE state gathering - one targeted query per VLAN in _effective_vlans
 # -----------------------------------------------------------------------------
 
-- name: IOS — initialize per-VLAN discovery results
+- name: IOS - initialize per-VLAN discovery results
   ansible.builtin.set_fact:
     _ios_per_vlan_results: []
 
-- name: IOS — collect trunk interface configs for prune analysis
+- name: IOS - collect trunk interface configs for prune analysis
   ansible.builtin.include_tasks: gather_ios_trunks.yml
 
-- name: IOS — targeted discovery per VLAN
+- name: IOS - targeted discovery per VLAN
   ansible.builtin.include_tasks: gather_ios_vlan.yml
   loop: "{{ _effective_vlans }}"
   loop_control:
     loop_var: _disc_vlan
     label: "{{ _disc_vlan.id }}"
 
-- name: IOS — assemble discovery fact
+- name: IOS - assemble discovery fact
   ansible.builtin.set_fact:
     _vlan_discovery:
       hostname: "{{ inventory_hostname }}"
