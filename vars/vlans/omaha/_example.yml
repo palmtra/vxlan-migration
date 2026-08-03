@@ -1,0 +1,23 @@
+---
+# See lisle/_example.yml for naming rules and field documentation.
+
+_meta:
+  example: true
+  schema_version: 1
+
+id: 100
+name: legacy_web
+action: migrate
+service_type: l3
+vlan_name: WEB_VXLAN
+vni: 50100
+vrf: default
+mcast_group: "239.1.1.100"
+target_switches:
+  - eos-leaf-oma-01
+  - eos-leaf-oma-02
+discovery_switches:
+  - eos-leaf-oma-01
+  - eos-leaf-oma-02
+  - nxos-spine-oma-01
+  - nxos-spine-oma-02

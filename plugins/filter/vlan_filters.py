@@ -541,6 +541,148 @@ def sanitize_report_slug(value):
     return slug or "unknown_vlan"
 
 
+_VLAN_DB_SKIP_FILENAMES = frozenset({"_example.yml", "example.yml"})
+
+
+def vlan_db_file_prefix(vlan_id):
+    """Return the required filename prefix for a VLAN ID (e.g. 100 -> '0100_')."""
+    return "%04d_" % int(vlan_id)
+
+
+def vlan_db_record_filename(vlan_id, name):
+    """Return the canonical per-DC VLAN DB filename for a record."""
+    return "%s%s.yml" % (vlan_db_file_prefix(vlan_id), sanitize_report_slug(name))
+
+
+def normalize_target_vlan_ids(target_vlan_ids=None, manual_vlan_id=None):
+    """Normalize CLI extra vars into a list of integer VLAN IDs."""
+    if manual_vlan_id is not None and str(manual_vlan_id).strip() != "":
+        return [int(manual_vlan_id)]
+
+    if target_vlan_ids is None:
+        return []
+
+    if isinstance(target_vlan_ids, list):
+        return [int(vid) for vid in target_vlan_ids]
+
+    text = str(target_vlan_ids).strip()
+    if not text:
+        return []
+
+    if text.startswith("["):
+        import json
+
+        parsed = json.loads(text)
+        if not isinstance(parsed, list):
+            raise AnsibleFilterError(
+                "target_vlan_ids JSON must be a list, got %s" % type(parsed)
+            )
+        return [int(vid) for vid in parsed]
+
+    if "," in text:
+        return [int(part.strip()) for part in text.split(",") if part.strip()]
+
+    return [int(text)]
+
+
+def _vlan_db_skip_filename(filename):
+    lower = str(filename).lower()
+    if lower in _VLAN_DB_SKIP_FILENAMES:
+        return True
+    return str(filename).startswith("_")
+
+
+def parse_vlan_record(document, source_name=""):
+    """Extract a single VLAN record dict from a loaded YAML document."""
+    if not isinstance(document, dict):
+        return None
+
+    if document.get("_meta", {}).get("example"):
+        return None
+
+    if "vlans" in document:
+        entries = document.get("vlans") or []
+        if not isinstance(entries, list):
+            raise AnsibleFilterError(
+                "VLAN DB file %s: 'vlans' must be a list." % source_name
+            )
+        if len(entries) == 0:
+            return None
+        if len(entries) > 1:
+            raise AnsibleFilterError(
+                "VLAN DB file %s: per-VLAN files must contain one record, found %d."
+                % (source_name, len(entries))
+            )
+        document = entries[0]
+
+    if not isinstance(document, dict) or "id" not in document:
+        return None
+
+    return document
+
+
+def load_vlan_db_from_directory(vlan_db_dir, data_center, target_vlan_ids=None):
+    """Load VLAN records from vars/vlans/<dc>/*.yml."""
+    import os
+
+    try:
+        import yaml
+    except ImportError as exc:
+        raise AnsibleFilterError(
+            "PyYAML is required to load the VLAN database: %s" % exc
+        ) from exc
+
+    dc = str(data_center).strip()
+    if not dc:
+        raise AnsibleFilterError("data_center must be a non-empty string.")
+
+    base_dir = os.path.join(str(vlan_db_dir), dc)
+    normalized_ids = [str(int(vid)) for vid in (target_vlan_ids or [])]
+    prefixes = [vlan_db_file_prefix(vid) for vid in normalized_ids] if normalized_ids else []
+
+    records = []
+    sources = []
+    seen_ids = {}
+
+    def _ingest_file(path, filename):
+        with open(path, encoding="utf-8") as handle:
+            document = yaml.safe_load(handle) or {}
+
+        record = parse_vlan_record(document, filename)
+        if record is None:
+            return
+
+        vlan_id = str(record.get("id"))
+        if vlan_id in seen_ids:
+            raise AnsibleFilterError(
+                "Duplicate VLAN ID %s in %s and %s."
+                % (vlan_id, filename, seen_ids[vlan_id])
+            )
+
+        seen_ids[vlan_id] = filename
+        records.append(record)
+        sources.append(path)
+
+    if os.path.isdir(base_dir):
+        for filename in sorted(os.listdir(base_dir)):
+            if not filename.endswith((".yml", ".yaml")):
+                continue
+            if _vlan_db_skip_filename(filename):
+                continue
+            if prefixes and not any(filename.startswith(prefix) for prefix in prefixes):
+                continue
+            _ingest_file(os.path.join(base_dir, filename), filename)
+
+    records.sort(key=lambda item: int(item.get("id", 0)))
+
+    return {
+        "vlans": records,
+        "sources": sources,
+        "data_center": dc,
+        "directory": base_dir,
+    }
+
+
 def build_vlan_discovery_reports(vlans, play_hosts, hostvars):
     """Build one aggregated discovery report dict per VLAN in *vlans*."""
     if not isinstance(vlans, list):
@@ -648,6 +790,28 @@ def build_vlan_discovery_reports(vlans, play_hosts, hostvars):
     return reports
 
 
+def union_vlan_discovery_hosts(vlans):
+    """Return a de-duplicated list of discovery switches across VLAN records."""
+    if not isinstance(vlans, list):
+        raise AnsibleFilterError(
+            "union_vlan_discovery_hosts expects a list, got %s" % type(vlans)
+        )
+
+    hosts = []
+    seen = set()
+    for vlan in vlans:
+        if not isinstance(vlan, dict):
+            continue
+        candidates = vlan.get("discovery_switches") or vlan.get("target_switches") or []
+        for host in candidates:
+            host_key = str(host)
+            if host_key in seen:
+                continue
+            seen.add(host_key)
+            hosts.append(host)
+    return hosts
+
+
 def build_vlan_verification(vlan_id, outputs):
     """Build a post-change verification summary for a single VLAN.
 
@@ -712,4 +876,9 @@ class FilterModule(object):
             "build_vlan_verification": build_vlan_verification,
             "sanitize_report_slug": sanitize_report_slug,
             "build_vlan_discovery_reports": build_vlan_discovery_reports,
+            "vlan_db_record_filename": vlan_db_record_filename,
+            "vlan_db_file_prefix": vlan_db_file_prefix,
+            "normalize_target_vlan_ids": normalize_target_vlan_ids,
+            "load_vlan_db_from_directory": load_vlan_db_from_directory,
+            "union_vlan_discovery_hosts": union_vlan_discovery_hosts,
         }

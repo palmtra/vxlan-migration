@@ -10,7 +10,7 @@
 # connection / apply-gating defaults below) rather than relying on
 # roles/cvp_deploy's role defaults being loaded, since role defaults are
 # not guaranteed to be present on the same hostvars across separate plays
-# (e.g. Step 5 in workflow_vlan_to_vxlan.yml may target only 'localhost',
+# (e.g. Step 5 in workflow_deploy.yml may target only eos_devices,
 # while this role runs against network_devices hosts in Step 6). If you
 # override cvp_apply_configlets / cvp_change_control_state / etc. for
 # roles/cvp_deploy at the inventory or extra-vars level, override them the

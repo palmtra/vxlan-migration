@@ -39,5 +39,3 @@ cvp_change_control_auto_execute_allowed: false
 avd_vxlan_source_interface: Loopback1
 avd_vxlan_udp_port: 4789
 
-# Registry source (loaded by network_common or via include_vars).
-vlan_registry_file: "{{ playbook_dir }}/../vars/vlan_registry.yml"

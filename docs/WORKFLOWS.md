@@ -69,10 +69,12 @@ flowchart TD
 
 ### Primary SSOT
 
-Per-DC local VLAN databases:
+Per-DC local VLAN databases (one YAML file per VLAN):
 
-- `vars/vlans/lisle.yml`
-- `vars/vlans/omaha.yml`
+- `vars/vlans/lisle/0100_legacy_web.yml`
+- `vars/vlans/omaha/0100_legacy_web.yml`
+
+See `vars/vlans/README.md` and `vars/vlans/<dc>/_example.yml` for naming rules.
 
 NetBox is **secondary**. A missing NetBox record logs a warning; the run continues unless `netbox_ssot_required: true`.
 
@@ -109,8 +111,6 @@ flowchart TD
 | `playbooks/advanced/workflow_deploy.yml` | Core deploy + SNOW “pending approval” callback |
 | `playbooks/advanced/workflow_verify.yml` | Core verify + SNOW “complete” / escalation |
 | `playbooks/advanced/workflow.yml` | Chained deploy + verify (no CVP wait) |
-
-Legacy paths (`playbooks/workflow_vlan_to_vxlan*.yml`) import the Advanced playbooks.
 
 ---
 
@@ -155,7 +155,7 @@ reports/<dc>/<vlan_slug>/<vlan_slug>_discovery_<timestamp>.{md,csv,json,yml}
 
 ## Typical operator journey (Core)
 
-1. **Discover** an unknown VLAN → review report → paste snippet into `vars/vlans/<dc>.yml`.
+1. **Discover** an unknown VLAN → review report → copy snippet to `vars/vlans/<dc>/{vid}_{slug}.yml`.
 2. **Complete the VLAN record** (VNI, VRF, `target_switches`, `service_type`).
 3. **Deploy** configlets to CVP (`cvp_apply_configlets=true`).
 4. **Approve and execute** the change control in CloudVision.

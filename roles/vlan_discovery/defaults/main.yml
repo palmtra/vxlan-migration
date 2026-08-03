@@ -3,7 +3,7 @@
 # vlan_discovery defaults
 # -----------------------------------------------------------------------------
 
-discovery_reports_dir: "{{ playbook_dir }}/../reports"
+discovery_reports_dir: "{{ reports_dir | default(playbook_dir | regex_replace('/playbooks(/core|/advanced)?$', '') ~ '/reports') }}"
 
 # VLAN-centric reports (primary output format).
 discovery_write_vlan_reports: true

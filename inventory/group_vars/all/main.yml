@@ -3,12 +3,12 @@
 # Global variables for cvg-vxlan
 # -----------------------------------------------------------------------------
 
-# Load the per-DC VLAN database directory (primary SSOT for Core workflow).
-# playbook_dir varies between playbooks/ and playbooks/core/ — normalize to repo root.
-vlan_db_dir: "{{ playbook_dir | regex_replace('/playbooks(/core)?$', '') }}/vars/vlans"
+# Normalize repo root whether playbooks run from playbooks/ or playbooks/core/.
+project_root: "{{ playbook_dir | regex_replace('/playbooks(/core|/advanced)?$', '') }}"
+reports_dir: "{{ project_root }}/reports"
 
-# Deprecated monolithic registry path — kept for older playbooks only.
-vlan_registry_file: "{{ playbook_dir }}/../vars/vlan_registry.yml"
+# Load the per-DC VLAN database directory (primary SSOT for Core workflow).
+vlan_db_dir: "{{ project_root }}/vars/vlans"
 
 # Workflow tier: core (no ServiceNow) or advanced (ServiceNow callbacks enabled).
 workflow_tier: core
@@ -38,7 +38,7 @@ target_vlan_ids: []
 target_actions:
   - migrate
 
-# When true, a failed post-change verification in workflow_vlan_to_vxlan.yml
+# When true, a failed post-change verification in workflow_verify.yml
 # automatically attempts a rollback via roles/cvp_rollback and re-verifies
 # before escalating. When false, verification failure escalates immediately
 # without attempting a rollback.

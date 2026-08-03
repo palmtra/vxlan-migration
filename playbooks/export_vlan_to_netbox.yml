@@ -30,7 +30,7 @@
     - name: Normalize export input
       ansible.builtin.set_fact:
         target_data_center: "{{ manual_data_center | default(target_data_center, true) | default('', true) | trim }}"
-        target_vlan_ids: "{{ [manual_vlan_id | int] if (manual_vlan_id is defined) else (target_vlan_ids | default([])) }}"
+        target_vlan_ids: "{{ target_vlan_ids | default([]) | normalize_target_vlan_ids(manual_vlan_id | default(none)) }}"
 
     - name: Fail if data center is not specified
       ansible.builtin.fail:

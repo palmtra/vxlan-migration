@@ -5,7 +5,7 @@ Open features and planned work. Completed items are kept for context.
 ## Completed (this iteration)
 
 - [x] Split **Core** (no ServiceNow) and **Advanced** (ServiceNow plugin) workflows
-- [x] Per-DC local VLAN databases under `vars/vlans/`
+- [x] Per-DC local VLAN databases under `vars/vlans/<dc>/` (one YAML file per VLAN)
 - [x] Local VLAN DB as **primary SSOT**; NetBox demoted to secondary sync check
 - [x] VLAN record fields: `service_type`, `target_switches`, `discovery_switches`
 - [x] CVP deploy/rollback driven by `target_switches` from VLAN DB (not discovery heuristics)
@@ -30,7 +30,7 @@ Open features and planned work. Completed items are kept for context.
 ### VLAN database
 
 - [ ] Document and enforce additional fields (customer ID, old VRF, gateway, subnet, etc.)
-- [ ] JSON Schema or Ansible spec validation for `vars/vlans/*.yml`
+- [ ] JSON Schema or Ansible spec validation for `vars/vlans/<dc>/*.yml`
 - [ ] Support VLANs shared across DCs vs DC-exclusive IDs (collision policy)
 
 ### Core workflow hardening
@@ -63,7 +63,6 @@ Open features and planned work. Completed items are kept for context.
 ### Operations
 
 - [ ] AAP Job Templates for Core playbooks (separate from Advanced)
-- [ ] Remove deprecated `vars/vlan_registry.yml` after downstream consumers migrate
 
 ---
 

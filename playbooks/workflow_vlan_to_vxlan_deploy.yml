@@ -1,8 +1,0 @@
----
-# -----------------------------------------------------------------------------
-# workflow_vlan_to_vxlan_deploy.yml (DEPRECATED)
-# -----------------------------------------------------------------------------
-# Use playbooks/advanced/workflow_deploy.yml instead.
-# -----------------------------------------------------------------------------
-
-- ansible.builtin.import_playbook: advanced/workflow_deploy.yml

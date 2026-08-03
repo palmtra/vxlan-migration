@@ -1,8 +1,0 @@
----
-# -----------------------------------------------------------------------------
-# workflow_vlan_to_vxlan_verify.yml (DEPRECATED)
-# -----------------------------------------------------------------------------
-# Use playbooks/advanced/workflow_verify.yml instead.
-# -----------------------------------------------------------------------------
-
-- ansible.builtin.import_playbook: advanced/workflow_verify.yml

@@ -23,24 +23,23 @@ CVP credentials (`cvp_url`, `cvp_token`) are **not required** for generate-only 
 
 ## Prerequisites
 
-1. VLAN record exists in the local SSOT: `vars/vlans/<data_center>.yml`
+1. VLAN record exists in the local SSOT: `vars/vlans/<data_center>/{vid}_{slug}.yml`
 2. Required fields populated: `id`, `name`, `action`, `service_type`, `vni`, `vrf`, `target_switches`
 3. Collections installed: `ansible-galaxy collection install -r collections/requirements.yml -p collections/`
 
-Example VLAN record (`vars/vlans/lisle.yml`):
+Example VLAN record (`vars/vlans/lisle/0100_legacy_web.yml`):
 
 ```yaml
-vlans:
-  - id: 100
-    name: legacy_web
-    action: migrate
-    service_type: l3
-    vlan_name: WEB_VXLAN
-    vni: 50100
-    vrf: default
-    target_switches:
-      - eos-leaf-lis-01
-      - eos-leaf-lis-02
+id: 100
+name: legacy_web
+action: migrate
+service_type: l3
+vlan_name: WEB_VXLAN
+vni: 50100
+vrf: default
+target_switches:
+  - eos-leaf-lis-01
+  - eos-leaf-lis-02
 ```
 
 ---

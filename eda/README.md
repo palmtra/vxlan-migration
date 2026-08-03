@@ -6,14 +6,14 @@ event-driven stages instead of one long-running, polling playbook:
 
 1. **`vlan_to_vxlan_migration.yml` / ruleset "ServiceNow intake"** — listens
    for a webhook from ServiceNow and launches
-   `playbooks/workflow_vlan_to_vxlan_deploy.yml` (Steps 1-5: intake,
+   `playbooks/advanced/workflow_deploy.yml` (Steps 1-5: intake,
    discovery, cleanup hand-off, NetBox validation, CVP configlet push). That
    playbook stops after creating a **pending** CVP change control and
    persists the workflow's context to `reports/workflow_state/vlan_<id>.yml`.
 2. **`vlan_to_vxlan_migration.yml` / ruleset "CVP change control approval
    resume"** — listens for a second webhook (fired when the change control
    is approved/executed in CVP) and launches
-   `playbooks/workflow_vlan_to_vxlan_verify.yml` (Step 6: post-change
+   `playbooks/advanced/workflow_verify.yml` (Step 6: post-change
    verification, with rollback + re-verification on failure), passing only
    the VLAN ID. That playbook loads the rest of the context back from the
    persisted state file.
@@ -76,10 +76,9 @@ how change control approvals are tracked in your CVP/CVaaS deployment.
 `run_playbook`'s directory-copy behavior described above applies to the
 playbook itself too, not just the inventory: it copies the **parent
 directory** of whatever playbook `name:` you give it. If the rulebook
-referenced `playbooks/workflow_vlan_to_vxlan_deploy.yml` directly, only
-`playbooks/` would get copied -- `roles/`, `vars/`, `plugins/`,
-`ansible.cfg`, etc. (everything one level up) would be missing, and role
-resolution would fail. `eda_deploy_entrypoint.yml` and
+referenced a playbook under `playbooks/` directly, only that directory
+would get copied — `roles/`, `vars/`, `plugins/`, `ansible.cfg`, etc. would
+be missing, and role resolution would fail. `eda_deploy_entrypoint.yml` and
 `eda_verify_entrypoint.yml` are one-line `import_playbook` shims that live
 at the **repo root** for exactly this reason: their parent directory is the
 whole repo, so the copy picks up everything the real playbooks need. Under
@@ -110,8 +109,8 @@ launched sub-playbooks to `localhost` only (changed to `all`); and
 
 In an AAP Event-Driven Ansible controller, replace the `run_playbook` action
 in `vlan_to_vxlan_migration.yml` with `run_job_template`, referencing Job
-Templates for `playbooks/workflow_vlan_to_vxlan_deploy.yml` and
-`playbooks/workflow_vlan_to_vxlan_verify.yml`, and map
+Templates for `playbooks/advanced/workflow_deploy.yml` and
+`playbooks/advanced/workflow_verify.yml`, and map
 `event.payload.*` fields to the Job Template's survey/extra vars the same
 way this rulebook maps them to `extra_vars` here. Store `netbox_url`,
 `cvp_url`, `snow_url`, and their credentials in AAP Credentials rather than
@@ -119,13 +118,12 @@ in `eda/extra_vars.yml`.
 
 ## Local testing without a live CVP/ServiceNow
 
-You can exercise both playbook stages directly, without EDA, exactly as
-`playbooks/workflow_vlan_to_vxlan.yml` already does for CLI testing:
+You can exercise both playbook stages directly, without EDA:
 
 ```bash
-ansible-playbook -i inventory/hosts.yml playbooks/workflow_vlan_to_vxlan_deploy.yml \
+ansible-playbook -i inventory/hosts.yml playbooks/advanced/workflow_deploy.yml \
   -e manual_vlan_id=100 -e manual_data_center=lisle -e manual_target_vrf=default
 
-ansible-playbook -i inventory/hosts.yml playbooks/workflow_vlan_to_vxlan_verify.yml \
+ansible-playbook -i inventory/hosts.yml playbooks/advanced/workflow_verify.yml \
   -e resume_vlan_id=100
 ```

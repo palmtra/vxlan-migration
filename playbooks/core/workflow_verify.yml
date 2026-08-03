@@ -6,39 +6,9 @@
 #
 # Resume after CVP approval:
 #   ansible-playbook -i inventory/hosts.yml playbooks/core/workflow_verify.yml \
-#     -e resume_vlan_id=100
+#     -e resume_vlan_id=100 \
+#     --limit dc_lisle
 # -----------------------------------------------------------------------------
-
-- name: Core — load persisted workflow state for a standalone verify run
-  hosts: localhost
-  gather_facts: false
-
-  vars:
-    workflow_state_dir: "{{ playbook_dir }}/../../reports/workflow_state"
-
-  tasks:
-    - name: Determine whether workflow state must be loaded from disk
-      ansible.builtin.set_fact:
-        _resume_needed: "{{ target_vlan_id is not defined and resume_vlan_id | default('', true) | string | length > 0 }}"
-
-    - name: Load persisted workflow state for VLAN {{ resume_vlan_id | default('') }}
-      ansible.builtin.include_vars:
-        file: "{{ workflow_state_dir }}/vlan_{{ resume_vlan_id }}.yml"
-      when: _resume_needed
-
-    - name: Fail if neither live vars nor resume_vlan_id were provided
-      ansible.builtin.fail:
-        msg: >-
-          workflow_verify.yml requires target_vlan_id from a chained deploy run,
-          or -e resume_vlan_id=<id> pointing at {{ workflow_state_dir }}/vlan_<id>.yml.
-      when: target_vlan_id is not defined
-
-    - name: Reload VLAN DB for verify-scoped facts
-      ansible.builtin.include_role:
-        name: vlan_db
-      vars:
-        target_vlan_ids:
-          - "{{ target_vlan_id | int }}"
 
 - name: Core — Step 6 post-change verification
   hosts: eos_devices
@@ -49,8 +19,37 @@
     verify_vlan_ids:
       - "{{ hostvars['localhost']['target_vlan_id'] | int }}"
     _cvp_hosts: "{{ hostvars['localhost']['_workflow_cvp_target_switches'] | default([]) }}"
+    workflow_state_dir: "{{ reports_dir | default(playbook_dir ~ '/../../reports') }}/workflow_state"
 
   pre_tasks:
+    - name: Bootstrap verify workflow state and VLAN DB on control node
+      block:
+        - name: Determine whether workflow state must be loaded from disk
+          ansible.builtin.set_fact:
+            _resume_needed: "{{ target_vlan_id is not defined and resume_vlan_id | default('', true) | string | length > 0 }}"
+
+        - name: Load persisted workflow state for VLAN {{ resume_vlan_id | default('') }}
+          ansible.builtin.include_vars:
+            file: "{{ workflow_state_dir }}/vlan_{{ resume_vlan_id }}.yml"
+          when: _resume_needed
+
+        - name: Fail if neither live vars nor resume_vlan_id were provided
+          ansible.builtin.fail:
+            msg: >-
+              workflow_verify.yml requires target_vlan_id from a chained deploy run,
+              or -e resume_vlan_id=<id> pointing at {{ workflow_state_dir }}/vlan_<id>.yml.
+          when: target_vlan_id is not defined
+
+        - name: Reload VLAN DB for verify-scoped facts
+          ansible.builtin.include_role:
+            name: vlan_db
+          vars:
+            target_vlan_ids:
+              - "{{ target_vlan_id | int }}"
+      run_once: true
+      delegate_to: localhost
+      delegate_facts: true
+
     - name: Limit verification to target_switches from the VLAN DB
       ansible.builtin.meta: end_host
       when:

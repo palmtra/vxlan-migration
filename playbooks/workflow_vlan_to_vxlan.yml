@@ -1,9 +1,0 @@
----
-# -----------------------------------------------------------------------------
-# workflow_vlan_to_vxlan.yml (DEPRECATED)
-# -----------------------------------------------------------------------------
-# Core (demo, no ServiceNow):  playbooks/core/workflow.yml
-# Advanced (ServiceNow):       playbooks/advanced/workflow.yml
-# -----------------------------------------------------------------------------
-
-- ansible.builtin.import_playbook: advanced/workflow.yml

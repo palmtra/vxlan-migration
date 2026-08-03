@@ -1,21 +1,23 @@
 
 # VLAN → VXLAN Migration Workflow (v2)
 
+> **Note:** This document describes the original target-state design. The implemented
+> entry points are now `playbooks/core/*` and `playbooks/advanced/*`. The local VLAN
+> SSOT is `vars/vlans/<dc>/*.yml` (one file per VLAN).
+
 This document describes the **target-state** end-to-end workflow for migrating a legacy
 VLAN to VXLAN/EVPN, driven by a ServiceNow change ticket and orchestrated with
 Event-Driven Ansible (EDA). It supersedes the ad-hoc brainstormed diagram and is meant
 to be the reference for closing the gap between "what's drawn" and "what's implemented"
-in `playbooks/workflow_vlan_to_vxlan.yml`.
+in `playbooks/advanced/workflow.yml`.
 
 Integrations in scope:
 
 - **ServiceNow** — change ticket intake and status callbacks.
 - **Event-Driven Ansible (EDA)** — webhook listener, approval-wait event source, and
   workflow resumption (replaces synchronous polling/failing on "not yet approved").
-- **NetBox** — primary source of truth (SSOT) for VLAN/VRF/site metadata.
-- **Local VLAN registry** (`vars/vlan_registry.yml`) — secondary/pluggable SSOT, used
-  when NetBox is unreachable or when NetBox integration/data sync is still catching up.
-  Not preferred, but functionally equivalent for the fields this workflow needs.
+- **NetBox** — secondary source of truth for VLAN/VRF/site metadata (drift check).
+- **Local VLAN database** (`vars/vlans/<dc>/*.yml`) — primary SSOT for Core workflow.
 - **Arista CloudVision (CVP) + AVD** — schema-validated EOS config generation and
   Change-Control-gated deployment.
 - **Native device connections** — `arista.eos` and `cisco.nxos` for read-only discovery
@@ -49,7 +51,7 @@ Integrations in scope:
    `customer_id`, `location` (`dc_lisle` / `dc_omaha`), `vlan_id`, `old_vrf`, `new_vrf`.
    - **Invalid/incomplete** → EDA posts a validation error back to ServiceNow and the
      run ends. No playbook is launched.
-   - **Valid** → EDA launches `playbooks/workflow_vlan_to_vxlan.yml` (or triggers an
+   - **Valid** → EDA launches `playbooks/advanced/workflow_deploy.yml` (or triggers an
      AAP Job Template) with the normalized extra vars.
 
 ### Phase 1 — SSOT resolution (NetBox primary, local registry fallback)
@@ -58,7 +60,7 @@ Integrations in scope:
 6. **NetBox reachable and data consistent?**
    - **Yes** → proceed to Phase 2 using the NetBox record.
    - **No** (NetBox unreachable, timeout, or integration lag) → fall back to
-     `vars/vlan_registry.yml` (local registry).
+     `vars/vlans/<dc>/*.yml` (local per-VLAN database).
 7. **Local registry data OK?**
    - **Yes** → proceed to Phase 2 using the local registry record, flagged
      `ssot_source: local_registry` in the report for traceability.
@@ -159,18 +161,18 @@ flowchart LR
 | 0 | ServiceNow webhook → EDA rulebook | Implemented and live-tested (`eda/rulebooks/vlan_to_vxlan_migration.yml`, "ServiceNow intake" ruleset) — see `eda/README.md` |
 | 0 | Input validation | Implemented (`roles/servicenow_input`) |
 | 1 | NetBox lookup | Implemented (`roles/netbox_check`) |
-| 1 | Local registry fallback on NetBox failure | Implemented (`roles/netbox_check`) — falls back to `vars/vlan_registry.yml` only when NetBox itself is unreachable; a reachable NetBox's "not found" still fails closed |
+| 1 | Local registry fallback on NetBox failure | Implemented (`roles/netbox_check`) — local VLAN DB is primary; NetBox is secondary drift check |
 | 2 | Native EOS/NXOS discovery | Implemented (`roles/vlan_discovery`, `gather_eos.yml` / `gather_nxos.yml`) |
 | 2 | Readiness report (CSV/MD) | Implemented, now with DC/device-scoped timestamped paths |
 | 2 | External cleanup hand-off | Implemented (`roles/external_cleanup`) |
 | 3 | AVD config generation | Implemented (`roles/avd_vxlan_config`) |
 | 3 | CVP push + Change Control (pending state) | Implemented, with explicit-approval enforcement |
-| 3 | EDA-driven approval wait/resume | Implemented and live-tested end-to-end with `ansible-rulebook`/`ansible.eda` installed locally and curl-simulated webhooks (`eda/rulebooks/vlan_to_vxlan_migration.yml`) — `playbooks/workflow_vlan_to_vxlan.yml` split into `_deploy.yml` (Steps 1-5, stops after creating the pending change control and persists state to `reports/workflow_state/`) and `_verify.yml` (Step 6, resumes from persisted state via `resume_vlan_id`); the rulebook launches deploy on the ServiceNow webhook and verify on a second "CVP approved" webhook. See `eda/README.md` for the ansible-rulebook quirks this surfaced and fixed (inventory group_vars, project directory copying, `--limit` derivation). The CVP-approval-detection webhook caller itself (polling CVP or a native CVP webhook) is still not included and is deployment-specific |
+| 3 | EDA-driven approval wait/resume | Implemented — deploy via `playbooks/advanced/workflow_deploy.yml`, verify via `playbooks/advanced/workflow_verify.yml`; see `eda/README.md` |
 | 4 | Execute change | Implemented |
-| 4 | Post-change verification (full checklist) | Implemented (`roles/post_change_verification`) — EVPN BGP peer status, underlay VTEP reachability, VLAN↔VNI mapping, and MAC/ARP learning, wired into Step 6 of `workflow_vlan_to_vxlan.yml` |
+| 4 | Post-change verification (full checklist) | Implemented (`roles/post_change_verification`) — wired into Step 6 of `playbooks/advanced/workflow_verify.yml` |
 | 4 | Rollback via CVP Change Control | Implemented (`roles/cvp_rollback`) — overwrites the same configlet names with "no ..." rollback content and creates a new change control, gated by the same `cvp_apply_configlets`/explicit-approval-required safety checks as `roles/cvp_deploy` |
 | 4 | Re-verify after rollback | Implemented — Step 6's rescue path re-runs `roles/post_change_verification` with `verify_expect_vlan_present: false`, escalating only if rollback is disabled or re-verification still fails |
-| 4 | ServiceNow status callbacks | Implemented (`roles/servicenow_update`) — `workflow_vlan_to_vxlan.yml` wraps each phase in block/rescue and posts a work-note update on failure (escalated) and on overall success (complete); safely no-ops when ServiceNow isn't configured |
+| 4 | ServiceNow status callbacks | Implemented (`roles/servicenow_update`) — Advanced workflow wraps each phase in block/rescue and posts work-note updates |
 
 This table was the punch list for turning v2 into working automation; every item is now
 implemented and has been exercised, either with simulated data / a local mock HTTP

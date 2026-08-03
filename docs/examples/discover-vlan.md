@@ -74,6 +74,24 @@ ansible-playbook -i inventory/hosts.yml playbooks/core/discover_vlan.yml \
   --limit dc_lisle
 ```
 
+## Discover multiple VLANs
+
+```bash
+ansible-playbook -i inventory/hosts.yml playbooks/core/discover_vlan.yml \
+  -e manual_data_center=lisle \
+  -e 'target_vlan_ids=[100,200]' \
+  --limit dc_lisle
+```
+
+Comma-separated form:
+
+```bash
+ansible-playbook -i inventory/hosts.yml playbooks/core/discover_vlan.yml \
+  -e manual_data_center=lisle \
+  -e target_vlan_ids=100,200 \
+  --limit dc_lisle
+```
+
 ## Discover a VLAN already in the DB
 
 ```bash
@@ -117,14 +135,21 @@ ok: [eos-leaf-lis-01 -> localhost] => {
 }
 ```
 
-### Report files on disk
+### Ad-hoc commands do not create reports
+
+`ansible ... -m ansible.netcommon.cli_command -a "command='show version'"` only tests connectivity.
+The `reports/` tree is created by **`playbooks/core/discover_vlan.yml`** when it reaches the
+report-writing tasks at the end of `roles/vlan_discovery` — and only if the playbook gets
+that far without failing on earlier hosts.
+
+### Where reports land
 
 ```text
-reports/<dc>/<vlan_name>/<vlan_name>_discovery_<timestamp>.md
-reports/<dc>/<vlan_name>/<vlan_name>_discovery_<timestamp>.json
+<repo-root>/reports/<dc>/<vlan_name>/<vlan_name>_discovery_<timestamp>.md
 ```
 
-Open the `.md` file — it should contain per-switch CLI output, not empty sections.
+The directory is **auto-created** (`ansible.builtin.file` with `state: directory`) during discovery.
+It is listed in `.gitignore`, so it will not appear in `git status` even when present.
 
 ### Common failure signatures
 
@@ -146,6 +171,7 @@ Open the `.md` file — it should contain per-switch CLI output, not empty secti
 reports/<dc>/<vlan_name>/<vlan_name>_discovery_<timestamp>.{md,csv,json,yml}
 ```
 
-Use the `*_vlan_db_snippet_*.yml` file to bootstrap `vars/vlans/<dc>.yml`.
+Use the `{vid}_{slug}.yml` snippet written under the report directory to bootstrap
+`vars/vlans/<dc>/` (see `vars/vlans/README.md` and `vars/vlans/<dc>/_example.yml`).
 
 See [USAGE_GUIDE.md](../USAGE_GUIDE.md) § Discovery for all flags.

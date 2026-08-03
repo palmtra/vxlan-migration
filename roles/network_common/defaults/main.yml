@@ -3,9 +3,6 @@
 # network_common defaults
 # -----------------------------------------------------------------------------
 
-# Path to the canonical VLAN registry. Override in group_vars or AAP extra vars.
-vlan_registry_file: "{{ playbook_dir }}/../vars/vlan_registry.yml"
-
 # When true, every change playbook will save a local backup per host.
 network_backup_enabled: true
 network_backup_dir: "{{ playbook_dir }}/../backups/{{ inventory_hostname }}"

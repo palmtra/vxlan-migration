@@ -57,10 +57,11 @@
           or ensure each host defines data_center.
       when: _local_dc | length == 0
 
-    - name: Load per-DC VLAN registry file
-      ansible.builtin.include_vars:
-        file: "{{ vlan_db_dir | default(playbook_dir ~ '/../vars/vlans') }}/{{ _local_dc }}.yml"
-        name: vlan_registry
+    - name: Load VLAN database via directory loader
+      ansible.builtin.set_fact:
+        _vlan_registry_load: "{{ vlan_db_dir | load_vlan_db_from_directory(_local_dc, target_vlan_ids | default([])) }}"
+        vlan_registry:
+          vlans: "{{ _vlan_registry_load.vlans }}"
 
     - name: Compute effective VLAN list for this run
       ansible.builtin.set_fact:

@@ -16,7 +16,7 @@
 | ServiceNow-driven deploy | `playbooks/advanced/workflow_deploy.yml` |
 | Export VLAN to NetBox | `playbooks/export_vlan_to_netbox.yml` |
 
-Primary SSOT: `vars/vlans/<data_center>.yml` (not `vars/vlan_registry.yml`).
+Primary SSOT: `vars/vlans/<data_center>/*.yml` (one file per VLAN; see `vars/vlans/README.md`).
 
 Discovery is read-only. Trunk cleanup is reported as recommendations only; execute via `cvg-decomm-vlan`.
 

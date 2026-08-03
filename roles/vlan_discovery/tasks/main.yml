@@ -110,7 +110,7 @@
 - name: Write VLAN DB snippet for pasting into vars/vlans/{{ report.data_center }}.yml
   ansible.builtin.template:
     src: vlan_db_snippet.yml.j2
-    dest: "{{ discovery_reports_dir }}/{{ report.data_center | default('unknown') }}/{{ report.vlan_slug }}/{{ report.vlan_slug }}_vlan_db_snippet_{{ _report_timestamp_ms }}.yml"
+    dest: "{{ discovery_reports_dir }}/{{ report.data_center | default('unknown') }}/{{ report.vlan_slug }}/{{ report.vlan_id | vlan_db_record_filename(report.vlan_name) }}"
     mode: '0644'
   delegate_to: localhost
   become: false

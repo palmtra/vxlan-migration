@@ -1,0 +1,50 @@
+---
+# =============================================================================
+# VLAN database record template (NOT loaded by automation)
+# =============================================================================
+# Copy this file to vars/vlans/<data_center>/{vid:04d}_{slug}.yml
+#
+# Naming rules
+# ------------
+# - Filename:  {vid:04d}_{slug}.yml
+#   - vid: 4+ digit zero-padded VLAN ID (0100, 2911, 01234)
+#   - slug: lowercase snake_case from the VLAN name (legacy_web, customer_acme)
+# - Examples:
+#     0100_legacy_web.yml
+#     0200_legacy_app.yml
+#     2911_customer_acme_wifi.yml
+#
+# Files ignored by the loader
+# ---------------------------
+# - _example.yml, example.yml, and any file starting with _
+#
+# Required fields (migration)
+# ---------------------------
+# id, name, action, service_type, vni, vrf, target_switches
+#
+# service_type: l2 | l3 | l2_l3
+# action: migrate (future: decommission)
+# =============================================================================
+
+_meta:
+  example: true
+  schema_version: 1
+
+# --- example record (remove _meta block and edit values in real files) ---
+
+id: 100
+name: legacy_web
+action: migrate
+service_type: l3
+vlan_name: WEB_VXLAN
+vni: 50100
+vrf: default
+mcast_group: "239.1.1.100"
+target_switches:
+  - eos-leaf-lis-01
+  - eos-leaf-lis-02
+discovery_switches:
+  - eos-leaf-lis-01
+  - eos-leaf-lis-02
+  - nxos-spine-lis-01
+  - nxos-spine-lis-02

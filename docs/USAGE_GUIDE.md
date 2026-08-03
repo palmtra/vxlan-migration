@@ -43,13 +43,14 @@ Collects VLAN, MAC, SVI, ARP, and trunk carriage. Writes reports under `reports/
 
 | Variable | Description |
 |---|---|
-| `manual_data_center` | Data center key matching `vars/vlans/<dc>.yml` (e.g. `lisle`, `omaha`) |
+| `manual_data_center` | Data center key matching `vars/vlans/<dc>/` (e.g. `lisle`, `omaha`) |
 
 ### Common optional vars
 
 | Variable | Default | Description |
 |---|---|---|
 | `manual_vlan_id` | all VLANs in DB | Discover a single VLAN ID |
+| `target_vlan_ids` | — | Discover multiple VLANs: `[100,200]` or `100,200` |
 | `discovery_allow_probe` | `true` in discover playbook | Allow discovering a VLAN **not yet** in the DC database |
 | `discovery_probe_service_type` | `l3` | `service_type` assigned to synthetic probe records |
 | `vlan_discovery_backup_enabled` | `false` | Capture config backup before discovery |
@@ -74,7 +75,13 @@ ansible-playbook -i inventory/hosts.yml playbooks/core/discover_vlan.yml \
   -e discovery_allow_probe=true \
   --limit dc_lisle
 
-# Discover every VLAN declared in vars/vlans/lisle.yml
+# Discover multiple VLANs from the DC directory
+ansible-playbook -i inventory/hosts.yml playbooks/core/discover_vlan.yml \
+  -e manual_data_center=lisle \
+  -e 'target_vlan_ids=[100,200]' \
+  --limit dc_lisle
+
+# Discover every VLAN declared under vars/vlans/lisle/
 ansible-playbook -i inventory/hosts.yml playbooks/core/discover_vlan.yml \
   -e manual_data_center=lisle \
   --limit dc_lisle
@@ -87,7 +94,7 @@ ansible-playbook -i inventory/hosts.yml playbooks/core/discover_vlan.yml \
 | `<vlan>_discovery_<ts>.md` | Human-readable summary + raw CLI |
 | `<vlan>_discovery_<ts>.csv` | One row per switch |
 | `<vlan>_discovery_<ts>.json` | Full structured report |
-| `<vlan>_vlan_db_snippet_<ts>.yml` | Starter YAML for `vars/vlans/<dc>.yml` |
+| `0100_legacy_web.yml` | Starter per-VLAN record for `vars/vlans/<dc>/` |
 
 Key report fields:
 
@@ -112,7 +119,8 @@ Loads the VLAN from local SSOT, optionally re-discovers, generates configlets, p
 | `manual_data_center` | Data center (`lisle`, `omaha`) |
 | `manual_target_vrf` | Target VRF (usually `default`) |
 
-The VLAN must exist in `vars/vlans/<dc>.yml` with `target_switches`, `vni`, `service_type`, etc.
+The VLAN must exist in `vars/vlans/<dc>/{vid}_{slug}.yml` with `target_switches`, `vni`, `service_type`, etc.
+See `vars/vlans/README.md` and `vars/vlans/<dc>/_example.yml`.
 
 ### Config generation
 
@@ -314,7 +322,7 @@ Limit each template to the appropriate inventory group (`dc_lisle`, `dc_omaha`).
 |---|---|---|
 | Wrong VLANs in report | Missing `manual_vlan_id` filter | Pass `-e manual_vlan_id=<id>` |
 | No switches in report | Host not in `discovery_switches` / inventory | Use `discovery_allow_probe=true` or update VLAN DB |
-| Deploy fails “VLAN not in DB” | Record missing from `vars/vlans/<dc>.yml` | Run discovery; paste snippet; fill VNI/VRF |
+| Deploy fails “VLAN not in DB” | Record missing from `vars/vlans/<dc>/` | Run discovery; copy snippet to `{vid}_{slug}.yml`; fill VNI/VRF |
 | CVP push skipped | `cvp_apply_configlets=false` | Set to `true` after reviewing generated files |
 | Empty trunk section | Trunk parse mismatch | Check raw output in `.md` report; file an issue with sample CLI |
 | NetBox warning only | Expected in Core | Set `netbox_ssot_required=true` only when ready |

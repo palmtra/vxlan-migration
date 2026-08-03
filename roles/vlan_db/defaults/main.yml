@@ -2,11 +2,9 @@
 # -----------------------------------------------------------------------------
 # vlan_db defaults
 # -----------------------------------------------------------------------------
-# Per-DC VLAN databases live under vars/vlans/<data_center>.yml and are the
-# primary source of truth for the Core workflow.
-# -----------------------------------------------------------------------------
-
-vlan_db_dir: "{{ playbook_dir | regex_replace('/playbooks(/core)?$', '') }}/vars/vlans"
+# Per-DC VLAN databases live under vars/vlans/<data_center>/*.yml (one file per VLAN).
+# See vars/vlans/README.md and vars/vlans/<dc>/_example.yml.
+vlan_db_dir: "{{ project_root | default(playbook_dir | regex_replace('/playbooks(/core|/advanced)?$', '')) }}/vars/vlans"
 
 # Allowed service_type values for migration VLAN records.
 vlan_db_valid_service_types:
