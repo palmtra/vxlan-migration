@@ -4,7 +4,8 @@
 # -----------------------------------------------------------------------------
 
 # Load the per-DC VLAN database directory (primary SSOT for Core workflow).
-vlan_db_dir: "{{ playbook_dir }}/../vars/vlans"
+# playbook_dir varies between playbooks/ and playbooks/core/ — normalize to repo root.
+vlan_db_dir: "{{ playbook_dir | regex_replace('/playbooks(/core)?$', '') }}/vars/vlans"
 
 # Deprecated monolithic registry path — kept for older playbooks only.
 vlan_registry_file: "{{ playbook_dir }}/../vars/vlan_registry.yml"

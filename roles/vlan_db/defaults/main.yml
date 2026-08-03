@@ -6,7 +6,7 @@
 # primary source of truth for the Core workflow.
 # -----------------------------------------------------------------------------
 
-vlan_db_dir: "{{ playbook_dir }}/../vars/vlans"
+vlan_db_dir: "{{ playbook_dir | regex_replace('/playbooks(/core)?$', '') }}/vars/vlans"
 
 # Allowed service_type values for migration VLAN records.
 vlan_db_valid_service_types:

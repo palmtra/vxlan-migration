@@ -3,60 +3,39 @@
 # vlan_db
 # -----------------------------------------------------------------------------
 # Loads the per-DC local VLAN database and validates the target VLAN record.
-# Sets facts on localhost used by discovery, CVP deploy, and NetBox sync.
+# Must run on the control node (localhost play, or include_role delegated to
+# localhost). Sets facts used by discovery, CVP deploy, and NetBox sync.
 # -----------------------------------------------------------------------------
 
 - name: Resolve effective data center for VLAN DB lookup
   ansible.builtin.set_fact:
     _vlan_db_data_center: "{{ target_data_center | default(manual_data_center, true) | default('', true) | trim }}"
-  delegate_to: localhost
-  delegate_facts: true
-  become: false
-  run_once: true
 
 - name: Fail if data center is not specified
   ansible.builtin.fail:
     msg: >-
       A data center must be provided via target_data_center or manual_data_center
       (e.g. lisle, omaha). Per-DC VLAN databases live under {{ vlan_db_dir }}/.
-  delegate_to: localhost
-  become: false
-  run_once: true
   when: _vlan_db_data_center | length == 0
 
 - name: Load per-DC VLAN database
   ansible.builtin.include_vars:
     file: "{{ vlan_db_dir }}/{{ _vlan_db_data_center }}.yml"
     name: _vlan_db
-  delegate_to: localhost
-  become: false
-  run_once: true
 
 - name: Expose VLAN registry from the DC database
   ansible.builtin.set_fact:
     _vlan_registry: "{{ _vlan_db }}"
     vlan_registry: "{{ _vlan_db }}"
     vlan_registry_file: "{{ vlan_db_dir }}/{{ _vlan_db_data_center }}.yml"
-  delegate_to: localhost
-  delegate_facts: true
-  become: false
-  run_once: true
 
 - name: Compute effective VLAN list for this run
   ansible.builtin.set_fact:
     _effective_vlans: "{{ _vlan_db.vlans | select_vlans_for_run(target_vlan_ids | default([]), target_actions | default([])) }}"
-  delegate_to: localhost
-  delegate_facts: true
-  become: false
-  run_once: true
 
 - name: Resolve probe VLAN ID for discovery-only runs
   ansible.builtin.set_fact:
     _probe_vlan_id: "{{ (discovery_probe_vlan_id | default(manual_vlan_id | default(target_vlan_id, true), true)) | int }}"
-  delegate_to: localhost
-  delegate_facts: true
-  become: false
-  run_once: true
   when:
     - discovery_allow_probe | default(false) | bool
     - discovery_probe_vlan_id is defined or manual_vlan_id is defined or target_vlan_id is defined
@@ -77,10 +56,6 @@
     _workflow_discovery_hosts: []
     _discovery_probe_mode: true
     _discovery_scan_all_switches: true
-  delegate_to: localhost
-  delegate_facts: true
-  become: false
-  run_once: true
   when:
     - discovery_allow_probe | default(false) | bool
     - _probe_vlan_id is defined
@@ -89,10 +64,6 @@
 - name: Enforce exact match when a single VLAN ID was requested
   ansible.builtin.set_fact:
     _effective_vlans: "{{ _effective_vlans | selectattr('id', 'equalto', target_vlan_ids[0] | int) | list }}"
-  delegate_to: localhost
-  delegate_facts: true
-  become: false
-  run_once: true
   when:
     - target_vlan_ids | default([]) | length == 1
     - not (_discovery_probe_mode | default(false) | bool)
@@ -104,18 +75,11 @@
       target_actions={{ target_actions | default([]) }} in
       {{ vlan_db_dir }}/{{ _vlan_db_data_center }}.yml.
       To discover a VLAN not yet in the DB, pass -e discovery_allow_probe=true.
-  delegate_to: localhost
-  become: false
-  run_once: true
   when: _effective_vlans | length == 0
 
 - name: Look up the workflow target VLAN record when target_vlan_id is set
   ansible.builtin.set_fact:
     _target_vlan_record: "{{ _vlan_db.vlans | selectattr('id', 'equalto', target_vlan_id | int) | first | default({}) }}"
-  delegate_to: localhost
-  delegate_facts: true
-  become: false
-  run_once: true
   when:
     - target_vlan_id is defined
     - not (_discovery_probe_mode | default(false) | bool)
@@ -125,9 +89,6 @@
     msg: >-
       VLAN {{ target_vlan_id }} was not found in
       {{ vlan_db_dir }}/{{ _vlan_db_data_center }}.yml.
-  delegate_to: localhost
-  become: false
-  run_once: true
   when:
     - target_vlan_id is defined
     - _target_vlan_record | default({}) | length == 0
@@ -138,9 +99,6 @@
       VLAN {{ target_vlan_id }} has invalid service_type
       '{{ _target_vlan_record.service_type | default('') }}'.
       Allowed values: {{ vlan_db_valid_service_types | join(', ') }}.
-  delegate_to: localhost
-  become: false
-  run_once: true
   when:
     - _target_vlan_record | default({}) | length > 0
     - _target_vlan_record.service_type | default('') not in vlan_db_valid_service_types
@@ -148,9 +106,6 @@
 - name: Validate target_switches are declared on the target VLAN record
   ansible.builtin.fail:
     msg: "VLAN {{ target_vlan_id }} must declare at least one entry in target_switches."
-  delegate_to: localhost
-  become: false
-  run_once: true
   when:
     - _target_vlan_record | default({}) | length > 0
     - _target_vlan_record.target_switches | default([]) | length == 0
@@ -162,9 +117,6 @@
       Switch '{{ item }}' listed in target_switches for VLAN {{ target_vlan_id }}
       was not found in the Ansible inventory.
   loop: "{{ _target_vlan_record.target_switches | default([]) }}"
-  delegate_to: localhost
-  become: false
-  run_once: true
   when:
     - vlan_db_validate_target_switches | bool
     - _target_vlan_record | default({}) | length > 0
@@ -185,10 +137,6 @@
     _ssot_source: local_registry
     _workflow_discovery_hosts: "{{ _target_vlan_record.discovery_switches | default(_target_vlan_record.target_switches) }}"
     _workflow_cvp_target_switches: "{{ _target_vlan_record.target_switches }}"
-  delegate_to: localhost
-  delegate_facts: true
-  become: false
-  run_once: true
   when: _target_vlan_record | default({}) | length > 0
 
 - name: Display loaded VLAN database summary
@@ -199,6 +147,3 @@
       - "Workflow target VLAN: {{ target_vlan_id | default('n/a') }}"
       - "Target switches: {{ _workflow_cvp_target_switches | default([]) }}"
       - "Discovery hosts: {{ _workflow_discovery_hosts | default([]) }}"
-  delegate_to: localhost
-  become: false
-  run_once: true
