@@ -38,7 +38,9 @@
 
 - name: Build VLAN-centric discovery reports
   ansible.builtin.set_fact:
-    _vlan_discovery_reports: "{{ hostvars['localhost']['_effective_vlans'] | build_vlan_discovery_reports(ansible_play_hosts, hostvars) | map('combine', {'data_center': hostvars['localhost']['_vlan_db_data_center'] | default(data_center | default('unknown'))}) | list }}"
+    _vlan_discovery_reports: "{{ _effective_vlans_for_reports | build_vlan_discovery_reports(ansible_play_hosts, hostvars) | map('combine', {'data_center': hostvars['localhost']['_vlan_db_data_center'] | default(data_center | default('unknown'))}) | list }}"
+  vars:
+    _effective_vlans_for_reports: "{{ hostvars['localhost']['_effective_vlans'] | default(_effective_vlans | default([])) }}"
   delegate_to: localhost
   become: false
   run_once: true

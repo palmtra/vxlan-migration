@@ -69,6 +69,7 @@
             target_vlan_id: "{{ hostvars['localhost']['target_vlan_id'] | default(omit) }}"
       run_once: true
       delegate_to: localhost
+      delegate_facts: true
 
     - name: Limit discovery to switches declared in the VLAN DB
       ansible.builtin.meta: end_host

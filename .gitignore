@@ -1,6 +1,7 @@
 .local/
 backups/
 reports/
+tshoot/
 cvp_configlets/
 inventory/documentation/
 collections/ansible_collections/
