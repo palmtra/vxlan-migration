@@ -33,6 +33,22 @@ Always pass `--limit dc_<name>` (or a host list) to control blast radius.
 
 ---
 
+## VLAN service types (`l2`, `l3`, `l2_l3`)
+
+Each VLAN record requires `service_type`. It describes whether you are migrating a pure L2 segment, a routed L3 VLAN (SVI/VRF), or both.
+
+| Value | Use when |
+|---|---|
+| `l2` | VLAN + MACs; **no** SVI on the legacy switches |
+| `l3` | SVI + ARP present; gateway on the fabric |
+| `l2_l3` | Both host L2 attachment and SVI/gateway |
+
+Discovery runs SVI/ARP tasks only for `l3` and `l2_l3`. Probe mode defaults to `l3`; pass `-e discovery_probe_service_type=l2` for L2-only probes.
+
+Full guide: **[VXLAN_SERVICE_TYPES.md](VXLAN_SERVICE_TYPES.md)**.
+
+---
+
 ## 1. Discovery (read-only)
 
 **Playbook:** `playbooks/core/discover_vlan.yml`

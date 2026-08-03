@@ -22,7 +22,7 @@
 # ---------------------------
 # id, name, action, service_type, vni, vrf, target_switches
 #
-# service_type: l2 | l3 | l2_l3
+# service_type: l2 | l3 | l2_l3  (see docs/VXLAN_SERVICE_TYPES.md)
 # action: migrate (future: decommission)
 # =============================================================================
 

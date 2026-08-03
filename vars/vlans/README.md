@@ -38,7 +38,7 @@ Each file is a **single VLAN record** at the top level:
 id: 100
 name: legacy_web
 action: migrate
-service_type: l3
+service_type: l3          # l2 | l3 | l2_l3 - see docs/VXLAN_SERVICE_TYPES.md
 vni: 50100
 vrf: default
 target_switches:
@@ -49,6 +49,8 @@ discovery_switches:
 ```
 
 See `_example.yml` in each DC directory for the full field list.
+
+Choosing `l2` vs `l3` vs `l2_l3`: [docs/VXLAN_SERVICE_TYPES.md](../docs/VXLAN_SERVICE_TYPES.md).
 
 ## Targeting VLANs in playbooks
 

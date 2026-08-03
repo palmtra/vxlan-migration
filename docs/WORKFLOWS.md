@@ -143,7 +143,7 @@ reports/<dc>/<vlan_slug>/<vlan_slug>_discovery_<timestamp>.{md,csv,json,yml}
 | `id` | yes | 802.1Q VLAN ID |
 | `name` | yes | Human label; used in report filenames |
 | `action` | yes | `migrate` |
-| `service_type` | yes | `l2`, `l3`, or `l2_l3` |
+| `service_type` | yes | `l2`, `l3`, or `l2_l3` - see [VXLAN_SERVICE_TYPES.md](VXLAN_SERVICE_TYPES.md) |
 | `vni` | yes for migrate | VXLAN network identifier |
 | `vrf` | yes | Target VRF |
 | `target_switches` | yes | Inventory hostnames for CVP config push |

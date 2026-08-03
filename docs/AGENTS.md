@@ -9,6 +9,7 @@ docs/
 ├── README.md              # Master index — always update when adding docs
 ├── AGENTS.md              # This file
 ├── WORKFLOWS.md           # Architecture (Core vs Advanced, mermaid)
+├── VXLAN_SERVICE_TYPES.md # L2 vs L3 vs l2_l3 service_type guide
 ├── USAGE_GUIDE.md         # Full operator reference (flags, variables, AAP)
 ├── ROADMAP.md             # Planned and completed work
 ├── OPERATING_GUIDE.md     # Redirect only — do not duplicate content here
@@ -23,6 +24,7 @@ docs/
 | Content type | Location | Max scope |
 |---|---|---|
 | Architecture, workflow tiers, SSOT model | `docs/WORKFLOWS.md` | Conceptual; link to examples for commands |
+| L2 vs L3 migration intent, `service_type` | `docs/VXLAN_SERVICE_TYPES.md` | Conceptual; link from VLAN DB schema |
 | Variable / flag reference, troubleshooting | `docs/USAGE_GUIDE.md` | Comprehensive tables |
 | Runnable command for one task | `docs/examples/<task>.md` | One page, one goal |
 | Planned features | `docs/ROADMAP.md` | Bullet list with checkboxes |
@@ -68,7 +70,7 @@ When changing behaviour, verify these stay aligned:
 | `cvp_apply_configlets` default / gating | `examples/generate-config-without-cvp-push.md`, USAGE_GUIDE § Core deploy |
 | Core vs Advanced playbooks | WORKFLOWS.md mermaid diagrams |
 | Discovery report fields | USAGE_GUIDE § Discovery, examples/discover-vlan.md |
-| `vars/vlans/` schema | WORKFLOWS.md VLAN DB table, USAGE_GUIDE, root README data model |
+| `vars/vlans/` schema | WORKFLOWS.md VLAN DB table, [VXLAN_SERVICE_TYPES.md](VXLAN_SERVICE_TYPES.md), USAGE_GUIDE, root README data model |
 | NetBox export playbook | examples/export-vlan-to-netbox.md |
 
 ## What not to document here

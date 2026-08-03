@@ -10,7 +10,8 @@ Start here for architecture and operator guides. Use **Examples** for short, tas
 
 | Document | Description |
 |---|---|
-| [WORKFLOWS.md](WORKFLOWS.md) | **Primary reference** — Core vs Advanced tiers, mermaid diagrams, discovery scope, SSOT model |
+| [WORKFLOWS.md](WORKFLOWS.md) | **Primary reference** - Core vs Advanced tiers, mermaid diagrams, discovery scope, SSOT model |
+| [VXLAN_SERVICE_TYPES.md](VXLAN_SERVICE_TYPES.md) | **L2 vs L3 vs l2_l3** - choosing `service_type` for migration |
 | [WORKFLOW_V2.md](WORKFLOW_V2.md) | Historical target-state design (ServiceNow + EDA); some details superseded by Core/Advanced split |
 | [ROADMAP.md](ROADMAP.md) | Completed work and planned features |
 

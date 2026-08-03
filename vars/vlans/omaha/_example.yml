@@ -1,5 +1,6 @@
 ---
 # See lisle/_example.yml for naming rules and field documentation.
+# service_type (l2 | l3 | l2_l3): docs/VXLAN_SERVICE_TYPES.md
 
 _meta:
   example: true
