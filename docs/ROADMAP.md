@@ -1,4 +1,4 @@
-# Roadmap — cvg-vxlan
+# Roadmap - vxlan-migration
 
 Open features and planned work. Completed items are kept for context.
 
@@ -70,7 +70,7 @@ Open features and planned work. Completed items are kept for context.
 
 - Multi-VLAN batch migration from a single Core job
 - Integration test harness with mocked EOS/NXOS (`ansible.netcommon` + text fixtures)
-- Post-migration handoff to `cvg-decomm-vlan` with structured cleanup payload
+- Post-migration handoff to `decomm-vlan` with structured cleanup payload
 - Git-backed VLAN DB change review (MR per VLAN addition)
 - Prometheus / AWX artifact upload for report URLs on ticket
 

@@ -1,6 +1,6 @@
 ---
 # AAP Execution Environment definition
-# Build with: ansible-builder build --tag cvg-vxlan-ee:latest
+# Build with: ansible-builder build --tag vxlan-migration-ee:latest
 version: 3
 
 images:
@@ -16,4 +16,4 @@ additional_build_steps:
   prepend_base:
     - RUN pip install --upgrade pip
   append_base:
-    - RUN echo "cvg-vxlan execution environment ready"
+    - RUN echo "vxlan-migration execution environment ready"

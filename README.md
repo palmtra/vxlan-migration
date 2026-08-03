@@ -5,7 +5,7 @@ Ansible automation to **migrate legacy VLANs to VXLAN/EVPN** on Arista EOS via C
 - **Core workflow:** discover → local VLAN SSOT → AVD/Jinja config → CVP (pending change control). No ServiceNow.
 - **Advanced workflow:** Core + ServiceNow intake and ticket closure.
 - **Discovery** is read-only across EOS, NXOS, and IOS; **deploy** targets Arista EOS only.
-- **Cleanup / trunk pruning** is reported in discovery and handled by `cvg-decomm-vlan`, not this repo.
+- **Cleanup / trunk pruning** is reported in discovery and handled by `decomm-vlan`, not this repo.
 - **NetBox export** is a standalone utility, not part of the migration run.
 
 ## Documentation

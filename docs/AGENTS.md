@@ -74,4 +74,4 @@ When changing behaviour, verify these stay aligned:
 ## What not to document here
 
 - Greenfield / new VLAN deployment app (out of scope for this migration repo)
-- Automatic trunk cleanup commands (discovery is report-only; cleanup is `cvg-decomm-vlan`)
+- Automatic trunk cleanup commands (discovery is report-only; cleanup is `decomm-vlan`)

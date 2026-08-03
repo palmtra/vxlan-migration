@@ -1,4 +1,4 @@
-# Usage Guide — cvg-vxlan
+# Usage Guide - vxlan-migration
 
 Administrative reference for operators running Core and Advanced migration workflows from CLI or Ansible Automation Platform (AAP).
 
@@ -57,6 +57,7 @@ Collects VLAN, MAC, SVI, ARP, and trunk carriage. Writes reports under `reports/
 | `discovery_write_markdown` | `true` | Write `.md` report |
 | `discovery_write_csv` | `true` | Write `.csv` report |
 | `discovery_write_json` | `true` | Write `.json` report |
+| `discovery_write_yaml` | `true` | Write `.yml` structured report (same data as JSON) |
 | `discovery_write_vlan_db_snippet` | `true` | Write YAML snippet for pasting into VLAN DB |
 
 ### Examples
@@ -94,6 +95,7 @@ ansible-playbook -i inventory/hosts.yml playbooks/core/discover_vlan.yml \
 | `<vlan>_discovery_<ts>.md` | Human-readable summary + raw CLI |
 | `<vlan>_discovery_<ts>.csv` | One row per switch |
 | `<vlan>_discovery_<ts>.json` | Full structured report |
+| `<vlan>_discovery_<ts>.yml` | Full structured report (YAML, same data as JSON) |
 | `0100_legacy_web.yml` | Starter per-VLAN record for `vars/vlans/<dc>/` |
 
 Key report fields:

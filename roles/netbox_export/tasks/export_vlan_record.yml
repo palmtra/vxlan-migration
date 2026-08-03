@@ -24,7 +24,7 @@
       name: "{{ _export_vlan.vlan_name | default(_export_vlan.name) }}"
       status: active
       description: >-
-        Exported from cvg-vxlan local VLAN DB ({{ target_data_center }}).
+        Exported from vxlan-migration local VLAN DB ({{ target_data_center }}).
         service_type={{ _export_vlan.service_type | default('unknown') }},
         vni={{ _export_vlan.vni | default('n/a') }},
         vrf={{ _export_vlan.vrf | default('default') }}

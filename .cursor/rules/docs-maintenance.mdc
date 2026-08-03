@@ -1,10 +1,10 @@
 ---
-description: Documentation layout and maintenance rules for cvg-vxlan
+description: Documentation layout and maintenance rules for vxlan-migration
 alwaysApply: false
 globs: docs/**/*
 ---
 
-# cvg-vxlan documentation
+# vxlan-migration documentation
 
 When editing files under `docs/`, follow [docs/AGENTS.md](../docs/AGENTS.md):
 

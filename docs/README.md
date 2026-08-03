@@ -1,4 +1,4 @@
-# cvg-vxlan documentation
+# vxlan-migration documentation
 
 Documentation hub for the Classic VLAN → VXLAN EVPN migration automation.
 

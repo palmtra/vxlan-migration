@@ -1,4 +1,4 @@
-# Operating Guide — cvg-vxlan
+# Operating Guide - vxlan-migration
 
 > **This guide has been superseded by:**
 >
@@ -18,6 +18,6 @@
 
 Primary SSOT: `vars/vlans/<data_center>/*.yml` (one file per VLAN; see `vars/vlans/README.md`).
 
-Discovery is read-only. Trunk cleanup is reported as recommendations only; execute via `cvg-decomm-vlan`.
+Discovery is read-only. Trunk cleanup is reported as recommendations only; execute via `decomm-vlan`.
 
 For install, credentials, and safety controls, see [USAGE_GUIDE.md](USAGE_GUIDE.md).
