@@ -1,6 +1,6 @@
 ---
 # -----------------------------------------------------------------------------
-# Core workflow — verify stage (Step 6, no ServiceNow)
+# Core workflow - verify stage (Step 6, no ServiceNow)
 # -----------------------------------------------------------------------------
 # Post-change verification scoped to target_switches from the local VLAN DB.
 #
@@ -10,7 +10,7 @@
 #     --limit dc_lisle
 # -----------------------------------------------------------------------------
 
-- name: Core — Step 6 post-change verification
+- name: Core - Step 6 post-change verification
   hosts: eos_devices
   gather_facts: false
 
@@ -58,7 +58,7 @@
         - inventory_hostname not in _cvp_hosts
 
   tasks:
-    - name: Step 6 — Post-change verification
+    - name: Step 6 - Post-change verification
       block:
         - name: Run the full post-change verification checklist
           ansible.builtin.include_role:

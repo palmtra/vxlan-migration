@@ -17,7 +17,7 @@ vxlan_interface:
       vlans:
         - id: {{ target_vlan_id | int }}
           vni: {{ _avd_vlan.vni | int }}
-          multicast_group: "{{ _avd_vlan.mcast_group }}"
+          multicast_group: "{{ _avd_vlan.mcast_group | default(vxlan_default_mcast_group) }}"
 
 vrfs:
   - name: {{ target_vrf }}

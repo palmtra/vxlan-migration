@@ -1,6 +1,6 @@
 ---
 # -----------------------------------------------------------------------------
-# Core workflow — VLAN discovery (no ServiceNow)
+# Core workflow - VLAN discovery (no ServiceNow)
 # -----------------------------------------------------------------------------
 # Read-only discovery using the per-DC local VLAN database.
 #

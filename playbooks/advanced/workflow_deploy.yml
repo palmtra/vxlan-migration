@@ -1,6 +1,6 @@
 ---
 # -----------------------------------------------------------------------------
-# Advanced workflow — deploy stage (Core + ServiceNow)
+# Advanced workflow - deploy stage (Core + ServiceNow)
 # -----------------------------------------------------------------------------
 # Wraps the Core deploy playbook with workflow_tier=advanced so ServiceNow
 # intake and status callbacks are enabled.

@@ -1,6 +1,6 @@
 ---
 # -----------------------------------------------------------------------------
-# export_vlan_to_netbox.yml — standalone NetBox export (not part of migration workflow)
+# export_vlan_to_netbox.yml - standalone NetBox export (not part of migration workflow)
 # -----------------------------------------------------------------------------
 # Exports VLAN attributes from the local per-DC VLAN database to NetBox.
 # Safe default is dry-run (no NetBox writes).

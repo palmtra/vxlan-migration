@@ -1,6 +1,6 @@
 ---
 # -----------------------------------------------------------------------------
-# Advanced workflow — verify stage (Core + ServiceNow)
+# Advanced workflow - verify stage (Core + ServiceNow)
 # -----------------------------------------------------------------------------
 
 - ansible.builtin.import_playbook: ../core/workflow_verify.yml

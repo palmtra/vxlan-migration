@@ -1,10 +1,10 @@
 ---
 # -----------------------------------------------------------------------------
-# Core workflow — deploy stage (Steps 1-5, no ServiceNow)
+# Core workflow - deploy stage (Steps 1-5, no ServiceNow)
 # -----------------------------------------------------------------------------
 # Intake via manual extra vars, local VLAN DB as primary SSOT, discovery,
 # cleanup hand-off, and CVP configlet generation. The run ends when configlets
-# are in CVP with a pending change control — operator approval is manual.
+# are in CVP with a pending change control - operator approval is manual.
 #
 # Post-CVP verification is a separate playbook: workflow_verify.yml
 #
@@ -17,7 +17,7 @@
 #     --limit dc_lisle
 # -----------------------------------------------------------------------------
 
-- name: Core — Steps 1-4 discovery, cleanup hand-off, NetBox sync check
+- name: Core - Steps 1-4 discovery, cleanup hand-off, NetBox sync check
   hosts: network_devices
   gather_facts: false
 
@@ -29,12 +29,12 @@
   pre_tasks:
     - name: Bootstrap workflow input and VLAN DB on control node
       block:
-        - name: Step 1a — Normalize manual workflow input (Core)
+        - name: Step 1a - Normalize manual workflow input (Core)
           ansible.builtin.include_role:
             name: workflow_input
           when: workflow_tier | default('core') == 'core'
 
-        - name: Step 1b — Normalize ServiceNow workflow input (Advanced)
+        - name: Step 1b - Normalize ServiceNow workflow input (Advanced)
           ansible.builtin.include_role:
             name: servicenow_input
           when: workflow_tier | default('core') == 'advanced'
@@ -61,17 +61,17 @@
         - inventory_hostname not in _discovery_hosts
 
   tasks:
-    - name: Steps 2-4 — discovery, cleanup, NetBox
+    - name: Steps 2-4 - discovery, cleanup, NetBox
       block:
-        - name: Step 2a — Gather common network facts / backup
+        - name: Step 2a - Gather common network facts / backup
           ansible.builtin.include_role:
             name: network_common
 
-        - name: Step 2b — Discover legacy VLAN state
+        - name: Step 2b - Discover legacy VLAN state
           ansible.builtin.include_role:
             name: vlan_discovery
 
-        - name: Step 3 — Hand off discovered VLAN to external cleanup tool
+        - name: Step 3 - Hand off discovered VLAN to external cleanup tool
           ansible.builtin.include_role:
             name: external_cleanup
           vars:
@@ -80,7 +80,7 @@
             target_vrf: "{{ hostvars['localhost']['target_vrf'] | default('') }}"
           run_once: true
 
-        - name: Step 4 — Optional NetBox sync check (secondary SSOT)
+        - name: Step 4 - Optional NetBox sync check (secondary SSOT)
           ansible.builtin.include_role:
             name: netbox_check
           vars:
@@ -105,7 +105,7 @@
           ansible.builtin.fail:
             msg: "{{ ansible_failed_result.msg | default('Steps 2-4 failed on ' + inventory_hostname) }}"
 
-- name: Core — Step 5 deploy VXLAN migration configlets to Arista CVP
+- name: Core - Step 5 deploy VXLAN migration configlets to Arista CVP
   hosts: eos_devices
   gather_facts: false
 
@@ -120,9 +120,9 @@
         - inventory_hostname not in _cvp_hosts
 
   tasks:
-    - name: Step 5 — Generate and push VXLAN configlets
+    - name: Step 5 - Generate and push VXLAN configlets
       block:
-        - name: Step 5a — Legacy Jinja configlet generation
+        - name: Step 5a - Legacy Jinja configlet generation
           ansible.builtin.include_role:
             name: cvp_deploy
           vars:
@@ -131,7 +131,7 @@
             target_vrf: "{{ hostvars['localhost']['target_vrf'] | default('') }}"
           when: not use_avd | default(false) | bool
 
-        - name: Step 5b — AVD-based configlet generation
+        - name: Step 5b - AVD-based configlet generation
           ansible.builtin.include_role:
             name: avd_vxlan_config
           vars:

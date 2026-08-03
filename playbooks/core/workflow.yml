@@ -1,9 +1,9 @@
 ---
 # -----------------------------------------------------------------------------
-# Core workflow — full single-run entry point (deploy + verify, no ServiceNow)
+# Core workflow - full single-run entry point (deploy + verify, no ServiceNow)
 # -----------------------------------------------------------------------------
 # Convenient for demos and local testing. Does not wait for CVP change-control
-# approval between stages — run deploy and verify separately in production.
+# approval between stages - run deploy and verify separately in production.
 #
 # Example:
 #   ansible-playbook -i inventory/hosts.yml playbooks/core/workflow.yml \
