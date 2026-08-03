@@ -10,7 +10,7 @@ Ansible automation to **migrate legacy VLANs to VXLAN/EVPN** on Arista EOS via C
 
 ## Documentation
 
-**Index:** [docs/README.md](docs/README.md) — architecture, usage guides, and runnable examples.
+**Index:** [docs/README.md](docs/README.md) - architecture, usage guides, and runnable examples.
 
 | Doc | Purpose |
 |---|---|
@@ -20,66 +20,153 @@ Ansible automation to **migrate legacy VLANs to VXLAN/EVPN** on Arista EOS via C
 | [docs/ROADMAP.md](docs/ROADMAP.md) | Open features |
 | [docs/AGENTS.md](docs/AGENTS.md) | Instructions for maintaining this documentation tree |
 
-## Quick start (Core)
+## Install
 
 ```bash
-# 1. Discover a VLAN (reports under reports/<dc>/<vlan_name>/)
-ansible-playbook -i inventory/hosts.yml playbooks/core/discover_vlan.yml \
-  -e manual_data_center=lisle -e manual_vlan_id=100 --limit dc_lisle
+pip install -r requirements.txt
+ansible-galaxy collection install -r collections/requirements.yml -p collections/
+```
 
-# 2. Add/update vars/vlans/lisle/0100_legacy_web.yml from the report snippet, then deploy
-ansible-playbook -i inventory/hosts.yml playbooks/core/workflow_deploy.yml \
+## Credentials and vault
+
+Device SSH credentials live in `inventory/group_vars/all/vault.yml` (see `vault.yml.example`).
+When that file is encrypted, append **`--ask-vault-pass`** to every playbook that touches network devices
+(or use `--vault-password-file ~/.vault_pass` in automation).
+
+```bash
+cp inventory/group_vars/all/vault.yml.example inventory/group_vars/all/vault.yml
+# Edit ansible_user / ansible_password, then optionally:
+ansible-vault encrypt inventory/group_vars/all/vault.yml
+```
+
+CVP push (`cvp_apply_configlets=true`) also needs `cvp_url` and `cvp_token` in vault.
+Generate-only runs (`cvp_apply_configlets=false`) do not call CVP.
+
+Full credential options: [docs/examples/discover-vlan.md](docs/examples/discover-vlan.md) (preflight section).
+
+## Quick start (Core)
+
+Run playbooks from the **repository root** so `ansible.cfg` and `collections/` resolve correctly.
+
+### 1. Discover a VLAN
+
+Probe an unknown VLAN (not yet in the VLAN DB):
+
+```bash
+ansible-playbook -i inventory/hosts.yml playbooks/core/discover_vlan.yml \
+  -e manual_data_center=lisle \
+  -e manual_vlan_id=810 \
+  -e discovery_allow_probe=true \
+  --limit dc_lisle \
+  --ask-vault-pass
+```
+
+Discover a VLAN already declared under `vars/vlans/lisle/`:
+
+```bash
+ansible-playbook -i inventory/hosts.yml playbooks/core/discover_vlan.yml \
+  -e manual_data_center=lisle \
   -e manual_vlan_id=100 \
+  --limit dc_lisle \
+  --ask-vault-pass
+```
+
+Reports are written under `reports/<dc>/<vlan_name>/` (auto-created, gitignored).
+Copy the generated snippet into `vars/vlans/<dc>/{vid}_{slug}.yml` and fill in `vni`, `vrf`, and `target_switches`.
+
+More discovery examples: [docs/examples/discover-vlan.md](docs/examples/discover-vlan.md)
+
+### 2. Deploy (generate config only)
+
+After the VLAN record exists in the local SSOT, generate configlets locally (no CVP API calls):
+
+**Legacy Jinja:**
+
+```bash
+ansible-playbook -i inventory/hosts.yml playbooks/core/workflow_deploy.yml \
+  -e manual_vlan_id=810 \
   -e manual_data_center=lisle \
   -e manual_target_vrf=default \
   -e cvp_apply_configlets=false \
-  --limit dc_lisle
-
-# 3. After approving the CVP change control — optional verify
-ansible-playbook -i inventory/hosts.yml playbooks/core/workflow_verify.yml \
-  -e resume_vlan_id=100 --limit dc_lisle
+  --limit dc_lisle \
+  --ask-vault-pass
 ```
 
-Per-DC VLAN databases: `vars/vlans/<data_center>/*.yml` — one file per VLAN (see `vars/vlans/README.md`).
+**Arista AVD:**
 
-Generate config without CVP push: [docs/examples/generate-config-without-cvp-push.md](docs/examples/generate-config-without-cvp-push.md).
+```bash
+ansible-playbook -i inventory/hosts.yml playbooks/core/workflow_deploy.yml \
+  -e manual_vlan_id=810 \
+  -e manual_data_center=lisle \
+  -e manual_target_vrf=default \
+  -e use_avd=true \
+  -e cvp_apply_configlets=false \
+  --limit dc_lisle \
+  --ask-vault-pass
+```
+
+Output: `reports/cvp_configlets/` (Jinja) or `cvp_configlets/avd/` (AVD).
+
+More generate-only options: [docs/examples/generate-config-without-cvp-push.md](docs/examples/generate-config-without-cvp-push.md)
+
+### 3. Deploy (push to CVP)
+
+After reviewing generated files, push to CloudVision (creates a **pending** change control):
+
+```bash
+ansible-playbook -i inventory/hosts.yml playbooks/core/workflow_deploy.yml \
+  -e manual_vlan_id=810 \
+  -e manual_data_center=lisle \
+  -e manual_target_vrf=default \
+  -e use_avd=true \
+  -e cvp_apply_configlets=true \
+  --limit dc_lisle \
+  --ask-vault-pass
+```
+
+Approve and execute the change control in CloudVision manually.
+
+### 4. Verify (optional, post-CVP)
+
+Run after the change control has been executed on devices:
+
+```bash
+ansible-playbook -i inventory/hosts.yml playbooks/core/workflow_verify.yml \
+  -e resume_vlan_id=810 \
+  --limit dc_lisle \
+  --ask-vault-pass
+```
+
+Per-DC VLAN databases: `vars/vlans/<data_center>/*.yml` - one file per VLAN (see `vars/vlans/README.md`).
 
 ## Standalone utilities
 
 ```bash
 # Export VLAN attributes to NetBox (dry-run by default)
 ansible-playbook -i inventory/hosts.yml playbooks/export_vlan_to_netbox.yml \
-  -e manual_data_center=lisle -e manual_vlan_id=100
+  -e manual_data_center=lisle \
+  -e manual_vlan_id=100 \
+  --ask-vault-pass
 ```
+
+NetBox export details: [docs/examples/export-vlan-to-netbox.md](docs/examples/export-vlan-to-netbox.md)
 
 ## Repository layout
 
 ```
 playbooks/core/          # Discovery, deploy, verify (no ServiceNow)
 playbooks/advanced/      # Core wrappers + ServiceNow
-vars/vlans/              # Per-DC VLAN DB — one YAML file per VLAN (primary SSOT)
+vars/vlans/              # Per-DC VLAN DB - one YAML file per VLAN (primary SSOT)
 roles/vlan_discovery/    # Read-only discovery + VLAN-centric reports
 roles/netbox_export/     # Standalone NetBox sync (not in workflow)
 docs/WORKFLOWS.md        # Architecture
 docs/USAGE_GUIDE.md      # Operator reference
 ```
 
-See the full README sections below for install steps, data model, and AAP integration.
-
----
-
-## Install
-
-```bash
-ansible-galaxy collection install -r collections/requirements.yml -p collections/
-```
-
-Provide credentials via `inventory/group_vars/all/vault.yml` or AAP credentials. See [docs/USAGE_GUIDE.md](docs/USAGE_GUIDE.md).
-
 ## Data model
 
 Each data center has its own VLAN database directory under `vars/vlans/<dc>/` (one file per VLAN).
-Filename: `{vid:04d}_{slug}.yml` — see `vars/vlans/README.md`.
+Filename: `{vid:04d}_{slug}.yml` - see `vars/vlans/README.md`.
 
 ```yaml
 # vars/vlans/lisle/0100_legacy_web.yml
@@ -102,7 +189,7 @@ discovery_switches:       # optional; defaults to target_switches
 - `--check` / `--diff` supported end-to-end.
 - `cvp_apply_configlets=false` by default (generate files only).
 - CVP change controls are **pending** by default; manual approval in CloudVision.
-- Discovery and trunk analysis are **read-only** — no device or trunk config changes.
+- Discovery and trunk analysis are **read-only** - no device or trunk config changes.
 
 ## AAP integration
 
