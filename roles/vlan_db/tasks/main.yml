@@ -148,7 +148,9 @@
     _ssot_source: local_registry
     _workflow_discovery_hosts: "{{ _target_vlan_record.discovery_switches | default(_target_vlan_record.target_switches) }}"
     _workflow_cvp_target_switches: "{{ _target_vlan_record.target_switches }}"
-  when: _target_vlan_record | default({}) | length > 0
+  when:
+    - _target_vlan_record | default({}) | length > 0
+    - not (_discovery_probe_mode | default(false) | bool)
 
 - name: Display loaded VLAN database summary
   ansible.builtin.debug:
