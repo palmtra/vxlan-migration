@@ -105,7 +105,7 @@ ansible-playbook -i inventory/hosts.yml playbooks/core/workflow_deploy.yml \
   --ask-vault-pass
 ```
 
-Output: `reports/cvp_configlets/` (Jinja) or `cvp_configlets/avd/` (AVD).
+Output: `reports/cvp_configlets/` (Jinja) or `reports/cvp_configlets/avd/` (AVD structured + configs).
 
 More generate-only options: [docs/examples/generate-config-without-cvp-push.md](docs/examples/generate-config-without-cvp-push.md)
 

@@ -78,6 +78,27 @@
   delegate_to: localhost
   become: false
 
+- name: Stat generated AVD config files
+  ansible.builtin.stat:
+    path: "{{ avd_output_dir }}/configs/{{ item }}.cfg"
+  register: _avd_config_stat
+  delegate_to: localhost
+  become: false
+  run_once: true
+  loop: "{{ ansible_play_hosts }}"
+
+- name: Fail when AVD generated empty config files
+  ansible.builtin.fail:
+    msg: >-
+      AVD produced an empty config for {{ item.item }}.
+      Structured input: {{ avd_output_dir }}/structured_configs/{{ item.item }}.yml
+      Output path: {{ avd_output_dir }}/configs/{{ item.item }}.cfg
+  loop: "{{ _avd_config_stat.results }}"
+  when: not item.stat.exists or (item.stat.size | default(0)) == 0
+  delegate_to: localhost
+  become: false
+  run_once: true
+
 - name: Clean up AVD temporary directory
   ansible.builtin.file:
     path: "{{ avd_tmp_dir }}"
@@ -110,6 +131,7 @@
     msg:
       - "AVD output directory: {{ avd_output_dir }}"
       - "Generated configlets for: {{ _avd_configlets.keys() | list }}"
+      - "Review configs under: {{ avd_output_dir }}/configs/"
   delegate_to: localhost
   become: false
   run_once: true
