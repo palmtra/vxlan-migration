@@ -30,14 +30,14 @@
   delegate_to: localhost
   become: false
   run_once: true
-  when: target_data_center | length == 0
+  when: hostvars['localhost']['target_data_center'] | default('') | length == 0
 
 - name: Display normalized Core workflow input
   ansible.builtin.debug:
     msg:
-      - "Target VLAN: {{ target_vlan_id }}"
-      - "Data center: {{ target_data_center }}"
-      - "Target VRF: {{ target_vrf }}"
+      - "Target VLAN: {{ hostvars['localhost']['target_vlan_id'] }}"
+      - "Data center: {{ hostvars['localhost']['target_data_center'] }}"
+      - "Target VRF: {{ hostvars['localhost']['target_vrf'] }}"
   delegate_to: localhost
   become: false
   run_once: true
