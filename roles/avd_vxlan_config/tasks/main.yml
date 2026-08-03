@@ -21,6 +21,15 @@
     - "{{ avd_output_dir }}/structured_configs"
     - "{{ avd_output_dir }}/configs"
 
+- name: Resolve Ansible collections search paths
+  ansible.builtin.set_fact:
+    _avd_collections_paths: "{{ _raw_avd_collections_paths.split(':') if (_raw_avd_collections_paths is string) else _raw_avd_collections_paths }}"
+  vars:
+    _raw_avd_collections_paths: "{{ lookup('ansible.builtin.config', 'COLLECTIONS_PATHS') }}"
+  delegate_to: localhost
+  become: false
+  run_once: true
+
 - name: Locate installed arista.avd collection manifest
   ansible.builtin.stat:
     path: "{{ item }}/ansible_collections/arista/avd/MANIFEST.json"
@@ -28,7 +37,7 @@
   delegate_to: localhost
   become: false
   run_once: true
-  loop: "{{ lookup('ansible.builtin.config', 'COLLECTIONS_PATHS').split(':') }}"
+  loop: "{{ _avd_collections_paths }}"
 
 - name: Fail when arista.avd collection is not installed
   ansible.builtin.fail:
