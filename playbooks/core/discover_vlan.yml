@@ -58,18 +58,14 @@
       when: hostvars['localhost']['target_data_center'] | default('') | length == 0
 
     - name: Load per-DC VLAN database on control node
-      block:
-        - name: Include vlan_db role
-          ansible.builtin.include_role:
-            name: vlan_db
-          vars:
-            target_data_center: "{{ hostvars['localhost']['target_data_center'] }}"
-            target_vlan_ids: "{{ hostvars['localhost']['target_vlan_ids'] | default([]) }}"
-            discovery_allow_probe: "{{ hostvars['localhost']['discovery_allow_probe'] | default(false) }}"
-            target_vlan_id: "{{ hostvars['localhost']['target_vlan_id'] | default(omit) }}"
+      ansible.builtin.include_role:
+        name: vlan_db
+      vars:
+        target_data_center: "{{ hostvars['localhost']['target_data_center'] | default(manual_data_center, true) | default('', true) | trim }}"
+        target_vlan_ids: "{{ hostvars['localhost']['target_vlan_ids'] | default([]) }}"
+        discovery_allow_probe: "{{ hostvars['localhost']['discovery_allow_probe'] | default(false) }}"
+        target_vlan_id: "{{ hostvars['localhost']['target_vlan_id'] | default(omit) }}"
       run_once: true
-      delegate_to: localhost
-      delegate_facts: true
 
     - name: Limit discovery to switches declared in the VLAN DB
       ansible.builtin.meta: end_host

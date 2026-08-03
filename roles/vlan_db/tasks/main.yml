@@ -3,161 +3,165 @@
 # vlan_db
 # -----------------------------------------------------------------------------
 # Loads per-VLAN YAML files from vars/vlans/<data_center>/*.yml
-# Must run on the control node (localhost play, or include_role delegated to
-# localhost). Sets facts used by discovery, CVP deploy, and NetBox sync.
+# Always runs on the control node and stores facts on localhost.
 # -----------------------------------------------------------------------------
 
-- name: Resolve effective data center for VLAN DB lookup
-  ansible.builtin.set_fact:
-    _vlan_db_data_center: "{{ target_data_center | default(manual_data_center, true) | default('', true) | trim }}"
-    _vlan_db_target_vlan_ids: "{{ target_vlan_ids | default([]) | normalize_target_vlan_ids(manual_vlan_id | default(none)) }}"
+- name: Load and validate VLAN database on control node
+  block:
+    - name: Resolve effective data center for VLAN DB lookup
+      ansible.builtin.set_fact:
+        _vlan_db_data_center: "{{ target_data_center | default(manual_data_center, true) | default('', true) | trim }}"
+        _vlan_db_target_vlan_ids: "{{ target_vlan_ids | default([]) | normalize_target_vlan_ids(manual_vlan_id | default(none)) }}"
 
-- name: Fail if data center is not specified
-  ansible.builtin.fail:
-    msg: >-
-      A data center must be provided via target_data_center or manual_data_center
-      (e.g. lisle, omaha). Per-DC VLAN databases live under {{ vlan_db_dir }}/<dc>/.
-  when: _vlan_db_data_center | length == 0
+    - name: Fail if data center is not specified
+      ansible.builtin.fail:
+        msg: >-
+          A data center must be provided via target_data_center or manual_data_center
+          (e.g. lisle, omaha). Per-DC VLAN databases live under {{ vlan_db_dir }}/<dc>/.
+      when: _vlan_db_data_center | default('') | length == 0
 
-- name: Load VLAN records from the DC directory
-  ansible.builtin.set_fact:
-    _vlan_db_load: "{{ vlan_db_dir | load_vlan_db_from_directory(_vlan_db_data_center, _vlan_db_target_vlan_ids) }}"
+    - name: Load VLAN records from the DC directory
+      ansible.builtin.set_fact:
+        _vlan_db_load: "{{ vlan_db_dir | load_vlan_db_from_directory(_vlan_db_data_center, _vlan_db_target_vlan_ids) }}"
 
-- name: Expose VLAN registry from the DC directory
-  ansible.builtin.set_fact:
-    _vlan_db:
-      vlans: "{{ _vlan_db_load.vlans }}"
-    _vlan_db_sources: "{{ _vlan_db_load.sources }}"
-    vlan_registry: "{{ {'vlans': _vlan_db_load.vlans} }}"
-    vlan_db_directory: "{{ _vlan_db_load.directory }}"
+    - name: Expose VLAN registry from the DC directory
+      ansible.builtin.set_fact:
+        _vlan_db:
+          vlans: "{{ _vlan_db_load.vlans }}"
+        _vlan_db_sources: "{{ _vlan_db_load.sources }}"
+        vlan_registry: "{{ {'vlans': _vlan_db_load.vlans} }}"
+        vlan_db_directory: "{{ _vlan_db_load.directory }}"
 
-- name: Derive single workflow target VLAN ID when exactly one was requested
-  ansible.builtin.set_fact:
-    target_vlan_id: "{{ _vlan_db_target_vlan_ids[0] }}"
-  when:
-    - target_vlan_id is not defined
-    - _vlan_db_target_vlan_ids | length == 1
+    - name: Derive single workflow target VLAN ID when exactly one was requested
+      ansible.builtin.set_fact:
+        target_vlan_id: "{{ _vlan_db_target_vlan_ids[0] }}"
+      when:
+        - target_vlan_id is not defined
+        - _vlan_db_target_vlan_ids | length == 1
 
-- name: Compute effective VLAN list for this run
-  ansible.builtin.set_fact:
-    _effective_vlans: "{{ _vlan_db.vlans | select_vlans_for_run(_vlan_db_target_vlan_ids, target_actions | default([])) }}"
+    - name: Compute effective VLAN list for this run
+      ansible.builtin.set_fact:
+        _effective_vlans: "{{ _vlan_db.vlans | select_vlans_for_run(_vlan_db_target_vlan_ids, target_actions | default([])) }}"
 
-- name: Resolve probe VLAN ID for discovery-only runs
-  ansible.builtin.set_fact:
-    _probe_vlan_id: "{{ (discovery_probe_vlan_id | default(manual_vlan_id | default(target_vlan_id, true), true)) | int }}"
-  when:
-    - discovery_allow_probe | default(false) | bool
-    - discovery_probe_vlan_id is defined or manual_vlan_id is defined or target_vlan_id is defined
+    - name: Resolve probe VLAN ID for discovery-only runs
+      ansible.builtin.set_fact:
+        _probe_vlan_id: "{{ (discovery_probe_vlan_id | default(manual_vlan_id | default(target_vlan_id, true), true)) | int }}"
+      when:
+        - discovery_allow_probe | default(false) | bool
+        - discovery_probe_vlan_id is defined or manual_vlan_id is defined or target_vlan_id is defined
 
-- name: Build synthetic VLAN record when probing an ID not yet in the DC database
-  ansible.builtin.set_fact:
-    _effective_vlans:
-      - id: "{{ _probe_vlan_id }}"
-        name: "vlan_{{ _probe_vlan_id }}"
-        action: migrate
-        service_type: "{{ discovery_probe_service_type | default('l3') }}"
-    _target_vlan_record:
-      id: "{{ _probe_vlan_id }}"
-      name: "vlan_{{ _probe_vlan_id }}"
-      action: migrate
-      service_type: "{{ discovery_probe_service_type | default('l3') }}"
-      target_switches: []
-    _workflow_discovery_hosts: []
-    _discovery_probe_mode: true
-    _discovery_scan_all_switches: true
-  when:
-    - discovery_allow_probe | default(false) | bool
-    - _probe_vlan_id is defined
-    - _vlan_db.vlans | selectattr('id', 'equalto', _probe_vlan_id | int) | list | length == 0
+    - name: Build synthetic VLAN record when probing an ID not yet in the DC database
+      ansible.builtin.set_fact:
+        _effective_vlans:
+          - id: "{{ _probe_vlan_id }}"
+            name: "vlan_{{ _probe_vlan_id }}"
+            action: migrate
+            service_type: "{{ discovery_probe_service_type | default('l3') }}"
+        _target_vlan_record:
+          id: "{{ _probe_vlan_id }}"
+          name: "vlan_{{ _probe_vlan_id }}"
+          action: migrate
+          service_type: "{{ discovery_probe_service_type | default('l3') }}"
+          target_switches: []
+        _workflow_discovery_hosts: []
+        _discovery_probe_mode: true
+        _discovery_scan_all_switches: true
+      when:
+        - discovery_allow_probe | default(false) | bool
+        - _probe_vlan_id is defined
+        - _vlan_db.vlans | selectattr('id', 'equalto', _probe_vlan_id | int) | list | length == 0
 
-- name: Fail if no VLANs matched the current run filters
-  ansible.builtin.fail:
-    msg: >-
-      No VLANs matched target_vlan_ids={{ _vlan_db_target_vlan_ids }} and
-      target_actions={{ target_actions | default([]) }} under
-      {{ vlan_db_dir }}/{{ _vlan_db_data_center }}/.
-      To discover a VLAN not yet in the DB, pass -e discovery_allow_probe=true.
-  when: _effective_vlans | length == 0
+    - name: Fail if no VLANs matched the current run filters
+      ansible.builtin.fail:
+        msg: >-
+          No VLANs matched target_vlan_ids={{ _vlan_db_target_vlan_ids }} and
+          target_actions={{ target_actions | default([]) }} under
+          {{ vlan_db_dir }}/{{ _vlan_db_data_center }}/.
+          To discover a VLAN not yet in the DB, pass -e discovery_allow_probe=true.
+      when: _effective_vlans | default([]) | length == 0
 
-- name: Set discovery host union for multi-VLAN or all-VLAN discovery runs
-  ansible.builtin.set_fact:
-    _workflow_discovery_hosts: "{{ _effective_vlans | union_vlan_discovery_hosts }}"
-  when:
-    - not (_discovery_probe_mode | default(false) | bool)
-    - target_vlan_id is not defined or (_effective_vlans | length > 1)
+    - name: Set discovery host union for multi-VLAN or all-VLAN discovery runs
+      ansible.builtin.set_fact:
+        _workflow_discovery_hosts: "{{ _effective_vlans | union_vlan_discovery_hosts }}"
+      when:
+        - not (_discovery_probe_mode | default(false) | bool)
+        - target_vlan_id is not defined or (_effective_vlans | length > 1)
 
-- name: Look up the workflow target VLAN record when target_vlan_id is set
-  ansible.builtin.set_fact:
-    _target_vlan_record: "{{ _vlan_db.vlans | selectattr('id', 'equalto', target_vlan_id | int) | first | default({}) }}"
-  when:
-    - target_vlan_id is defined
-    - not (_discovery_probe_mode | default(false) | bool)
+    - name: Look up the workflow target VLAN record when target_vlan_id is set
+      ansible.builtin.set_fact:
+        _target_vlan_record: "{{ _vlan_db.vlans | selectattr('id', 'equalto', target_vlan_id | int) | first | default({}) }}"
+      when:
+        - target_vlan_id is defined
+        - not (_discovery_probe_mode | default(false) | bool)
 
-- name: Fail if the workflow target VLAN is not in the DC database
-  ansible.builtin.fail:
-    msg: >-
-      VLAN {{ target_vlan_id }} was not found under
-      {{ vlan_db_dir }}/{{ _vlan_db_data_center }}/.
-      Expected file prefix: {{ target_vlan_id | vlan_db_file_prefix }}*
-  when:
-    - target_vlan_id is defined
-    - not (_discovery_probe_mode | default(false) | bool)
-    - _target_vlan_record | default({}) | length == 0
+    - name: Fail if the workflow target VLAN is not in the DC database
+      ansible.builtin.fail:
+        msg: >-
+          VLAN {{ target_vlan_id }} was not found under
+          {{ vlan_db_dir }}/{{ _vlan_db_data_center }}/.
+          Expected file prefix: {{ target_vlan_id | vlan_db_file_prefix }}*
+      when:
+        - target_vlan_id is defined
+        - not (_discovery_probe_mode | default(false) | bool)
+        - _target_vlan_record | default({}) | length == 0
 
-- name: Validate service_type on the target VLAN record
-  ansible.builtin.fail:
-    msg: >-
-      VLAN {{ target_vlan_id }} has invalid service_type
-      '{{ _target_vlan_record.service_type | default('') }}'.
-      Allowed values: {{ vlan_db_valid_service_types | join(', ') }}.
-  when:
-    - _target_vlan_record | default({}) | length > 0
-    - _target_vlan_record.service_type | default('') not in vlan_db_valid_service_types
+    - name: Validate service_type on the target VLAN record
+      ansible.builtin.fail:
+        msg: >-
+          VLAN {{ target_vlan_id }} has invalid service_type
+          '{{ _target_vlan_record.service_type | default('') }}'.
+          Allowed values: {{ vlan_db_valid_service_types | join(', ') }}.
+      when:
+        - _target_vlan_record | default({}) | length > 0
+        - _target_vlan_record.service_type | default('') not in vlan_db_valid_service_types
 
-- name: Validate target_switches are declared on the target VLAN record
-  ansible.builtin.fail:
-    msg: "VLAN {{ target_vlan_id }} must declare at least one entry in target_switches."
-  when:
-    - _target_vlan_record | default({}) | length > 0
-    - _target_vlan_record.target_switches | default([]) | length == 0
-    - not (_discovery_probe_mode | default(false) | bool)
+    - name: Validate target_switches are declared on the target VLAN record
+      ansible.builtin.fail:
+        msg: "VLAN {{ target_vlan_id }} must declare at least one entry in target_switches."
+      when:
+        - _target_vlan_record | default({}) | length > 0
+        - _target_vlan_record.target_switches | default([]) | length == 0
+        - not (_discovery_probe_mode | default(false) | bool)
 
-- name: Validate target_switches exist in inventory
-  ansible.builtin.fail:
-    msg: >-
-      Switch '{{ item }}' listed in target_switches for VLAN {{ target_vlan_id }}
-      was not found in the Ansible inventory.
-  loop: "{{ _target_vlan_record.target_switches | default([]) }}"
-  when:
-    - vlan_db_validate_target_switches | bool
-    - _target_vlan_record | default({}) | length > 0
-    - not (_discovery_probe_mode | default(false) | bool)
-    - item not in groups['all']
+    - name: Validate target_switches exist in inventory
+      ansible.builtin.fail:
+        msg: >-
+          Switch '{{ item }}' listed in target_switches for VLAN {{ target_vlan_id }}
+          was not found in the Ansible inventory.
+      loop: "{{ _target_vlan_record.target_switches | default([]) }}"
+      when:
+        - vlan_db_validate_target_switches | bool
+        - _target_vlan_record | default({}) | length > 0
+        - not (_discovery_probe_mode | default(false) | bool)
+        - item not in groups['all']
 
-- name: Set SSOT facts from the local VLAN database
-  ansible.builtin.set_fact:
-    _ssot_vlan:
-      id: "{{ _target_vlan_record.id }}"
-      name: "{{ _target_vlan_record.name }}"
-      vlan_name: "{{ _target_vlan_record.vlan_name | default(_target_vlan_record.name) }}"
-      vrf: "{{ _target_vlan_record.vrf | default('default') }}"
-      vni: "{{ _target_vlan_record.vni }}"
-      service_type: "{{ _target_vlan_record.service_type }}"
-      target_switches: "{{ _target_vlan_record.target_switches }}"
-      data_center: "{{ _vlan_db_data_center }}"
-    _ssot_source: local_registry
-    _workflow_discovery_hosts: "{{ _target_vlan_record.discovery_switches | default(_target_vlan_record.target_switches) }}"
-    _workflow_cvp_target_switches: "{{ _target_vlan_record.target_switches }}"
-  when:
-    - _target_vlan_record | default({}) | length > 0
-    - not (_discovery_probe_mode | default(false) | bool)
+    - name: Set SSOT facts from the local VLAN database
+      ansible.builtin.set_fact:
+        _ssot_vlan:
+          id: "{{ _target_vlan_record.id }}"
+          name: "{{ _target_vlan_record.name }}"
+          vlan_name: "{{ _target_vlan_record.vlan_name | default(_target_vlan_record.name) }}"
+          vrf: "{{ _target_vlan_record.vrf | default('default') }}"
+          vni: "{{ _target_vlan_record.vni }}"
+          service_type: "{{ _target_vlan_record.service_type }}"
+          target_switches: "{{ _target_vlan_record.target_switches }}"
+          data_center: "{{ _vlan_db_data_center }}"
+        _ssot_source: local_registry
+        _workflow_discovery_hosts: "{{ _target_vlan_record.discovery_switches | default(_target_vlan_record.target_switches) }}"
+        _workflow_cvp_target_switches: "{{ _target_vlan_record.target_switches }}"
+      when:
+        - _target_vlan_record | default({}) | length > 0
+        - not (_discovery_probe_mode | default(false) | bool)
 
-- name: Display loaded VLAN database summary
-  ansible.builtin.debug:
-    msg:
-      - "VLAN DB directory: {{ vlan_db_dir }}/{{ _vlan_db_data_center }}/"
-      - "Loaded from: {{ _vlan_db_sources | default([]) }}"
-      - "VLANs selected for this run: {{ _effective_vlans | map(attribute='id') | list }}"
-      - "Workflow target VLAN: {{ target_vlan_id | default('n/a') }}"
-      - "Target switches: {{ _workflow_cvp_target_switches | default([]) }}"
-      - "Discovery hosts: {{ _workflow_discovery_hosts | default([]) }}"
+    - name: Display loaded VLAN database summary
+      ansible.builtin.debug:
+        msg:
+          - "VLAN DB directory: {{ vlan_db_dir }}/{{ _vlan_db_data_center }}/"
+          - "Loaded from: {{ _vlan_db_sources | default([]) }}"
+          - "VLANs selected for this run: {{ _effective_vlans | map(attribute='id') | list }}"
+          - "Workflow target VLAN: {{ target_vlan_id | default('n/a') }}"
+          - "Target switches: {{ _workflow_cvp_target_switches | default([]) }}"
+          - "Discovery hosts: {{ _workflow_discovery_hosts | default([]) }}"
+  delegate_to: localhost
+  delegate_facts: true
+  run_once: true
