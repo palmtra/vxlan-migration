@@ -85,11 +85,14 @@ class VlanDbLoaderTests(unittest.TestCase):
 
 
     def test_coalesce_trimmed(self):
-        from vlan_filters import coalesce_trimmed
+        from vlan_filters import coalesce_trimmed, resolve_data_center
 
         self.assertEqual(coalesce_trimmed("", None, "lisle"), "lisle")
         self.assertEqual(coalesce_trimmed("  omaha  ", "lisle"), "omaha")
         self.assertEqual(coalesce_trimmed("", "   ", None), "")
+        self.assertEqual(coalesce_trimmed(["lisle", "", "lisle"]), "lisle")
+        self.assertEqual(resolve_data_center("lisle", "", ""), "lisle")
+        self.assertEqual(resolve_data_center("", "omaha", "lisle"), "omaha")
 
     def test_union_vlan_discovery_hosts(self):
         from vlan_filters import union_vlan_discovery_hosts

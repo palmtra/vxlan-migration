@@ -24,7 +24,6 @@
   vars:
     target_vrf: "{{ hostvars['localhost']['target_vrf'] | default('default') }}"
     _effective_vlans: "{{ hostvars['localhost']['_effective_vlans'] | default([]) }}"
-    target_vlan_ids: "{{ hostvars['localhost']['target_vlan_ids'] | default([]) }}"
     _discovery_hosts: "{{ hostvars['localhost']['_workflow_discovery_hosts'] | default([]) }}"
 
   pre_tasks:
@@ -44,8 +43,8 @@
           ansible.builtin.include_role:
             name: vlan_db
           vars:
-            target_data_center: "{{ [hostvars['localhost']['target_data_center'] | default(''), manual_data_center] | coalesce_trimmed }}"
-            target_vlan_ids: "{{ [target_vlan_id | int] if (target_vlan_id is defined) else (target_vlan_ids | default([])) }}"
+            target_data_center: "{{ [manual_data_center | default(''), hostvars['localhost']['target_data_center'] | default('')] | coalesce_trimmed }}"
+            target_vlan_ids: "{{ [target_vlan_id | int] if (target_vlan_id is defined) else [] }}"
 
         - name: Set workflow-scoped target VLAN list
           ansible.builtin.set_fact:

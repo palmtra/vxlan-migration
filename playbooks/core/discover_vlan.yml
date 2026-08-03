@@ -11,20 +11,6 @@
 #     -e discovery_allow_probe=true \
 #     --limit dc_lisle
 #
-# Discover multiple VLANs:
-#   ansible-playbook -i inventory/hosts.yml playbooks/core/discover_vlan.yml \
-#     -e manual_data_center=lisle \
-#     -e 'target_vlan_ids=[100,200]' \
-#     --limit dc_lisle
-#
-# Discover all VLANs declared in the DC database:
-#   ansible-playbook -i inventory/hosts.yml playbooks/core/discover_vlan.yml \
-#     -e manual_data_center=lisle \
-#     --limit dc_lisle
-#
-# Credentials: inventory/group_vars/all/vault.yml (see vault.yml.example)
-#   or: --ask-pass -e ansible_user=admin
-#
 # Reports are written per VLAN under:
 #   reports/<dc>/<vlan_name>/<vlan_name>_discovery_<timestamp>.{md,csv,json,yml}
 # -----------------------------------------------------------------------------
@@ -36,31 +22,17 @@
   vars:
     target_vrf: "{{ hostvars['localhost']['target_vrf'] | default('default') }}"
     _effective_vlans: "{{ hostvars['localhost']['_effective_vlans'] | default([]) }}"
-    target_vlan_ids: "{{ hostvars['localhost']['target_vlan_ids'] | default([]) }}"
     _discovery_hosts: "{{ hostvars['localhost']['_workflow_discovery_hosts'] | default([]) }}"
     discovery_scan_all_switches: "{{ hostvars['localhost']['_discovery_scan_all_switches'] | default(false) | bool }}"
 
   pre_tasks:
-    - name: Bootstrap discovery on control node
+    - name: Load per-DC VLAN database on control node
       block:
-        - name: Normalize discovery input
-          ansible.builtin.set_fact:
-            target_data_center: "{{ [manual_data_center, target_data_center] | coalesce_trimmed }}"
-            target_vlan_ids: "{{ target_vlan_ids | default([]) | normalize_target_vlan_ids(manual_vlan_id | default(none)) }}"
-            discovery_allow_probe: "{{ discovery_allow_probe | default(true) | bool }}"
-
-        - name: Fail if data center is not specified
-          ansible.builtin.fail:
-            msg: "Pass -e manual_data_center=lisle (or omaha)."
-          when: target_data_center | length == 0
-
-        - name: Load per-DC VLAN database
+        - name: Include vlan_db role
           ansible.builtin.include_role:
             name: vlan_db
           vars:
-            target_data_center: "{{ target_data_center }}"
-            target_vlan_ids: "{{ target_vlan_ids }}"
-            discovery_allow_probe: "{{ discovery_allow_probe }}"
+            discovery_allow_probe: "{{ discovery_allow_probe | default(true) | bool }}"
       delegate_to: localhost
       delegate_facts: true
       run_once: true

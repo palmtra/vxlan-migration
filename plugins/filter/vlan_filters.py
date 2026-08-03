@@ -555,14 +555,28 @@ def vlan_db_record_filename(vlan_id, name):
 
 
 def coalesce_trimmed(*values):
-    """Return the first non-empty string after trim (treats None/'' as missing)."""
+    """Return the first non-empty string after trim (treats None/'' as missing).
+
+    Accepts either variadic arguments or a single list/tuple (Jinja list pipe).
+    """
+    candidates = []
     for value in values:
+        if isinstance(value, (list, tuple)):
+            candidates.extend(value)
+        else:
+            candidates.append(value)
+    for value in candidates:
         if value is None:
             continue
         text = str(value).strip()
-        if text:
+        if text and text.lower() != "undefined":
             return text
     return ""
+
+
+def resolve_data_center(manual_data_center="", target_data_center="", data_center=""):
+    """Resolve data center from playbook/extra vars (safe for Ansible strict undefined)."""
+    return coalesce_trimmed(manual_data_center, target_data_center, data_center)
 
 
 def normalize_target_vlan_ids(target_vlan_ids=None, manual_vlan_id=None):
@@ -891,6 +905,7 @@ class FilterModule(object):
             "vlan_db_file_prefix": vlan_db_file_prefix,
             "normalize_target_vlan_ids": normalize_target_vlan_ids,
             "coalesce_trimmed": coalesce_trimmed,
+            "resolve_data_center": resolve_data_center,
             "load_vlan_db_from_directory": load_vlan_db_from_directory,
             "union_vlan_discovery_hosts": union_vlan_discovery_hosts,
         }
