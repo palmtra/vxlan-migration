@@ -21,27 +21,6 @@
     - "{{ avd_output_dir }}/structured_configs"
     - "{{ avd_output_dir }}/configs"
 
-- name: Verify arista.avd collection is installed
-  block:
-    - name: Read arista.avd collection version
-      ansible.builtin.set_fact:
-        _avd_collection_version: "{{ lookup('ansible.builtin.collection_version', 'arista.avd') }}"
-      delegate_to: localhost
-      become: false
-      run_once: true
-
-  rescue:
-    - name: Fail when arista.avd collection is not installed
-      ansible.builtin.fail:
-        msg: >-
-          arista.avd is not installed or Ansible cannot load it from collections_path.
-          From the repo root run:
-          ansible-galaxy collection install -r collections/requirements.yml -p collections/
-          Confirm with: ansible-galaxy collection list arista.avd
-      delegate_to: localhost
-      become: false
-      run_once: true
-
 - name: Look up target VLAN in the local VLAN DB
   ansible.builtin.set_fact:
     _avd_vlan: "{{ hostvars['localhost']['_target_vlan_record'] | default({}) }}"
