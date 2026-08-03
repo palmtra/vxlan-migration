@@ -19,6 +19,26 @@
   loop:
     - "{{ avd_output_dir }}"
     - "{{ avd_output_dir }}/structured_configs"
+    - "{{ avd_output_dir }}/configs"
+
+- name: Locate installed arista.avd collection manifest
+  ansible.builtin.stat:
+    path: "{{ item }}/ansible_collections/arista/avd/MANIFEST.json"
+  register: _avd_collection_manifest
+  delegate_to: localhost
+  become: false
+  run_once: true
+  loop: "{{ lookup('ansible.builtin.config', 'COLLECTIONS_PATHS').split(':') }}"
+
+- name: Fail when arista.avd collection is not installed
+  ansible.builtin.fail:
+    msg: >-
+      arista.avd is not installed. From the repo root run:
+      ansible-galaxy collection install -r collections/requirements.yml -p collections/
+  delegate_to: localhost
+  become: false
+  run_once: true
+  when: _avd_collection_manifest.results | selectattr('stat.exists', 'defined') | selectattr('stat.exists') | list | length == 0
 
 - name: Look up target VLAN in the local VLAN DB
   ansible.builtin.set_fact:
@@ -51,12 +71,14 @@
     _is_borderleaf: "{{ item is match(avd_borderleaf_regex) }}"
 
 - name: Render EOS configuration with AVD eos_cli_config_gen
-  ansible.builtin.include_role:
-    name: arista.avd.eos_cli_config_gen
-  vars:
-    output_dir: "{{ avd_output_dir }}"
-    eos_cli_config_gen_configuration: {}
-    eos_cli_config_gen_documentation: {}
+  arista.avd.eos_cli_config_gen:
+    structured_config_filename: "{{ avd_output_dir }}/structured_configs/{{ inventory_hostname }}.yml"
+    config_filename: "{{ avd_output_dir }}/configs/{{ inventory_hostname }}.cfg"
+    read_structured_config_from_file: true
+    generate_device_config: true
+    generate_device_doc: false
+  delegate_to: localhost
+  become: false
 
 - name: Read generated EOS configuration files
   ansible.builtin.slurp:
