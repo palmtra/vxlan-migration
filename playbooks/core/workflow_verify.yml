@@ -26,7 +26,7 @@
       block:
         - name: Determine whether workflow state must be loaded from disk
           ansible.builtin.set_fact:
-            _resume_needed: "{{ target_vlan_id is not defined and resume_vlan_id | default('', true) | string | length > 0 }}"
+            _resume_needed: "{{ hostvars['localhost']['target_vlan_id'] is not defined and resume_vlan_id | default('', true) | string | length > 0 }}"
 
         - name: Load persisted workflow state for VLAN {{ resume_vlan_id | default('') }}
           ansible.builtin.include_vars:
@@ -38,15 +38,15 @@
             msg: >-
               workflow_verify.yml requires target_vlan_id from a chained deploy run,
               or -e resume_vlan_id=<id> pointing at {{ workflow_state_dir }}/vlan_<id>.yml.
-          when: target_vlan_id is not defined
+          when: hostvars['localhost']['target_vlan_id'] is not defined
 
         - name: Reload VLAN DB for verify-scoped facts
           ansible.builtin.include_role:
             name: vlan_db
           vars:
-            target_data_center: "{{ [manual_data_center | default(''), target_data_center | default('')] | coalesce_trimmed }}"
+            target_data_center: "{{ [manual_data_center | default(''), hostvars['localhost']['target_data_center'] | default('')] | coalesce_trimmed }}"
             target_vlan_ids:
-              - "{{ target_vlan_id | int }}"
+              - "{{ hostvars['localhost']['target_vlan_id'] | default(resume_vlan_id) | int }}"
       run_once: true
       delegate_to: localhost
       delegate_facts: true
