@@ -554,6 +554,17 @@ def vlan_db_record_filename(vlan_id, name):
     return "%s%s.yml" % (vlan_db_file_prefix(vlan_id), sanitize_report_slug(name))
 
 
+def coalesce_trimmed(*values):
+    """Return the first non-empty string after trim (treats None/'' as missing)."""
+    for value in values:
+        if value is None:
+            continue
+        text = str(value).strip()
+        if text:
+            return text
+    return ""
+
+
 def normalize_target_vlan_ids(target_vlan_ids=None, manual_vlan_id=None):
     """Normalize CLI extra vars into a list of integer VLAN IDs."""
     if manual_vlan_id is not None and str(manual_vlan_id).strip() != "":
@@ -879,6 +890,7 @@ class FilterModule(object):
             "vlan_db_record_filename": vlan_db_record_filename,
             "vlan_db_file_prefix": vlan_db_file_prefix,
             "normalize_target_vlan_ids": normalize_target_vlan_ids,
+            "coalesce_trimmed": coalesce_trimmed,
             "load_vlan_db_from_directory": load_vlan_db_from_directory,
             "union_vlan_discovery_hosts": union_vlan_discovery_hosts,
         }

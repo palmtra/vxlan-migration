@@ -35,36 +35,34 @@
 
   vars:
     target_vrf: "{{ hostvars['localhost']['target_vrf'] | default('default') }}"
-    _effective_vlans: "{{ hostvars['localhost']['_effective_vlans'] }}"
+    _effective_vlans: "{{ hostvars['localhost']['_effective_vlans'] | default([]) }}"
     target_vlan_ids: "{{ hostvars['localhost']['target_vlan_ids'] | default([]) }}"
     _discovery_hosts: "{{ hostvars['localhost']['_workflow_discovery_hosts'] | default([]) }}"
     discovery_scan_all_switches: "{{ hostvars['localhost']['_discovery_scan_all_switches'] | default(false) | bool }}"
 
   pre_tasks:
-    - name: Normalize discovery input on control node
-      ansible.builtin.set_fact:
-        target_data_center: "{{ manual_data_center | default(target_data_center, true) | default('', true) | trim }}"
-        target_vlan_ids: "{{ target_vlan_ids | default([]) | normalize_target_vlan_ids(manual_vlan_id | default(none)) }}"
-        discovery_allow_probe: "{{ discovery_allow_probe | default(true) | bool }}"
-      run_once: true
+    - name: Bootstrap discovery on control node
+      block:
+        - name: Normalize discovery input
+          ansible.builtin.set_fact:
+            target_data_center: "{{ [manual_data_center, target_data_center] | coalesce_trimmed }}"
+            target_vlan_ids: "{{ target_vlan_ids | default([]) | normalize_target_vlan_ids(manual_vlan_id | default(none)) }}"
+            discovery_allow_probe: "{{ discovery_allow_probe | default(true) | bool }}"
+
+        - name: Fail if data center is not specified
+          ansible.builtin.fail:
+            msg: "Pass -e manual_data_center=lisle (or omaha)."
+          when: target_data_center | length == 0
+
+        - name: Load per-DC VLAN database
+          ansible.builtin.include_role:
+            name: vlan_db
+          vars:
+            target_data_center: "{{ target_data_center }}"
+            target_vlan_ids: "{{ target_vlan_ids }}"
+            discovery_allow_probe: "{{ discovery_allow_probe }}"
       delegate_to: localhost
       delegate_facts: true
-
-    - name: Fail if data center is not specified
-      ansible.builtin.fail:
-        msg: "Pass -e manual_data_center=lisle (or omaha)."
-      run_once: true
-      delegate_to: localhost
-      when: hostvars['localhost']['target_data_center'] | default('') | length == 0
-
-    - name: Load per-DC VLAN database on control node
-      ansible.builtin.include_role:
-        name: vlan_db
-      vars:
-        target_data_center: "{{ hostvars['localhost']['target_data_center'] | default(manual_data_center, true) | default('', true) | trim }}"
-        target_vlan_ids: "{{ hostvars['localhost']['target_vlan_ids'] | default([]) }}"
-        discovery_allow_probe: "{{ hostvars['localhost']['discovery_allow_probe'] | default(false) }}"
-        target_vlan_id: "{{ hostvars['localhost']['target_vlan_id'] | default(omit) }}"
       run_once: true
 
     - name: Limit discovery to switches declared in the VLAN DB

@@ -44,6 +44,7 @@
           ansible.builtin.include_role:
             name: vlan_db
           vars:
+            target_data_center: "{{ [target_data_center | default(''), manual_data_center] | coalesce_trimmed }}"
             target_vlan_ids:
               - "{{ target_vlan_id | int }}"
       run_once: true

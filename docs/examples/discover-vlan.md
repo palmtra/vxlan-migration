@@ -156,7 +156,9 @@ It is listed in `.gitignore`, so it will not appear in `git status` even when pr
 | Symptom | Cause | Fix |
 |---|---|---|
 | Only a callback plugin error, no PLAY output | Outdated `stdout_callback` in `ansible.cfg` | Use repo `ansible.cfg` (fixed to `ansible.builtin.default`) |
-| `_effective_vlans is not set on localhost` | Old playbook + `--limit` excluding bootstrap | Update `discover_vlan.yml` or pull latest |
+| `A data center must be provided` right after vlan_db starts | Empty `target_data_center` passed via role vars; Ansible `default()` ignores `""` | Pull latest (uses `coalesce_trimmed` + single bootstrap block) |
+| `'dict object' has no attribute 'vni'` during probe | SSOT task ran for synthetic probe record | Pull latest (probe mode skips SSOT) |
+| `build_vlan_discovery_reports expects a list` | `_effective_vlans` not on localhost | Pull latest (bootstrap + report fallback) |
 | `paramiko is not installed` | Missing Python deps | `pip install -r requirements.txt` |
 | No password prompt, immediate SSH/auth failure | No credentials configured | Create `vault.yml` or use `--ask-pass` |
 | `UNREACHABLE` / timeout | Wrong IP or network path | Fix `ansible_host` in inventory |
