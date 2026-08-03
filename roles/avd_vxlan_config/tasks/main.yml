@@ -21,33 +21,26 @@
     - "{{ avd_output_dir }}/structured_configs"
     - "{{ avd_output_dir }}/configs"
 
-- name: Resolve Ansible collections search paths
-  ansible.builtin.set_fact:
-    _avd_collections_paths: "{{ _raw_avd_collections_paths.split(':') if (_raw_avd_collections_paths is string) else _raw_avd_collections_paths }}"
-  vars:
-    _raw_avd_collections_paths: "{{ lookup('ansible.builtin.config', 'COLLECTIONS_PATHS') }}"
-  delegate_to: localhost
-  become: false
-  run_once: true
+- name: Verify arista.avd collection is installed
+  block:
+    - name: Read arista.avd collection version
+      ansible.builtin.set_fact:
+        _avd_collection_version: "{{ lookup('ansible.builtin.collection_version', 'arista.avd') }}"
+      delegate_to: localhost
+      become: false
+      run_once: true
 
-- name: Locate installed arista.avd collection manifest
-  ansible.builtin.stat:
-    path: "{{ item }}/ansible_collections/arista/avd/MANIFEST.json"
-  register: _avd_collection_manifest
-  delegate_to: localhost
-  become: false
-  run_once: true
-  loop: "{{ _avd_collections_paths }}"
-
-- name: Fail when arista.avd collection is not installed
-  ansible.builtin.fail:
-    msg: >-
-      arista.avd is not installed. From the repo root run:
-      ansible-galaxy collection install -r collections/requirements.yml -p collections/
-  delegate_to: localhost
-  become: false
-  run_once: true
-  when: _avd_collection_manifest.results | selectattr('stat.exists', 'defined') | selectattr('stat.exists') | list | length == 0
+  rescue:
+    - name: Fail when arista.avd collection is not installed
+      ansible.builtin.fail:
+        msg: >-
+          arista.avd is not installed or Ansible cannot load it from collections_path.
+          From the repo root run:
+          ansible-galaxy collection install -r collections/requirements.yml -p collections/
+          Confirm with: ansible-galaxy collection list arista.avd
+      delegate_to: localhost
+      become: false
+      run_once: true
 
 - name: Look up target VLAN in the local VLAN DB
   ansible.builtin.set_fact:
