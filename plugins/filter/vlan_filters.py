@@ -382,6 +382,359 @@ def parse_svi_vrf(svi_config, platform="eos"):
     return "default"
 
 
+_SVI_DESC_RE = re.compile(r"^\s*description\s+(.+?)\s*$", re.I | re.M)
+_SVI_MTU_RE = re.compile(r"^\s*mtu\s+(\d+)\s*$", re.I | re.M)
+_SVI_IP_RE = re.compile(
+    r"^\s*ip\s+address\s+(\d+\.\d+\.\d+\.\d+/\d+)(?:\s+secondary)?\s*$",
+    re.I | re.M,
+)
+_SVI_VR_ADDR_RE = re.compile(
+    r"^\s*ip\s+virtual-router\s+address\s+(\S+)\s*$",
+    re.I | re.M,
+)
+_IP_ROUTE_RE = re.compile(
+    r"^\s*ip\s+route(?:\s+vrf\s+(?P<vrf>\S+))?\s+"
+    r"(?P<prefix>\S+)\s+(?P<nexthop>\S+)"
+    r"(?:.*?\s+name\s+(?P<name>\S+))?",
+    re.I | re.M,
+)
+_BGP_ROUTER_RE = re.compile(r"^\s*router\s+bgp\s+(\d+)\s*$", re.I)
+_BGP_VRF_RE = re.compile(r"^\s*vrf\s+(\S+)\s*$", re.I)
+_BGP_NEIGHBOR_ATTR_RE = re.compile(
+    r"^\s*neighbor\s+(?P<neighbor>\S+)\s+(?P<attr>remote-as|update-source|description|route-map)\s+(?P<value>.+?)\s*$",
+    re.I,
+)
+
+
+def parse_svi_details(svi_config, platform="eos"):
+    """Parse structured fields from an SVI running-config snippet."""
+    if not svi_config or _output_indicates_missing(svi_config):
+        return {
+            "present": False,
+            "description": "",
+            "mtu": None,
+            "vrf": "",
+            "ip_addresses": [],
+            "virtual_router_addresses": [],
+        }
+
+    text = str(svi_config)
+    desc_match = _SVI_DESC_RE.search(text)
+    mtu_match = _SVI_MTU_RE.search(text)
+    return {
+        "present": True,
+        "description": desc_match.group(1).strip() if desc_match else "",
+        "mtu": int(mtu_match.group(1)) if mtu_match else None,
+        "vrf": parse_svi_vrf(text, platform),
+        "ip_addresses": [match.group(1) for match in _SVI_IP_RE.finditer(text)],
+        "virtual_router_addresses": [
+            match.group(1) for match in _SVI_VR_ADDR_RE.finditer(text)
+        ],
+    }
+
+
+def parse_ip_route_statics(route_config):
+    """Parse static `ip route [vrf X] ...` lines from running-config output."""
+    if not route_config or not str(route_config).strip():
+        return []
+
+    routes = []
+    seen = set()
+    for match in _IP_ROUTE_RE.finditer(str(route_config)):
+        route = {
+            "vrf": match.group("vrf") or "default",
+            "prefix": match.group("prefix"),
+            "next_hop": match.group("nexthop"),
+            "name": match.group("name") or "",
+        }
+        key = (
+            route["vrf"],
+            route["prefix"],
+            route["next_hop"],
+            route["name"],
+        )
+        if key in seen:
+            continue
+        seen.add(key)
+        routes.append(route)
+    return routes
+
+
+def parse_bgp_neighbors(bgp_config):
+    """Parse VRF-scoped BGP neighbors from `show run section router bgp` output."""
+    if not bgp_config or not str(bgp_config).strip():
+        return []
+
+    neighbors = {}
+    current_vrf = "default"
+    bgp_as = ""
+
+    for raw_line in str(bgp_config).splitlines():
+        line = raw_line.rstrip()
+        if not line.strip() or line.strip().startswith("!"):
+            continue
+
+        router_match = _BGP_ROUTER_RE.match(line)
+        if router_match:
+            bgp_as = router_match.group(1)
+            current_vrf = "default"
+            continue
+
+        # Ignore address-family nesting for activation; keep last seen VRF.
+        if re.match(r"^\s*address-family\b", line, re.I):
+            continue
+
+        vrf_match = _BGP_VRF_RE.match(line)
+        if vrf_match and not re.match(r"^\s*neighbor\b", line, re.I):
+            # Only treat top-ish `vrf NAME` stanzas (not route-target lines).
+            indent = len(line) - len(line.lstrip())
+            if indent <= 3:
+                current_vrf = vrf_match.group(1)
+            continue
+
+        attr_match = _BGP_NEIGHBOR_ATTR_RE.match(line)
+        if not attr_match:
+            continue
+
+        neighbor = attr_match.group("neighbor")
+        attr = attr_match.group("attr").lower()
+        value = attr_match.group("value").strip()
+        key = (current_vrf, neighbor)
+        entry = neighbors.setdefault(
+            key,
+            {
+                "vrf": current_vrf,
+                "neighbor": neighbor,
+                "bgp_as": bgp_as,
+                "remote_as": "",
+                "update_source": "",
+                "description": "",
+                "route_maps": [],
+            },
+        )
+        if attr == "remote-as":
+            entry["remote_as"] = value
+        elif attr == "update-source":
+            entry["update_source"] = value
+        elif attr == "description":
+            entry["description"] = value
+        elif attr == "route-map":
+            entry["route_maps"].append(value)
+
+    return list(neighbors.values())
+
+
+def normalize_prune_retain(retain):
+    """Normalize service prune.retain into comparable sets."""
+    retain = retain or {}
+    if not isinstance(retain, dict):
+        raise AnsibleFilterError(
+            "normalize_prune_retain expects a dict, got %s" % type(retain)
+        )
+
+    vrfs = {str(item) for item in (retain.get("vrfs") or []) if item}
+    interfaces = {str(item) for item in (retain.get("interfaces") or []) if item}
+    neighbors = set()
+    for item in retain.get("bgp_neighbors") or []:
+        if not isinstance(item, dict):
+            continue
+        vrf = str(item.get("vrf") or "default")
+        neighbor = str(item.get("neighbor") or "")
+        if neighbor:
+            neighbors.add((vrf, neighbor))
+    static_names = {
+        str(item) for item in (retain.get("static_route_names") or []) if item
+    }
+    return {
+        "vrfs": vrfs,
+        "interfaces": interfaces,
+        "bgp_neighbors": neighbors,
+        "static_route_names": static_names,
+    }
+
+
+def _prune_action(op, **fields):
+    action = {"op": op}
+    action.update(fields)
+    return action
+
+
+def build_device_prune_plan(
+    hostname,
+    per_vlan,
+    retain=None,
+    static_routes=None,
+    bgp_neighbors=None,
+    vlan_ids=None,
+):
+    """Build a retain-aware prune candidate plan for one device (read-only)."""
+    if not isinstance(per_vlan, list):
+        raise AnsibleFilterError(
+            "build_device_prune_plan expects per_vlan list, got %s" % type(per_vlan)
+        )
+
+    retain_norm = normalize_prune_retain(retain)
+    wanted = None
+    if vlan_ids is not None:
+        wanted = {str(vid) for vid in vlan_ids}
+
+    actions = []
+    blocked = []
+    svi_vrfs = set()
+    vlan_id_list = []
+
+    for entry in per_vlan:
+        if not isinstance(entry, dict):
+            continue
+        vlan_id = entry.get("vlan_id")
+        if vlan_id is None:
+            continue
+        if wanted is not None and str(vlan_id) not in wanted:
+            continue
+
+        vlan_id_list.append(int(vlan_id))
+        svi_vrf = entry.get("svi_vrf") or (entry.get("svi_details") or {}).get("vrf") or ""
+        if svi_vrf:
+            svi_vrfs.add(str(svi_vrf))
+
+        for iface in entry.get("trunk_ports") or []:
+            actions.append(
+                _prune_action(
+                    "trunk_remove_vlans",
+                    interface=iface,
+                    vlans=[int(vlan_id)],
+                    source="discovery",
+                    confidence="high",
+                )
+            )
+
+        if entry.get("vlan_present"):
+            actions.append(
+                _prune_action(
+                    "no_vlan",
+                    vlan_id=int(vlan_id),
+                    source="discovery",
+                    confidence="high",
+                )
+            )
+
+        if entry.get("svi_present"):
+            actions.append(
+                _prune_action(
+                    "no_interface_vlan",
+                    vlan_id=int(vlan_id),
+                    vrf=svi_vrf or "",
+                    source="discovery",
+                    confidence="high",
+                )
+            )
+
+    # Consolidate trunk removals per interface.
+    trunk_map = {}
+    other_actions = []
+    for action in actions:
+        if action["op"] != "trunk_remove_vlans":
+            other_actions.append(action)
+            continue
+        iface = action["interface"]
+        trunk_map.setdefault(iface, set()).update(action.get("vlans") or [])
+    consolidated = []
+    for iface, vlans in sorted(trunk_map.items()):
+        consolidated.append(
+            _prune_action(
+                "trunk_remove_vlans",
+                interface=iface,
+                vlans=sorted(vlans),
+                source="discovery",
+                confidence="high",
+            )
+        )
+    actions = consolidated + other_actions
+
+    for route in static_routes or []:
+        vrf = str(route.get("vrf") or "default")
+        if svi_vrfs and vrf not in svi_vrfs:
+            continue
+        action = _prune_action(
+            "no_ip_route",
+            vrf=vrf,
+            prefix=route.get("prefix", ""),
+            next_hop=route.get("next_hop", ""),
+            name=route.get("name", ""),
+            source="discovery",
+            confidence="medium",
+        )
+        route_name = route.get("name") or ""
+        if vrf in retain_norm["vrfs"] or (
+            route_name and route_name in retain_norm["static_route_names"]
+        ):
+            action["reason"] = "matched prune.retain"
+            blocked.append(action)
+        else:
+            actions.append(action)
+
+    for neighbor in bgp_neighbors or []:
+        vrf = str(neighbor.get("vrf") or "default")
+        neighbor_ip = str(neighbor.get("neighbor") or "")
+        if not neighbor_ip:
+            continue
+        if svi_vrfs and vrf not in svi_vrfs:
+            continue
+        action = _prune_action(
+            "no_bgp_neighbor",
+            vrf=vrf,
+            neighbor=neighbor_ip,
+            remote_as=neighbor.get("remote_as", ""),
+            update_source=neighbor.get("update_source", ""),
+            description=neighbor.get("description", ""),
+            route_maps=neighbor.get("route_maps", []),
+            source="discovery",
+            confidence="medium",
+        )
+        if (vrf, neighbor_ip) in retain_norm["bgp_neighbors"] or vrf in retain_norm[
+            "vrfs"
+        ]:
+            action["reason"] = "matched prune.retain"
+            blocked.append(action)
+        else:
+            actions.append(action)
+
+    for vrf in sorted(svi_vrfs):
+        if vrf in ("", "default"):
+            continue
+        action = _prune_action(
+            "no_vrf",
+            name=vrf,
+            source="discovery",
+            confidence="low",
+            note="Only safe after all member VLANs/SVIs/statics for this VRF are removed",
+        )
+        if vrf in retain_norm["vrfs"]:
+            action["reason"] = "matched prune.retain"
+            blocked.append(action)
+        else:
+            actions.append(action)
+
+    return {
+        "hostname": hostname,
+        "vlan_ids": sorted(set(vlan_id_list)),
+        "svi_vrfs": sorted(svi_vrfs),
+        "actions": actions,
+        "blocked_by_retain": blocked,
+        "retain": {
+            "vrfs": sorted(retain_norm["vrfs"]),
+            "bgp_neighbors": [
+                {"vrf": vrf, "neighbor": neighbor}
+                for vrf, neighbor in sorted(retain_norm["bgp_neighbors"])
+            ],
+            "interfaces": sorted(retain_norm["interfaces"]),
+            "static_route_names": sorted(retain_norm["static_route_names"]),
+        },
+        "destructive": False,
+        "status": "candidate",
+    }
+
+
 def arp_discovery_command(platform, vlan_id, svi_vrf=None, svi_present=False):
     """Build a platform-appropriate ARP command for an SVI in its VRF."""
     if not svi_present:
@@ -674,13 +1027,22 @@ def extract_vlan_targeted_discovery(vlan, outputs):
     access_ports = port_membership.get("access_ports", [])
     trunk_ports = port_membership.get("trunk_ports", [])
     exempt_trunk_ports = port_membership.get("exempt_trunk_ports", [])
+    svi_details = parse_svi_details(svi_output, platform) if svi_present else {
+        "present": False,
+        "description": "",
+        "mtu": None,
+        "vrf": "",
+        "ip_addresses": [],
+        "virtual_router_addresses": [],
+    }
     trunk_cleanup_recommendations = [
         {
             "interface": iface,
             "port_role": "trunk",
             "recommendation": (
                 "VLAN is carried on trunk "
-                f"{iface}. Plan trunk prune during legacy decommission (decomm-vlan)."
+                f"{iface}. Plan trunk prune during legacy decommission "
+                "(candidate only; discovery never applies deletes)."
             ),
         }
         for iface in trunk_ports
@@ -691,6 +1053,7 @@ def extract_vlan_targeted_discovery(vlan, outputs):
         "vlan_name": vlan.get("name", ""),
         "target_vrf": svi_vrf or outputs.get("target_vrf", vlan.get("vrf", "")),
         "svi_vrf": svi_vrf,
+        "svi_details": svi_details,
         "vlan_present": vlan_present,
         "has_port_membership": port_membership.get("has_port_membership", False),
         "svi_present": svi_present,
@@ -938,6 +1301,107 @@ def load_vlan_db_from_directory(vlan_db_dir, data_center, target_vlan_ids=None):
     }
 
 
+def load_service_from_directory(service_db_dir, data_center, service_id):
+    """Load one service migration bundle from vars/services/<dc>/<service_id>.yml."""
+    import os
+
+    try:
+        import yaml
+    except ImportError as exc:
+        raise AnsibleFilterError(
+            "PyYAML is required for load_service_from_directory: %s" % exc
+        )
+
+    dc = coalesce_trimmed(data_center)
+    sid = coalesce_trimmed(service_id)
+    if not dc:
+        raise AnsibleFilterError("load_service_from_directory requires data_center")
+    if not sid:
+        raise AnsibleFilterError("load_service_from_directory requires service_id")
+    if sid.startswith("_"):
+        raise AnsibleFilterError(
+            "service_id '%s' is reserved (files starting with _ are examples)" % sid
+        )
+
+    base_dir = os.path.join(str(service_db_dir), dc)
+    candidates = [
+        os.path.join(base_dir, "%s.yml" % sid),
+        os.path.join(base_dir, "%s.yaml" % sid),
+    ]
+    path = next((item for item in candidates if os.path.isfile(item)), None)
+    if path is None:
+        raise AnsibleFilterError(
+            "Service '%s' not found under %s/ (expected %s.yml)"
+            % (sid, base_dir, sid)
+        )
+
+    with open(path, "r", encoding="utf-8") as handle:
+        document = yaml.safe_load(handle) or {}
+
+    if not isinstance(document, dict):
+        raise AnsibleFilterError("Service file %s must be a YAML mapping" % path)
+    if document.get("_meta", {}).get("example"):
+        raise AnsibleFilterError(
+            "Service file %s is marked as an example (_meta.example) and cannot be loaded"
+            % path
+        )
+
+    record = dict(document)
+    record.setdefault("id", sid)
+    record.setdefault("data_center", dc)
+    record["_source_file"] = path
+    return record
+
+
+def service_vlan_ids(service_record):
+    """Return integer VLAN IDs declared on a service bundle."""
+    if not service_record:
+        return []
+    ids = []
+    for entry in service_record.get("vlans") or []:
+        if isinstance(entry, dict) and entry.get("id") is not None:
+            ids.append(int(entry["id"]))
+        elif entry is not None and not isinstance(entry, dict):
+            ids.append(int(entry))
+    return ids
+
+
+def service_probe_vlan_records(service_record, existing_vlans=None):
+    """Build synthetic VLAN DB records for service VLANs missing from the DC DB."""
+    if not service_record:
+        return []
+    existing_ids = {
+        int(item.get("id"))
+        for item in (existing_vlans or [])
+        if isinstance(item, dict) and item.get("id") is not None
+    }
+    records = []
+    for entry in service_record.get("vlans") or []:
+        if not isinstance(entry, dict) or entry.get("id") is None:
+            continue
+        vlan_id = int(entry["id"])
+        if vlan_id in existing_ids:
+            continue
+        name = entry.get("vlan_name") or entry.get("name") or ("vlan_%s" % vlan_id)
+        records.append(
+            {
+                "id": vlan_id,
+                "name": sanitize_report_slug(name),
+                "vlan_name": name,
+                "action": "migrate",
+                "service_type": entry.get("service_type") or "l3",
+                "vrf": entry.get("vrf") or "default",
+                "vni": entry.get("vni"),
+                "target_switches": entry.get("target_switches") or [],
+                "discovery_switches": entry.get("discovery_switches")
+                or entry.get("target_switches")
+                or [],
+                "_from_service": service_record.get("id", ""),
+            }
+        )
+    return records
+
+
 def build_vlan_discovery_reports(vlans, play_hosts, hostvars):
     """Build one aggregated discovery report dict per VLAN in *vlans*."""
     if not isinstance(vlans, list):
@@ -982,6 +1446,7 @@ def build_vlan_discovery_reports(vlans, play_hosts, hostvars):
                     "mac_learned": per_vlan.get("mac_learned", False),
                     "arp_learned": per_vlan.get("arp_learned", False),
                     "svi_vrf": per_vlan.get("svi_vrf", ""),
+                    "svi_details": per_vlan.get("svi_details", {}),
                     "vlan_id_raw": per_vlan.get("vlan_id_raw", ""),
                     "svi_raw": per_vlan.get("svi_raw", ""),
                     "target_vrf": per_vlan.get("svi_vrf")
@@ -991,6 +1456,9 @@ def build_vlan_discovery_reports(vlans, play_hosts, hostvars):
                     "trunk_cleanup_recommendations": per_vlan.get(
                         "trunk_cleanup_recommendations", []
                     ),
+                    "static_routes": discovery.get("static_routes", []),
+                    "bgp_neighbors": discovery.get("bgp_neighbors", []),
+                    "prune_plan": discovery.get("prune_plan", {}),
                     "vxlan_raw": discovery.get("vxlan_raw", ""),
                 }
             )
@@ -1043,6 +1511,75 @@ def build_vlan_discovery_reports(vlans, play_hosts, hostvars):
             if device.get("arp_learned")
         ]
 
+        # VLAN-scoped prune plans (retain blocking already applied on device fact).
+        prune_plans = []
+        for device in devices:
+            device_plan = device.get("prune_plan") or {}
+            if not device_plan:
+                device_plan = build_device_prune_plan(
+                    device.get("hostname", ""),
+                    [
+                        {
+                            "vlan_id": vlan_id,
+                            "vlan_present": device.get("vlan_present"),
+                            "svi_present": device.get("svi_present"),
+                            "svi_vrf": device.get("svi_vrf"),
+                            "svi_details": device.get("svi_details"),
+                            "trunk_ports": device.get("trunk_ports"),
+                        }
+                    ],
+                    retain=None,
+                    static_routes=device.get("static_routes"),
+                    bgp_neighbors=device.get("bgp_neighbors"),
+                    vlan_ids=[vlan_id],
+                )
+            else:
+                # Filter device-wide plan to actions relevant to this VLAN / its VRF.
+                vlan_actions = []
+                for action in device_plan.get("actions") or []:
+                    op = action.get("op")
+                    if op in ("no_vlan", "no_interface_vlan") and str(
+                        action.get("vlan_id")
+                    ) == str(vlan_id):
+                        vlan_actions.append(action)
+                    elif op == "trunk_remove_vlans" and int(vlan_id) in (
+                        action.get("vlans") or []
+                    ):
+                        vlan_actions.append(
+                            dict(
+                                action,
+                                vlans=[int(vlan_id)],
+                            )
+                        )
+                    elif op in ("no_ip_route", "no_bgp_neighbor", "no_vrf"):
+                        device_vrf = device.get("svi_vrf") or ""
+                        if device_vrf and (
+                            action.get("vrf") == device_vrf
+                            or action.get("name") == device_vrf
+                        ):
+                            vlan_actions.append(action)
+                blocked = []
+                for action in device_plan.get("blocked_by_retain") or []:
+                    if action.get("op") in ("no_ip_route", "no_bgp_neighbor", "no_vrf"):
+                        device_vrf = device.get("svi_vrf") or ""
+                        if device_vrf and (
+                            action.get("vrf") == device_vrf
+                            or action.get("name") == device_vrf
+                        ):
+                            blocked.append(action)
+                device_plan = {
+                    "hostname": device.get("hostname"),
+                    "vlan_ids": [int(vlan_id)],
+                    "svi_vrfs": [device.get("svi_vrf")] if device.get("svi_vrf") else [],
+                    "actions": vlan_actions,
+                    "blocked_by_retain": blocked,
+                    "retain": device_plan.get("retain", {}),
+                    "destructive": False,
+                    "status": "candidate",
+                }
+            if device_plan.get("actions") or device_plan.get("blocked_by_retain"):
+                prune_plans.append(device_plan)
+
         reports.append(
             {
                 "vlan_id": vlan_id,
@@ -1058,6 +1595,7 @@ def build_vlan_discovery_reports(vlans, play_hosts, hostvars):
                 "switches_with_svi": switches_with_svi,
                 "switches_with_arp": switches_with_arp,
                 "trunk_cleanup_candidates": trunk_cleanup_candidates,
+                "prune_plans": prune_plans,
                 "vni": vlan.get("vni"),
                 "vrf": vlan.get("vrf", "default"),
                 "data_center": vlan.get("data_center", ""),
@@ -1150,6 +1688,14 @@ class FilterModule(object):
             "trunk_interface_names": trunk_interface_names,
             "svi_command_indicates_present": svi_command_indicates_present,
             "parse_svi_vrf": parse_svi_vrf,
+            "parse_svi_details": parse_svi_details,
+            "parse_ip_route_statics": parse_ip_route_statics,
+            "parse_bgp_neighbors": parse_bgp_neighbors,
+            "normalize_prune_retain": normalize_prune_retain,
+            "build_device_prune_plan": build_device_prune_plan,
+            "load_service_from_directory": load_service_from_directory,
+            "service_vlan_ids": service_vlan_ids,
+            "service_probe_vlan_records": service_probe_vlan_records,
             "arp_discovery_command": arp_discovery_command,
             "mac_discovery_command": mac_discovery_command,
             "mac_table_has_learned_addresses": mac_table_has_learned_addresses,

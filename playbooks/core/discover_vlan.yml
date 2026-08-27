@@ -13,6 +13,9 @@
 #
 # Reports are written per VLAN under:
 #   reports/<dc>/<vlan_name>/<vlan_name>_discovery_<timestamp>.{md,csv,json,yml}
+#
+# Optional multi-VLAN service bundle (+ prune.retain):
+#   -e manual_service_id=aspira_0000822
 # -----------------------------------------------------------------------------
 
 - name: Discover VLAN state
@@ -26,8 +29,11 @@
     discovery_scan_all_switches: "{{ hostvars['localhost']['_discovery_scan_all_switches'] | default(false) | bool }}"
 
   pre_tasks:
-    - name: Load per-DC VLAN database on control node
+    - name: Load optional service bundle and per-DC VLAN database on control node
       block:
+        - name: Include service_db role
+          ansible.builtin.include_role:
+            name: service_db
         - name: Include vlan_db role
           ansible.builtin.include_role:
             name: vlan_db

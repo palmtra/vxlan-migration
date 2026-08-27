@@ -1,0 +1,29 @@
+---
+# -----------------------------------------------------------------------------
+# EOS - optional static route + BGP neighbor collection for prune_plan candidates
+# -----------------------------------------------------------------------------
+# Read-only. Used to harden discovery prune plans for multi-VRF services.
+# -----------------------------------------------------------------------------
+
+- name: EOS - show running-config section ip route
+  ansible.netcommon.cli_command:
+    command: show running-config section ip route
+  register: _eos_ip_route_section
+  check_mode: false
+  changed_when: false
+  failed_when: false
+
+- name: EOS - show running-config section router bgp
+  ansible.netcommon.cli_command:
+    command: show running-config section router bgp
+  register: _eos_bgp_section
+  check_mode: false
+  changed_when: false
+  failed_when: false
+
+- name: EOS - parse static routes and BGP neighbors
+  ansible.builtin.set_fact:
+    _eos_static_routes: "{{ _eos_ip_route_section.stdout | default('') | parse_ip_route_statics }}"
+    _eos_bgp_neighbors: "{{ _eos_bgp_section.stdout | default('') | parse_bgp_neighbors }}"
+    _eos_ip_route_raw: "{{ _eos_ip_route_section.stdout | default('') }}"
+    _eos_bgp_raw: "{{ _eos_bgp_section.stdout | default('') }}"

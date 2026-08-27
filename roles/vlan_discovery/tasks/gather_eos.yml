@@ -6,6 +6,10 @@
 - name: EOS - initialize per-VLAN discovery results
   ansible.builtin.set_fact:
     _eos_per_vlan_results: []
+    _eos_static_routes: []
+    _eos_bgp_neighbors: []
+    _eos_ip_route_raw: ""
+    _eos_bgp_raw: ""
 
 - name: EOS - collect trunk interface names for port classification
   ansible.builtin.include_tasks: gather_eos_trunks.yml
@@ -25,6 +29,25 @@
   changed_when: false
   failed_when: false
 
+- name: EOS - collect prune context (statics + BGP)
+  ansible.builtin.include_tasks: gather_eos_prune_context.yml
+  when: discovery_collect_prune_context | default(true) | bool
+
+- name: EOS - build retain-aware prune plan candidates
+  ansible.builtin.set_fact:
+    _eos_prune_plan: "{{ inventory_hostname | string | build_device_prune_plan(_pp_vlans, _pp_retain, _pp_statics, _pp_bgp, none) }}"
+  vars:
+    _pp_vlans: "{{ _eos_per_vlan_results | default([]) }}"
+    _pp_retain: "{{ hostvars['localhost']['_prune_retain'] | default(discovery_prune_retain | default({})) }}"
+    _pp_statics: "{{ _eos_static_routes | default([]) }}"
+    _pp_bgp: "{{ _eos_bgp_neighbors | default([]) }}"
+  when: discovery_write_prune_plan | default(true) | bool
+
+- name: EOS - default empty prune plan when disabled
+  ansible.builtin.set_fact:
+    _eos_prune_plan: {}
+  when: not (discovery_write_prune_plan | default(true) | bool)
+
 - name: EOS - assemble discovery fact
   ansible.builtin.set_fact:
     _vlan_discovery:
@@ -33,4 +56,9 @@
       os_family: "{{ network_os_family }}"
       timestamp: "{{ ansible_date_time.iso8601 }}"
       vxlan_raw: "{{ _eos_show_vxlan.stdout | default('') }}"
+      static_routes: "{{ _eos_static_routes | default([]) }}"
+      bgp_neighbors: "{{ _eos_bgp_neighbors | default([]) }}"
+      ip_route_raw: "{{ _eos_ip_route_raw | default('') }}"
+      bgp_raw: "{{ _eos_bgp_raw | default('') }}"
+      prune_plan: "{{ _eos_prune_plan | default({}) }}"
       per_vlan: "{{ _eos_per_vlan_results | default([]) }}"

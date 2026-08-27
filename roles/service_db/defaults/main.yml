@@ -1,0 +1,13 @@
+---
+# -----------------------------------------------------------------------------
+# service_db defaults
+# -----------------------------------------------------------------------------
+service_db_dir: "{{ project_root | default(playbook_dir | regex_replace('/playbooks(/core|/advanced)?$', '')) }}/vars/services"
+
+# Optional retain override without a full service file:
+# discovery_prune_retain:
+#   vrfs: [v0000822a]
+#   bgp_neighbors:
+#     - { vrf: v0000822a, neighbor: 169.254.255.29 }
+#   interfaces: [Ethernet3.200]
+discovery_prune_retain: {}

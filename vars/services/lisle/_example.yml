@@ -1,0 +1,142 @@
+---
+# =============================================================================
+# Service migration bundle template (NOT loaded by automation)
+# =============================================================================
+# Copy to vars/services/<data_center>/{service_slug}.yml
+#
+# Purpose
+# -------
+# Describe a multi-VLAN / multi-VRF tenant cutover that cannot fit in a single
+# VLAN record. Use pattern packs + optional freeform EOS for non-standard BGP,
+# statics, and route-maps until customer templates standardize.
+#
+# Discovery uses prune.retain to harden prune_plan candidates (read-only).
+# No deletes are applied by this repository yet.
+# =============================================================================
+
+_meta:
+  example: true
+  schema_version: 1
+
+# Stable service id (must match filename without .yml)
+id: aspira_0000822
+name: Aspira VXLAN Migration – Lisle
+data_center: lisle
+customer_id: "0000822"
+customer_prefix: "822_"
+
+# prune_then_build | build_then_prune | shut_cutover
+order: prune_then_build
+
+# Named pattern until greenfield templates exist
+pattern: hybrid_firewall_evpn
+
+# VLAN IDs that belong to this service (must exist under vars/vlans/<dc>/ when deploying)
+vlans:
+  - id: 890
+    role: l2vni
+    vni: 22015
+    service_type: l2
+    vlan_name: 822_actv_inside
+    target_switches:
+      - chi01-sw11
+      - chi01-sw12
+      - chi01-blf01
+      - chi01-blf02
+  - id: 1759
+    role: l3svi
+    vni: 22014
+    service_type: l3
+    vlan_name: 822_actv_windows_inside
+    vrf: v0000822b
+  - id: 3883
+    role: l3svi_transit
+    service_type: l3
+    vlan_name: 822_actv_asa_transit
+    vrf: v0000822a
+  - id: 3884
+    role: l3svi_transit
+    service_type: l3
+    vlan_name: 822_actv_windows_asa_transit
+    vrf: v0000822b
+  - id: 3208
+    role: plain_svi
+    service_type: l3
+    vlan_name: 822_actv_outside
+    vrf: v0000001a
+  - id: 3369
+    role: plain_svi_bgp_peer
+    service_type: l3
+    vlan_name: 822-v01c-transit
+    vrf: v0000001c
+
+vrfs:
+  - name: v0000822a
+    l3vni: 22016
+    rd: "66.180.0.17:1822"
+    route_targets:
+      import_evpn: ["822:1", "822:2"]
+      export_evpn: ["822:1", "822:2"]
+    # Explicit network statements (do not redistribute static for this pattern)
+    networks:
+      - prefix: 10.102.60.0/29
+        note: connected 3883
+      - prefix: 10.210.93.0/24
+        note: behind vPalo
+      - prefix: 10.210.204.0/24
+        note: behind vPalo
+    statics:
+      - prefix: 10.210.93.0/24
+        next_hop: 10.102.60.1
+        name: aspira_static
+      - prefix: 10.210.204.0/24
+        next_hop: 10.102.60.1
+        name: aspira_static
+  - name: v0000822b
+    l3vni: 22014
+    rd: "66.180.0.17:2822"
+    route_targets:
+      import_evpn: ["822:2"]
+      export_evpn: ["822:2"]
+    networks:
+      - prefix: 10.112.93.0/24
+        note: connected 1759
+      - prefix: 10.102.60.16/28
+        note: connected 3884
+      - prefix: 0.0.0.0/0
+        note: default -> vPalo
+    statics:
+      - prefix: 0.0.0.0/0
+        next_hop: 10.102.60.18
+        name: aspira_static
+
+# Optional freeform / structured AVD escape (consumed by future avd_vxlan_config merge)
+build:
+  # Patterns composed per device role until standardized templates exist
+  pattern_stack:
+    - l2vni_only
+    - l3vni_anycast_svi
+    - network_statement_advertiser
+    - firewall_ebgp_peer
+  devices: {}
+  # Example per-device override:
+  #   chi01-blf01:
+  #     extra_eos_cli: |
+  #       router bgp 20034
+  #        vrf v0000001c
+  #         neighbor 10.202.9.117 remote-as 4210000822
+
+# Prune/teardown intent — discovery emits candidate plans; apply is not automated yet
+prune:
+  # Hard keep-list. Discovery marks matching delete candidates as blocked_by_retain.
+  retain:
+    vrfs:
+      - v0000822a
+    bgp_neighbors:
+      - vrf: v0000822a
+        neighbor: 169.254.255.29
+    interfaces:
+      - Ethernet3.200
+      - Loopback100
+  # Optional explicit device overrides (merged with discovery candidates later)
+  devices: {}

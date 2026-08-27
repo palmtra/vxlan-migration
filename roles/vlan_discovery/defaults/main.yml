@@ -13,6 +13,12 @@ discovery_write_json: true
 discovery_write_yaml: true
 discovery_write_vlan_db_snippet: true
 
+# Collect EOS static routes + BGP neighbors and emit retain-aware prune_plan
+# candidates on discovery reports. Never applies deletes.
+discovery_collect_prune_context: true
+discovery_write_prune_plan: true
+discovery_write_device_prune_plans: true
+
 # Legacy per-device JSON reports (disabled by default).
 discovery_write_per_host_json: false
 

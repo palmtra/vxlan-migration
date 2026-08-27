@@ -1,0 +1,7 @@
+---
+galaxy_info:
+  role_name: service_db
+  description: Load optional multi-VLAN service migration bundles
+  license: MIT
+  min_ansible_version: "2.14"
+dependencies: []

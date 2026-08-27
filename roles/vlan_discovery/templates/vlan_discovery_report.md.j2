@@ -51,6 +51,44 @@ Ports listed below came from the VLAN `show vlan id` Ports column and matched `s
 *(No trunk ports carrying this VLAN were found.)*
 {% endif %}
 
+## Prune plan candidates (read-only)
+
+Discovery-only suggestions. **No deletes are applied.** Retained objects from a
+service bundle (`prune.retain`) or `discovery_prune_retain` appear under
+`blocked_by_retain`.
+
+{% if report.prune_plans | default([]) | length > 0 %}
+{% for plan in report.prune_plans %}
+### {{ plan.hostname }}
+
+- Status: `{{ plan.status | default('candidate') }}` (destructive={{ plan.destructive | default(false) }})
+- SVI VRFs in scope: {{ plan.svi_vrfs | default([]) | join(', ') if plan.svi_vrfs | default([]) else '*(none)*' }}
+
+{% if plan.actions | default([]) | length > 0 %}
+| Op | Details | Confidence |
+|----|---------|------------|
+{% for action in plan.actions %}
+| `{{ action.op }}` | {% if action.interface is defined %}{{ action.interface }} vlans={{ action.vlans | default([]) }}{% elif action.vlan_id is defined %}vlan {{ action.vlan_id }}{% elif action.neighbor is defined %}{{ action.vrf }} neighbor {{ action.neighbor }}{% elif action.prefix is defined %}{{ action.vrf }} {{ action.prefix }} via {{ action.next_hop }}{% elif action.name is defined %}{{ action.name }}{% else %}{{ action }}{% endif %} | {{ action.confidence | default('-') }} |
+{% endfor %}
+{% else %}
+*(No prune actions for this switch/VLAN.)*
+{% endif %}
+
+{% if plan.blocked_by_retain | default([]) | length > 0 %}
+**Blocked by retain:**
+
+| Op | Details | Reason |
+|----|---------|--------|
+{% for action in plan.blocked_by_retain %}
+| `{{ action.op }}` | {% if action.neighbor is defined %}{{ action.vrf }} neighbor {{ action.neighbor }}{% elif action.prefix is defined %}{{ action.vrf }} {{ action.prefix }}{% elif action.name is defined %}{{ action.name }}{% else %}{{ action }}{% endif %} | {{ action.reason | default('retain') }} |
+{% endfor %}
+{% endif %}
+
+{% endfor %}
+{% else %}
+*(No prune plan candidates were generated for this VLAN.)*
+{% endif %}
+
 ## Per-Switch Detail
 
 {% for device in report.devices %}
@@ -66,6 +104,9 @@ Ports listed below came from the VLAN `show vlan id` Ports column and matched `s
 - **MAC addresses learned:** {{ 'yes' if device.mac_learned else 'no' }}
 - **SVI present (`show run interface Vlan{{ report.vlan_id }}`):** {{ 'yes' if device.svi_present else 'no' }}
 - **SVI VRF (from interface config):** {{ device.svi_vrf | default('n/a') }}
+{% if device.svi_details is defined and device.svi_details.present | default(false) %}
+- **SVI details:** desc=`{{ device.svi_details.description | default('') }}` mtu=`{{ device.svi_details.mtu | default('n/a') }}` ips=`{{ device.svi_details.ip_addresses | default([]) | join(', ') }}` vr_addrs=`{{ device.svi_details.virtual_router_addresses | default([]) | join(', ') }}`
+{% endif %}
 - **ARP learned in SVI VRF:** {{ 'yes' if device.arp_learned else 'no' }}
 
 #### `show vlan id {{ report.vlan_id }}`

@@ -48,6 +48,7 @@ Full examples index: [examples/README.md](examples/README.md)
 | [../playbooks/core/](../playbooks/core/) | Core workflow playbooks (no ServiceNow) |
 | [../playbooks/advanced/](../playbooks/advanced/) | Advanced workflow (Core + ServiceNow) |
 | [../vars/vlans/](../vars/vlans/) | Per-DC local VLAN database (primary SSOT) |
+| [../vars/services/](../vars/services/) | Optional multi-VLAN service bundles + prune.retain |
 
 ---
 

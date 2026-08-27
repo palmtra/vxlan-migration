@@ -23,12 +23,17 @@ Open features and planned work. Completed items are kept for context.
 
 ### Discovery quality
 
+- [x] Structured SVI parse (description, MTU, IP, virtual-router address, VRF)
+- [x] EOS static route + BGP neighbor collection for prune plan candidates
+- [x] Retain-aware `prune_plan` candidates in discovery reports (no deletes applied)
 - [ ] Structured parsing of trunk/access interface names tied to VLAN port lists
 - [ ] NXOS cumulative allow-list parsing for `add`/`remove` trunk lines
 - [ ] CLI output fixture tests (EOS/NXOS/IOS sample files)
+- [ ] In-repo prune apply role (session diffs + commit timer + retain fail-closed)
 
 ### VLAN database
 
+- [x] Optional service bundles under `vars/services/<dc>/` (multi-VLAN orchestrator + retain)
 - [ ] Document and enforce additional fields (customer ID, old VRF, gateway, subnet, etc.)
 - [ ] JSON Schema or Ansible spec validation for `vars/vlans/<dc>/*.yml`
 - [ ] Support VLANs shared across DCs vs DC-exclusive IDs (collision policy)

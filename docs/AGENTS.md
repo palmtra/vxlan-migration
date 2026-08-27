@@ -71,6 +71,8 @@ When changing behaviour, verify these stay aligned:
 | Core vs Advanced playbooks | WORKFLOWS.md mermaid diagrams |
 | Discovery report fields | USAGE_GUIDE § Discovery, examples/discover-vlan.md |
 | `vars/vlans/` schema | WORKFLOWS.md VLAN DB table, [VXLAN_SERVICE_TYPES.md](VXLAN_SERVICE_TYPES.md), USAGE_GUIDE, root README data model |
+| `vars/services/` schema | WORKFLOWS.md service bundles, [vars/services/README.md](../vars/services/README.md), examples/discover-vlan.md |
+| Discovery prune plans | USAGE_GUIDE § Discovery, examples/discover-vlan.md (candidates only; no applies) |
 | NetBox export playbook | examples/export-vlan-to-netbox.md |
 
 ## What not to document here

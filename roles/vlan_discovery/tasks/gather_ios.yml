@@ -17,6 +17,19 @@
     loop_var: _disc_vlan
     label: "{{ _disc_vlan.id }}"
 
+- name: IOS - build retain-aware prune plan candidates (VLAN/SVI/trunk only)
+  ansible.builtin.set_fact:
+    _ios_prune_plan: "{{ inventory_hostname | string | build_device_prune_plan(_pp_vlans, _pp_retain, [], [], none) }}"
+  vars:
+    _pp_vlans: "{{ _ios_per_vlan_results | default([]) }}"
+    _pp_retain: "{{ hostvars['localhost']['_prune_retain'] | default(discovery_prune_retain | default({})) }}"
+  when: discovery_write_prune_plan | default(true) | bool
+
+- name: IOS - default empty prune plan when disabled
+  ansible.builtin.set_fact:
+    _ios_prune_plan: {}
+  when: not (discovery_write_prune_plan | default(true) | bool)
+
 - name: IOS - assemble discovery fact
   ansible.builtin.set_fact:
     _vlan_discovery:
@@ -24,4 +37,7 @@
       data_center: "{{ data_center | default('unknown') }}"
       os_family: "{{ network_os_family }}"
       timestamp: "{{ ansible_date_time.iso8601 }}"
+      static_routes: []
+      bgp_neighbors: []
+      prune_plan: "{{ _ios_prune_plan | default({}) }}"
       per_vlan: "{{ _ios_per_vlan_results | default([]) }}"

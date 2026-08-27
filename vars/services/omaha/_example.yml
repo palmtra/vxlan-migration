@@ -1,0 +1,34 @@
+---
+# =============================================================================
+# Service migration bundle template (NOT loaded by automation)
+# =============================================================================
+# See vars/services/README.md and vars/services/lisle/_example.yml for the full
+# schema. Copy this file to vars/services/omaha/{service_slug}.yml for Omaha.
+# =============================================================================
+
+_meta:
+  example: true
+  schema_version: 1
+
+id: example_customer
+name: Example Omaha service
+data_center: omaha
+customer_id: "0000000"
+customer_prefix: "000_"
+order: build_then_prune
+pattern: l2vni_only
+
+vlans: []
+vrfs: []
+
+build:
+  pattern_stack:
+    - l2vni_only
+  devices: {}
+
+prune:
+  retain:
+    vrfs: []
+    bgp_neighbors: []
+    interfaces: []
+  devices: {}

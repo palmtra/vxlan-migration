@@ -1,0 +1,79 @@
+---
+# -----------------------------------------------------------------------------
+# service_db
+# -----------------------------------------------------------------------------
+# Loads optional service migration bundles from vars/services/<data_center>/.
+# Service files group multi-VLAN / multi-VRF cutovers and prune.retain lists.
+#
+# Prefer running this role before vlan_db when manual_service_id is set so
+# service VLAN IDs can seed target_vlan_ids for discovery.
+# -----------------------------------------------------------------------------
+
+- name: Resolve data center for service DB lookup
+  ansible.builtin.set_fact:
+    _service_db_data_center: "{{ [manual_data_center | default(''), target_data_center | default(''), hostvars['localhost']['_vlan_db_data_center'] | default(''), data_center | default('')] | coalesce_trimmed }}"
+    _service_db_id: "{{ [manual_service_id | default(''), service_id | default('')] | coalesce_trimmed }}"
+  delegate_facts: true
+
+- name: Skip service load when no service id was provided
+  ansible.builtin.debug:
+    msg: "No manual_service_id/service_id set — service bundle and prune.retain not loaded."
+  when: hostvars['localhost']['_service_db_id'] | default('') | length == 0
+
+- name: Fail when service id is set without a data center
+  ansible.builtin.fail:
+    msg: >-
+      manual_service_id={{ hostvars['localhost']['_service_db_id'] }} requires a data center
+      (manual_data_center / target_data_center).
+  when:
+    - hostvars['localhost']['_service_db_id'] | default('') | length > 0
+    - hostvars['localhost']['_service_db_data_center'] | default('') | length == 0
+
+- name: Load service record from the DC directory
+  ansible.builtin.set_fact:
+    _service_record: "{{ service_db_dir | load_service_from_directory(hostvars['localhost']['_service_db_data_center'], hostvars['localhost']['_service_db_id']) }}"
+  when: hostvars['localhost']['_service_db_id'] | default('') | length > 0
+  delegate_facts: true
+
+- name: Set prune retain from the loaded service
+  ansible.builtin.set_fact:
+    _prune_retain: "{{ hostvars['localhost']['_service_record'].prune.retain | default({}) }}"
+  when: hostvars['localhost']['_service_record'] | default({}) | length > 0
+  delegate_facts: true
+
+- name: Prefer explicit discovery_prune_retain over service retain when provided
+  ansible.builtin.set_fact:
+    _prune_retain: "{{ discovery_prune_retain }}"
+  when:
+    - discovery_prune_retain is defined
+    - discovery_prune_retain | length > 0
+  delegate_facts: true
+
+- name: Default empty prune retain when no service / override
+  ansible.builtin.set_fact:
+    _prune_retain: "{{ hostvars['localhost']['_prune_retain'] | default({}) }}"
+    _service_record: "{{ hostvars['localhost']['_service_record'] | default({}) }}"
+  when: hostvars['localhost']['_prune_retain'] is not defined
+  delegate_facts: true
+
+- name: Optionally seed target_vlan_ids from the service VLAN list
+  ansible.builtin.set_fact:
+    target_vlan_ids: "{{ hostvars['localhost']['_service_record'] | service_vlan_ids }}"
+    _service_seeded_vlan_ids: true
+  when:
+    - hostvars['localhost']['_service_record'] | default({}) | length > 0
+    - (hostvars['localhost']['_service_record'] | service_vlan_ids | length) > 0
+    - manual_vlan_id is not defined
+    - (target_vlan_ids is not defined) or (target_vlan_ids | default([]) | length == 0)
+  delegate_facts: true
+
+- name: Display loaded service summary
+  ansible.builtin.debug:
+    msg:
+      - "Service id: {{ hostvars['localhost']['_service_record'].id | default('none') }}"
+      - "Service file: {{ hostvars['localhost']['_service_record']._source_file | default('n/a') }}"
+      - "Order: {{ hostvars['localhost']['_service_record'].order | default('n/a') }}"
+      - "Pattern: {{ hostvars['localhost']['_service_record'].pattern | default('n/a') }}"
+      - "VLAN ids: {{ hostvars['localhost']['_service_record'] | default({}) | service_vlan_ids }}"
+      - "Prune retain VRFs: {{ hostvars['localhost']['_prune_retain'].vrfs | default([]) }}"
+  when: hostvars['localhost']['_service_record'] | default({}) | length > 0

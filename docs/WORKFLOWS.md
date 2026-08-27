@@ -12,11 +12,13 @@ Two workflow tiers share the same roles. **Build and harden Core first**, then e
 | In scope (this repo) | Out of scope |
 |---|---|
 | Read-only VLAN discovery and reporting | Greenfield / new VLAN deployments (separate app) |
-| Local per-DC VLAN DB as primary SSOT | Automatic trunk/SVI cleanup on devices |
+| Local per-DC VLAN DB as primary SSOT | Automatic trunk/SVI cleanup **apply** on devices (candidates only today) |
+| Optional service bundles (`vars/services/`) for multi-VLAN cutovers | Executing prune/delete sessions (planned; retain-aware plans only) |
 | AVD or Jinja → CVP configlet generation | NetBox export as part of the migration run |
 | CVP change control creation (pending approval) | Executing CVP change control automatically |
 
-Legacy VLAN cleanup and trunk pruning are **reported** during discovery and handed off to **`decomm-vlan`** - not applied here.
+Legacy VLAN cleanup and trunk pruning are **reported** during discovery as retain-aware
+`prune_plan` candidates. Application is not automated yet (future in-repo prune role).
 
 ---
 
@@ -123,8 +125,11 @@ Per switch, per VLAN (read-only):
 | VLAN + L2 ports | `show vlan id <id>` (Ports column; empty = no access/trunk) |
 | Access vs trunk | Ports from `show vlan id` vs `show interfaces trunk` names |
 | Learned MACs | `show mac address-table dynamic vlan <id>` |
-| SVI / L3 | `show run interface Vlan<id>` |
+| SVI / L3 | `show run interface Vlan<id>` (parsed: VRF, IP, VR address, MTU, description) |
 | SVI VRF + ARP | VRF from SVI config; `show ip arp vrf <vrf> …` |
+| Static routes (EOS) | `show running-config section ip route` → prune plan candidates |
+| BGP neighbors (EOS) | `show running-config section router bgp` → prune plan candidates |
+| Retain keep-list | Service `prune.retain` or `discovery_prune_retain` → `blocked_by_retain` |
 
 **Port logic:** Empty **Ports** on `show vlan id` means no L2 attachment. Remaining ports are access/endpoints unless they appear in `show interfaces trunk`, in which case they are trunk prune candidates — except EOS MLAG peer (`switchport trunk group mlagpeer`) and NXOS vPC peer-link trunks, which are excluded from maintenance lists.
 
@@ -132,7 +137,15 @@ Reports land under:
 
 ```text
 reports/<dc>/<vlan_slug>/<vlan_slug>_discovery_<timestamp>.{md,csv,json,yml}
+reports/<dc>/_prune_plans/<hostname>_prune_plan_<timestamp>.json
 ```
+
+### Service bundles (optional)
+
+Multi-VLAN / multi-VRF tenant cutovers can declare a service under
+`vars/services/<dc>/<service_id>.yml`. See [`vars/services/README.md`](../vars/services/README.md).
+
+Pass `-e manual_service_id=<id>` on discovery to seed VLAN IDs and apply `prune.retain`.
 
 ---
 

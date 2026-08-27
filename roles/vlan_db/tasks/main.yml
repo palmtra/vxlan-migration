@@ -49,6 +49,17 @@
     _effective_vlans: "{{ hostvars['localhost']['_vlan_db'].vlans | select_vlans_for_run(hostvars['localhost']['_vlan_db_target_vlan_ids'], target_actions | default([])) }}"
   delegate_facts: true
 
+- name: Backfill missing service VLANs as synthetic discovery records
+  ansible.builtin.set_fact:
+    _effective_vlans: "{{ hostvars['localhost']['_effective_vlans'] + (hostvars['localhost']['_service_record'] | service_probe_vlan_records(hostvars['localhost']['_effective_vlans'])) }}"
+    _discovery_scan_all_switches: true
+    _discovery_probe_mode: "{{ true if (hostvars['localhost']['_service_record'] | service_probe_vlan_records(hostvars['localhost']['_effective_vlans']) | length > 0) else (hostvars['localhost']['_discovery_probe_mode'] | default(false)) }}"
+  when:
+    - discovery_allow_probe | default(false) | bool
+    - hostvars['localhost']['_service_record'] | default({}) | length > 0
+    - (hostvars['localhost']['_service_record'] | service_probe_vlan_records(hostvars['localhost']['_effective_vlans'] | default([])) | length) > 0
+  delegate_facts: true
+
 - name: Resolve probe VLAN ID for discovery-only runs
   ansible.builtin.set_fact:
     _probe_vlan_id: "{{ (discovery_probe_vlan_id | default(manual_vlan_id | default(hostvars['localhost'].target_vlan_id | default(none), true), true)) | int }}"

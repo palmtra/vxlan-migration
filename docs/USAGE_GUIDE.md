@@ -67,9 +67,14 @@ Collects VLAN, MAC, SVI, ARP, and trunk carriage. Writes reports under `reports/
 |---|---|---|
 | `manual_vlan_id` | all VLANs in DB | Discover a single VLAN ID |
 | `target_vlan_ids` | — | Discover multiple VLANs: `[100,200]` or `100,200` |
+| `manual_service_id` | — | Load `vars/services/<dc>/<id>.yml` (multi-VLAN seed + `prune.retain`) |
+| `discovery_prune_retain` | `{}` | Inline retain keep-list when no service file is used |
 | `discovery_allow_probe` | `true` in discover playbook | Allow discovering a VLAN **not yet** in the DC database |
 | `discovery_probe_service_type` | `l3` | `service_type` assigned to synthetic probe records |
 | `vlan_discovery_backup_enabled` | `false` | Capture config backup before discovery |
+| `discovery_collect_prune_context` | `true` | EOS: collect static routes + BGP for prune plans |
+| `discovery_write_prune_plan` | `true` | Emit retain-aware prune plan candidates (never applies deletes) |
+| `discovery_write_device_prune_plans` | `true` | Write `reports/<dc>/_prune_plans/*.json` |
 | `discovery_write_markdown` | `true` | Write `.md` report |
 | `discovery_write_csv` | `true` | Write `.csv` report |
 | `discovery_write_json` | `true` | Write `.json` report |
@@ -120,6 +125,8 @@ Key report fields:
 - `switches_with_mac_learning` — active MAC learning
 - `switches_with_svi` / `switches_with_arp` — L3 presence
 - `trunk_cleanup_candidates` — trunks where cleanup should be planned (informational only)
+- `prune_plans` — retain-aware prune **candidates** (trunk/VLAN/SVI; EOS adds statics + BGP). Never applied by discovery.
+- Device JSON: `reports/<dc>/_prune_plans/<host>_prune_plan_<ts>.json`
 
 ---
 

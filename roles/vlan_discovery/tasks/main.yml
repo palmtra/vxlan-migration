@@ -142,6 +142,50 @@
     - discovery_write_vlan_reports | bool
     - discovery_write_vlan_db_snippet | bool
 
+- name: Collect per-device prune plans from discovery facts
+  ansible.builtin.set_fact:
+    _device_prune_plans: "{{ ansible_play_hosts | map('extract', hostvars, '_vlan_discovery') | selectattr('prune_plan', 'defined') | map(attribute='prune_plan') | selectattr('hostname', 'defined') | list }}"
+  delegate_to: localhost
+  become: false
+  run_once: true
+  check_mode: false
+  when:
+    - discovery_write_prune_plan | default(true) | bool
+    - discovery_write_device_prune_plans | default(true) | bool
+
+- name: Ensure device prune plan directory exists
+  ansible.builtin.file:
+    path: "{{ discovery_reports_dir }}/{{ _report_data_center }}/_prune_plans"
+    state: directory
+    mode: '0755'
+  vars:
+    _report_data_center: "{{ [hostvars['localhost']['_vlan_db_data_center'] | default(''), hostvars['localhost']['target_data_center'] | default(''), data_center | default(''), 'unknown'] | coalesce_trimmed }}"
+  delegate_to: localhost
+  become: false
+  run_once: true
+  when:
+    - discovery_write_prune_plan | default(true) | bool
+    - discovery_write_device_prune_plans | default(true) | bool
+    - _device_prune_plans | default([]) | length > 0
+
+- name: Write per-device prune plan JSON candidates
+  ansible.builtin.copy:
+    content: "{{ item | to_nice_json }}\n"
+    dest: "{{ discovery_reports_dir }}/{{ _report_data_center }}/_prune_plans/{{ item.hostname }}_prune_plan_{{ _report_timestamp_ms }}.json"
+    mode: '0644'
+  vars:
+    _report_data_center: "{{ [hostvars['localhost']['_vlan_db_data_center'] | default(''), hostvars['localhost']['target_data_center'] | default(''), data_center | default(''), 'unknown'] | coalesce_trimmed }}"
+  delegate_to: localhost
+  become: false
+  run_once: true
+  loop: "{{ _device_prune_plans | default([]) }}"
+  loop_control:
+    label: "{{ item.hostname | default('unknown') }}"
+  when:
+    - discovery_write_prune_plan | default(true) | bool
+    - discovery_write_device_prune_plans | default(true) | bool
+    - item.hostname | default('') | length > 0
+
 - name: Display VLAN report output paths
   ansible.builtin.debug:
     msg: >-

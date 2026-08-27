@@ -92,6 +92,34 @@ ansible-playbook -i inventory/hosts.yml playbooks/core/discover_vlan.yml \
   --limit dc_lisle
 ```
 
+## Discover via a service bundle (multi-VLAN + prune retain)
+
+Multi-VLAN / multi-VRF cutovers can use a service file under `vars/services/<dc>/`.
+Copy `vars/services/lisle/_example.yml` to a real id (without `_meta.example`) first.
+
+```bash
+ansible-playbook -i inventory/hosts.yml playbooks/core/discover_vlan.yml \
+  -e manual_data_center=lisle \
+  -e manual_service_id=aspira_0000822 \
+  --limit dc_lisle
+```
+
+Effects:
+
+- Seeds `target_vlan_ids` from the service `vlans:` list (when you did not pass VLAN ids).
+- Applies `prune.retain` when building candidate prune plans (retained VRFs/neighbors are `blocked_by_retain`).
+- Still **read-only** — no deletes are applied.
+
+Without a service file you can pass retain inline:
+
+```bash
+ansible-playbook -i inventory/hosts.yml playbooks/core/discover_vlan.yml \
+  -e manual_data_center=lisle \
+  -e manual_vlan_id=890 \
+  -e '{"discovery_prune_retain":{"vrfs":["v0000822a"],"bgp_neighbors":[{"vrf":"v0000822a","neighbor":"169.254.255.29"}]}}' \
+  --limit dc_lisle
+```
+
 ## Discover a VLAN already in the DB
 
 ```bash
@@ -146,7 +174,12 @@ that far without failing on earlier hosts.
 
 ```text
 <repo-root>/reports/<dc>/<vlan_name>/<vlan_name>_discovery_<timestamp>.md
+<repo-root>/reports/<dc>/_prune_plans/<hostname>_prune_plan_<timestamp>.json
 ```
+
+Markdown/JSON VLAN reports include a **Prune plan candidates** section (trunk/VLAN/SVI,
+plus EOS statics and BGP neighbors when `discovery_collect_prune_context=true`).
+Device-level JSON plans under `_prune_plans/` are candidates only (`destructive: false`).
 
 The directory is **auto-created** (`ansible.builtin.file` with `state: directory`) during discovery.
 It is listed in `.gitignore`, so it will not appear in `git status` even when present.
