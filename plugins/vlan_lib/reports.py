@@ -78,6 +78,7 @@ def build_vlan_discovery_reports(vlans, play_hosts, hostvars):
                         "hostname": device["hostname"],
                         "interface": entry.get("interface"),
                         "port_role": entry.get("port_role", "trunk"),
+                        "cli": entry.get("cli", ""),
                         "recommendation": entry.get("recommendation"),
                     }
                 )

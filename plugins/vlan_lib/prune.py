@@ -82,6 +82,10 @@ def build_device_prune_plan(
                     "trunk_remove_vlans",
                     interface=iface,
                     vlans=[int(vlan_id)],
+                    cli=(
+                        "switchport trunk allowed vlan remove %s"
+                        % int(vlan_id)
+                    ),
                     source="discovery",
                     confidence="high",
                 )
@@ -119,11 +123,16 @@ def build_device_prune_plan(
         trunk_map.setdefault(iface, set()).update(action.get("vlans") or [])
     consolidated = []
     for iface, vlans in sorted(trunk_map.items()):
+        vlan_list = sorted(vlans)
         consolidated.append(
             _prune_action(
                 "trunk_remove_vlans",
                 interface=iface,
-                vlans=sorted(vlans),
+                vlans=vlan_list,
+                cli=(
+                    "switchport trunk allowed vlan remove %s"
+                    % ",".join(str(vid) for vid in vlan_list)
+                ),
                 source="discovery",
                 confidence="high",
             )

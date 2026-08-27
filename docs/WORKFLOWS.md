@@ -133,7 +133,7 @@ Per switch, per VLAN (read-only):
 | BGP neighbors (EOS) | `show running-config section router bgp` → prune plan candidates |
 | Retain keep-list | Service `prune.retain` or `discovery_prune_retain` → `blocked_by_retain` |
 
-**Port logic:** Empty **Ports** on `show vlan id` means no L2 attachment. Remaining ports are access/endpoints unless they appear in `show interfaces trunk`, in which case they are trunk prune candidates — except EOS MLAG peer (`switchport trunk group mlagpeer`) and NXOS vPC peer-link trunks, which are excluded from maintenance lists.
+**Port logic:** Empty **Ports** on `show vlan id` means no L2 attachment. Remaining ports are access/endpoints unless they appear in `show interfaces trunk`, in which case they are trunk prune candidates — except EOS MLAG peer (`switchport trunk group mlagpeer`) and NXOS vPC peer-link trunks, which are excluded from maintenance lists. Trunk cleanup intent is intentionally simple: confirm carriage, then `switchport trunk allowed vlan remove <vlan_id>` (discovery does not dump or parse full interface configs for this).
 
 Reports land under:
 

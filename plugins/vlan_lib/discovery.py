@@ -68,10 +68,12 @@ def extract_vlan_targeted_discovery(vlan, outputs):
         {
             "interface": iface,
             "port_role": "trunk",
+            "cli": "switchport trunk allowed vlan remove %s" % int(vlan_id),
             "recommendation": (
-                "VLAN is carried on trunk "
-                f"{iface}. Plan trunk prune during legacy decommission "
+                "VLAN %s is carried on trunk %s. Cleanup is "
+                "`switchport trunk allowed vlan remove %s` on that interface "
                 "(candidate only; discovery never applies deletes)."
+                % (vlan_id, iface, vlan_id)
             ),
         }
         for iface in trunk_ports

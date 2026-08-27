@@ -33,7 +33,7 @@ Open features and planned work. Completed items are kept for context.
 - [x] EOS static route + BGP neighbor collection for prune plan candidates
 - [x] Retain-aware `prune_plan` candidates in discovery reports (no deletes applied)
 - [x] Structured MAC address table + ARP entry parsing (MAC→port / IP→MAC) in discovery reports
-- [ ] Structured trunk interface running-config appendix for VLAN-carrying uplinks
+- [x] Trunk cleanup intent kept simple: list VLAN-carrying trunks + `switchport trunk allowed vlan remove <id>` (no per-interface config dump)
 - [ ] NXOS cumulative allow-list parsing for `add`/`remove` trunk lines
 - [ ] CLI output fixture tests (EOS/NXOS/IOS sample files)
 - [ ] In-repo prune apply role (session diffs + commit timer + retain fail-closed)

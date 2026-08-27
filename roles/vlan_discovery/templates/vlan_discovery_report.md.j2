@@ -42,10 +42,10 @@ Ports listed below came from the VLAN `show vlan id` Ports column and matched `s
 **MLAG peer (EOS) and vPC peer-link (NXOS) trunks are excluded** and do not appear here.
 
 {% if report.trunk_cleanup_candidates | default([]) | length > 0 %}
-| Switch | Trunk interface | Notes |
-|--------|-----------------|-------|
+| Switch | Trunk interface | Cleanup CLI | Notes |
+|--------|-----------------|-------------|-------|
 {% for item in report.trunk_cleanup_candidates %}
-| {{ item.hostname }} | {{ item.interface }} | {{ item.recommendation }} |
+| {{ item.hostname }} | {{ item.interface }} | `{{ item.cli | default('switchport trunk allowed vlan remove ' ~ report.vlan_id) }}` | {{ item.recommendation }} |
 {% endfor %}
 {% else %}
 *(No trunk ports carrying this VLAN were found.)*
@@ -68,7 +68,7 @@ service bundle (`prune.retain`) or `discovery_prune_retain` appear under
 | Op | Details | Confidence |
 |----|---------|------------|
 {% for action in plan.actions %}
-| `{{ action.op }}` | {% if action.interface is defined %}{{ action.interface }} vlans={{ action.vlans | default([]) }}{% elif action.vlan_id is defined %}vlan {{ action.vlan_id }}{% elif action.neighbor is defined %}{{ action.vrf }} neighbor {{ action.neighbor }}{% elif action.prefix is defined %}{{ action.vrf }} {{ action.prefix }} via {{ action.next_hop }}{% elif action.name is defined %}{{ action.name }}{% else %}{{ action }}{% endif %} | {{ action.confidence | default('-') }} |
+| `{{ action.op }}` | {% if action.interface is defined %}{{ action.interface }}{% if action.cli is defined %} — `{{ action.cli }}`{% else %} vlans={{ action.vlans | default([]) }}{% endif %}{% elif action.vlan_id is defined %}vlan {{ action.vlan_id }}{% elif action.neighbor is defined %}{{ action.vrf }} neighbor {{ action.neighbor }}{% elif action.prefix is defined %}{{ action.vrf }} {{ action.prefix }} via {{ action.next_hop }}{% elif action.name is defined %}{{ action.name }}{% else %}{{ action }}{% endif %} | {{ action.confidence | default('-') }} |
 {% endfor %}
 {% else %}
 *(No prune actions for this switch/VLAN.)*
