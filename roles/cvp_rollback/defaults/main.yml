@@ -22,12 +22,16 @@ cvp_token: ""
 cvp_validate_certs: true
 cvp_server: "{{ cvp_url }}"
 
-cvp_configlet_build_dir: "{{ playbook_dir }}/../reports/cvp_configlets"
+cvp_configlet_build_dir: "{{ reports_dir | default(project_root ~ '/reports') }}/cvp_configlets"
 
 # When true, push the rollback configlets to CVP and create a rollback
 # change control. When false, rollback configlets are only rendered to
 # files for review -- same semantics as cvp_deploy's cvp_apply_configlets.
 cvp_apply_configlets: false
+
+# When true, rollback templates may emit "no vlan" / VRF instance teardown.
+# Default false: only reverse VXLAN mappings (safer if VLAN pre-existed).
+cvp_rollback_allow_destructive_no_vlan: false
 
 cvp_rollback_change_control_name: "ROLLBACK - VXLAN migration - VLAN {{ target_vlan_id }}"
 cvp_rollback_change_control_notes: |

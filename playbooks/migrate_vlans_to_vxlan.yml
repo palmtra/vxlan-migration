@@ -1,9 +1,12 @@
 ---
 # -----------------------------------------------------------------------------
-# Migrate legacy VLANs to VXLAN
+# Migrate legacy VLANs to VXLAN (LEGACY direct-device path — gated)
+# -----------------------------------------------------------------------------
+# Prefer: playbooks/core/workflow_deploy.yml (CVP pending change control).
+# This playbook is blocked unless -e allow_direct_device_push=true.
 # -----------------------------------------------------------------------------
 
-- name: Migrate selected VLANs to VXLAN
+- name: Migrate selected VLANs to VXLAN (direct device — gated)
   hosts: network_devices
   gather_facts: false
   vars:

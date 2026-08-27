@@ -17,7 +17,7 @@ cvp_validate_certs: true
 cvp_server: "{{ cvp_url }}"
 
 # Generated configlet storage directory.
-cvp_configlet_build_dir: "{{ playbook_dir }}/../reports/cvp_configlets"
+cvp_configlet_build_dir: "{{ reports_dir | default(project_root ~ '/reports') }}/cvp_configlets"
 
 # When true, push generated configlets to CVP and create a change control.
 # When false, configlets are only rendered to files for review.

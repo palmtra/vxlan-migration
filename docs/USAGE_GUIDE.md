@@ -159,7 +159,12 @@ Detailed generate-only walkthrough: [examples/generate-config-without-cvp-push.m
 | `cvp_change_control_state` | `set` | CVP change control action (`set` = pending approval) |
 | `cvp_change_control_auto_execute_allowed` | `false` | Must stay `false` unless explicitly overriding after review |
 | `cvp_build_borderleaf_config` | `true` | Generate border-leaf import configlet |
-| `avd_default_bgp_as` | `""` | Default BGP ASN for AVD when not set per host |
+| `avd_default_bgp_as` | `""` | Default BGP ASN for AVD when not set per host (required if `evpn_enabled`) |
+| `allow_placeholder_fabric_defaults` | `false` | Allow lab placeholder mcast `239.1.1.1` / empty ASN |
+| `auto_rollback_on_verification_failure` | `false` | Attempt CVP rollback on verify failure (off by default) |
+| `cvp_rollback_allow_destructive_no_vlan` | `false` | Allow rollback to emit `no vlan` / VRF teardown |
+| `allow_direct_device_push` | `false` | Unlock legacy `migrate_to_vxlan` direct-device path |
+| `artifacts_dir` / `ARTIFACTS_DIR` | project root | Root for `reports/` and `backups/` (AAP EE mount) |
 
 ### Discovery during deploy
 
@@ -223,7 +228,8 @@ Run **after** the CVP change control has been executed. Checks VXLAN mapping and
 
 | Variable | Default | Description |
 |---|---|---|
-| `auto_rollback_on_verification_failure` | `true` | Attempt CVP rollback on verify failure |
+| `auto_rollback_on_verification_failure` | `false` | Attempt CVP rollback on verify failure (off by default) |
+| `cvp_rollback_allow_destructive_no_vlan` | `false` | Allow rollback `no vlan` / VRF teardown |
 
 ### Example
 

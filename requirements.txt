@@ -1,13 +1,14 @@
-cvprac >= 2.2.0
-pynetbox
+# Runtime Python deps for control node / EE (pin floors + soft upper bounds).
+cvprac>=2.2.0,<4.0.0
+pynetbox>=7.0.0,<8.0.0
 
 # Arista AVD Python dependencies
-pyavd >= 4.0.0
-jsonschema >= 4.0.0
-deepmerge >= 1.0.0
-netaddr >= 0.8.0
-treelib >= 1.6.0
+pyavd>=4.0.0,<6.0.0
+jsonschema>=4.0.0,<5.0.0
+deepmerge>=1.0.0,<3.0.0
+netaddr>=0.8.0,<2.0.0
+treelib>=1.6.0,<2.0.0
 
 # Ansible SSH connectivity libraries
-paramiko >= 3.0.0
-ansible-pylibssh >= 1.1.0
+paramiko>=3.0.0,<4.0.0
+ansible-pylibssh>=1.1.0,<2.0.0

@@ -18,6 +18,7 @@ Open features and planned work. Completed items are kept for context.
 - [x] Workflow docs with mermaid diagrams (`docs/WORKFLOWS.md`, `docs/USAGE_GUIDE.md`)
 - [x] Service bundles + retain-aware discovery prune plans
 - [x] Platform policy: `main` = NXOS→EOS; IOS parked (`docs/OS_SUPPORT.md`, archive tag/branch)
+- [x] P0 hardening: `no_log` on secrets, gate direct-device migrate, safer rollback defaults, GitHub CI
 
 ---
 

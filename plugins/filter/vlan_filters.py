@@ -39,7 +39,13 @@ def select_vlans_for_run(vlans, target_vlan_ids=None, target_actions=None):
 
 
 _MAC_ADDRESS_RE = re.compile(
-    r"(?<![0-9a-fA-F])([0-9a-fA-F]{2}[:.\-]){5}[0-9a-fA-F]{2}(?![0-9a-fA-F])"
+    r"(?<![0-9a-fA-F])"
+    r"(?:"
+    r"(?:[0-9a-fA-F]{2}[:.\-]){5}[0-9a-fA-F]{2}"  # aa:bb:cc:dd:ee:ff / aa-bb-... / aa.bb...
+    r"|"
+    r"(?:[0-9a-fA-F]{4}\.){2}[0-9a-fA-F]{4}"  # Arista/Cisco xxxx.xxxx.xxxx
+    r")"
+    r"(?![0-9a-fA-F])"
 )
 _IP_ADDRESS_RE = re.compile(
     r"\b(?!(?:0\.|255\.))(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})\b"
@@ -337,20 +343,24 @@ def mac_table_has_learned_addresses(mac_output):
         return False
     text = str(mac_output)
     for line in text.splitlines():
-        lower = line.lower()
+        lower = line.lower().strip()
+        # Skip headers / separators; do not skip data rows that merely share
+        # column names elsewhere in the table banner.
+        if lower.startswith("mac address table") or lower.startswith("vlan"):
+            if "dynamic" not in lower and "static" not in lower:
+                if not _MAC_ADDRESS_RE.search(line):
+                    continue
         if any(
             skip in lower
             for skip in (
-                "mac address",
                 "----",
                 "total mac",
                 "multicast",
-                "router",
-                "cpu",
                 "last move",
-                "moves",
             )
         ):
+            continue
+        if lower.startswith("vlan") and "mac address" in lower:
             continue
         if _MAC_ADDRESS_RE.search(line):
             return True

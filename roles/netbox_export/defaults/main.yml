@@ -23,4 +23,4 @@ netbox_export_timeout: 30
 
 # Write a JSON artifact of the export result under reports/netbox_export/.
 netbox_export_write_artifact: true
-netbox_export_artifact_dir: "{{ playbook_dir }}/../reports/netbox_export"
+netbox_export_artifact_dir: "{{ reports_dir | default(project_root ~ '/reports') }}/netbox_export"

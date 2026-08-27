@@ -1,0 +1,46 @@
+---
+# .github/workflows/ci.yml — quality floor for vxlan-migration
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  lint-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install lint and test tools
+        run: |
+          python -m pip install --upgrade pip
+          pip install "ansible-core>=2.16,<2.19" ansible-lint yamllint PyYAML
+
+      - name: Install Ansible collections
+        run: ansible-galaxy collection install -r collections/requirements.yml -p collections/
+
+      - name: Yamllint
+        run: yamllint -c .yamllint .
+
+      - name: Unit tests
+        run: python -m unittest discover -s tests -v
+
+      - name: Ansible syntax-check (core playbooks)
+        run: |
+          set -e
+          for pb in playbooks/core/*.yml playbooks/check_netbox.yml playbooks/export_vlan_to_netbox.yml; do
+            echo "==> syntax-check $pb"
+            ansible-playbook -i inventory/hosts.yml "$pb" --syntax-check
+          done
+
+      - name: Ansible-lint
+        run: ansible-lint -c .ansible-lint

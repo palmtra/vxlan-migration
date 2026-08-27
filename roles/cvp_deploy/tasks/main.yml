@@ -52,6 +52,36 @@
   become: false
   run_once: true
 
+- name: Fail if multicast group is unset or still the repo placeholder
+  ansible.builtin.fail:
+    msg: >-
+      VLAN {{ target_vlan_id }} needs a real mcast_group (record field or fabric
+      vxlan_default_mcast_group). Refusing unset/placeholder '239.1.1.1'
+      unless allow_placeholder_fabric_defaults=true.
+  vars:
+    _effective_mcast: "{{ _vlan_to_migrate.mcast_group | default(vxlan_default_mcast_group | default(''), true) | string }}"
+  when:
+    - not (allow_placeholder_fabric_defaults | default(false) | bool)
+    - _effective_mcast | length == 0 or _effective_mcast == '239.1.1.1'
+  delegate_to: localhost
+  become: false
+  run_once: true
+
+- name: Fail if EVPN is enabled but BGP AS / router-id are missing on targets
+  ansible.builtin.fail:
+    msg: >-
+      evpn_enabled=true requires per-host bgp_as (or avd_default_bgp_as) and
+      router_id (or ansible_host) for: {{ item }}. No silent ASN/RD placeholders.
+  loop: "{{ _cvp_target_devices }}"
+  when:
+    - evpn_enabled | default(false) | bool
+    - not (allow_placeholder_fabric_defaults | default(false) | bool)
+    - (hostvars[item].bgp_as | default(avd_default_bgp_as | default(''), true) | length == 0)
+      or (hostvars[item].router_id | default(hostvars[item].ansible_host | default(''), true) | length == 0)
+  delegate_to: localhost
+  become: false
+  run_once: true
+
 - name: Render leaf VXLAN configlet per target device
   ansible.builtin.template:
     src: leaf_vxlan_configlet.j2
@@ -64,6 +94,8 @@
   check_mode: false
   vars:
     _device_hostname: "{{ item }}"
+    _device_bgp_asn: "{{ hostvars[item].bgp_as | default(avd_default_bgp_as | default(''), true) }}"
+    _device_loopback_ip: "{{ hostvars[item].router_id | default(hostvars[item].ansible_host | default(''), true) }}"
 
 - name: Render border-leaf import configlet
   ansible.builtin.template:
@@ -75,6 +107,10 @@
   run_once: true
   check_mode: false
   when: cvp_build_borderleaf_config | bool
+  vars:
+    _device_hostname: "{{ _cvp_target_devices | first }}"
+    _device_bgp_asn: "{{ hostvars[_cvp_target_devices | first].bgp_as | default(avd_default_bgp_as | default(''), true) }}"
+    _device_loopback_ip: "{{ hostvars[_cvp_target_devices | first].router_id | default(hostvars[_cvp_target_devices | first].ansible_host | default(''), true) }}"
 
 - name: Load generated leaf configlets
   ansible.builtin.set_fact:
@@ -129,6 +165,7 @@
   delegate_to: localhost
   become: false
   run_once: true
+  no_log: true
   when:
     - cvp_apply_configlets | bool
     - cvp_server | length > 0
@@ -146,6 +183,7 @@
   delegate_to: localhost
   become: false
   run_once: true
+  no_log: true
   when:
     - cvp_apply_configlets | bool
     - cvp_server | length > 0
@@ -172,6 +210,7 @@
   delegate_to: localhost
   become: false
   run_once: true
+  no_log: true
   when:
     - cvp_apply_configlets | bool
     - cvp_build_borderleaf_config | bool
@@ -194,6 +233,7 @@
   delegate_to: localhost
   become: false
   run_once: true
+  no_log: true
   when:
     - cvp_apply_configlets | bool
     - cvp_server | length > 0

@@ -39,6 +39,36 @@
   run_once: true
   when: not _avd_vlan
 
+- name: Fail if multicast group is unset or still the repo placeholder
+  ansible.builtin.fail:
+    msg: >-
+      VLAN {{ target_vlan_id }} needs a real mcast_group (record field or fabric
+      vxlan_default_mcast_group). Refusing unset/placeholder '239.1.1.1'
+      unless allow_placeholder_fabric_defaults=true.
+  vars:
+    _effective_mcast: "{{ _avd_vlan.mcast_group | default(vxlan_default_mcast_group | default(''), true) | string }}"
+  when:
+    - not (allow_placeholder_fabric_defaults | default(false) | bool)
+    - _effective_mcast | length == 0 or _effective_mcast == '239.1.1.1'
+  delegate_to: localhost
+  become: false
+  run_once: true
+
+- name: Fail if EVPN is enabled but BGP AS / router-id are missing on targets
+  ansible.builtin.fail:
+    msg: >-
+      evpn_enabled=true requires per-host bgp_as (or avd_default_bgp_as) and
+      router_id (or ansible_host) for: {{ item }}. No silent ASN/RD placeholders.
+  loop: "{{ ansible_play_hosts }}"
+  when:
+    - evpn_enabled | default(false) | bool
+    - not (allow_placeholder_fabric_defaults | default(false) | bool)
+    - (hostvars[item].bgp_as | default(avd_default_bgp_as | default(''), true) | length == 0)
+      or (hostvars[item].router_id | default(hostvars[item].ansible_host | default(''), true) | length == 0)
+  delegate_to: localhost
+  become: false
+  run_once: true
+
 - name: Write per-device AVD structured config files
   ansible.builtin.template:
     src: avd_structured_config.yml.j2
@@ -156,6 +186,7 @@
   delegate_to: localhost
   become: false
   run_once: true
+  no_log: true
   when:
     - cvp_apply_configlets | bool
     - cvp_server | length > 0
@@ -173,6 +204,7 @@
   delegate_to: localhost
   become: false
   run_once: true
+  no_log: true
   when:
     - cvp_apply_configlets | bool
     - cvp_server | length > 0
@@ -193,6 +225,7 @@
   delegate_to: localhost
   become: false
   run_once: true
+  no_log: true
   when:
     - cvp_apply_configlets | bool
     - cvp_server | length > 0

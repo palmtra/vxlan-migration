@@ -44,6 +44,7 @@
   when: _netbox_configured
   failed_when: false
   changed_when: false
+  no_log: true
 
 - name: Determine NetBox reachability
   ansible.builtin.set_fact:

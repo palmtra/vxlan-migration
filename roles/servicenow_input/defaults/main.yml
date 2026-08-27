@@ -19,4 +19,4 @@ manual_target_vrf: ""
 
 # Final computed values are published as host-agnostic facts by tasks/main.yml.
 # Default reports directory for hand-off artifacts.
-workflow_reports_dir: "{{ playbook_dir }}/../reports"
+workflow_reports_dir: "{{ reports_dir | default(project_root ~ '/reports') }}"

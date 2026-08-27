@@ -15,6 +15,7 @@
   delegate_to: localhost
   become: false
   changed_when: false
+  no_log: true
 
 - name: Build NetBox VLAN payload
   ansible.builtin.set_fact:
@@ -72,6 +73,7 @@
     - not netbox_export_dry_run | bool
     - netbox_export_create_missing | bool
     - not _netbox_vlan_exists | bool
+  no_log: true
 
 - name: Update existing NetBox VLAN
   ansible.builtin.uri:
@@ -94,6 +96,7 @@
     - not netbox_export_dry_run | bool
     - netbox_export_update_existing | bool
     - _netbox_vlan_exists | bool
+  no_log: true
 
 - name: Record applied export result
   ansible.builtin.set_fact:

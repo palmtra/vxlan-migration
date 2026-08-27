@@ -1,9 +1,10 @@
 ---
 # -----------------------------------------------------------------------------
-# Site playbook: migrate VLANs to VXLAN.
+# Site playbook: LEGACY direct-device VLAN migration (gated).
+# Prefer playbooks/core/workflow_deploy.yml. Requires allow_direct_device_push=true.
 # -----------------------------------------------------------------------------
 
-- name: VLAN migration operations
+- name: VLAN migration operations (direct device — gated)
   hosts: network_devices
   gather_facts: false
   vars:

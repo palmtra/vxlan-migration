@@ -5,7 +5,10 @@
 
 # Normalize repo root whether playbooks run from playbooks/ or playbooks/core/.
 project_root: "{{ playbook_dir | regex_replace('/playbooks(/core|/advanced)?$', '') }}"
-reports_dir: "{{ project_root }}/reports"
+# Artifacts root — override with -e artifacts_dir=... or env ARTIFACTS_DIR (AAP EE mounts).
+artifacts_dir: "{{ lookup('env', 'ARTIFACTS_DIR') | default(project_root, true) }}"
+reports_dir: "{{ artifacts_dir }}/reports"
+network_backup_dir: "{{ artifacts_dir }}/backups/{{ inventory_hostname }}"
 
 # Load the per-DC VLAN database directory (primary SSOT for Core workflow).
 vlan_db_dir: "{{ project_root }}/vars/vlans"
@@ -18,15 +21,19 @@ netbox_ssot_required: false
 
 # When true, every change playbook will save a local backup per host.
 network_backup_enabled: true
-network_backup_dir: "{{ playbook_dir }}/../backups/{{ inventory_hostname }}"
 
 # VXLAN fabric defaults used by the migration role
 vtep_loopback_id: 0
 vtep_source_interface: "Loopback{{ vtep_loopback_id }}"
 
-# Default multicast group for VXLAN BUM traffic.  Replace with your fabric value
-# (unicast HER, ingress replication, or EVPN control-plane) as required.
-vxlan_default_mcast_group: "239.1.1.1"
+# Default multicast group for VXLAN BUM traffic. Leave empty and set per-VLAN
+# mcast_group, or set a real fabric value. Placeholder 239.1.1.1 is rejected
+# unless allow_placeholder_fabric_defaults=true.
+vxlan_default_mcast_group: ""
+
+# When true, allow lab placeholder fabric values (mcast 239.1.1.1, empty ASN).
+# Keep false for production.
+allow_placeholder_fabric_defaults: false
 
 # Optional EVPN AFIs to enable on VNI.  Disable if your fabric is multicast only.
 # This is an example of a design-parameter that should be promoted to per-VLAN data.
@@ -40,16 +47,21 @@ target_actions:
 
 # When true, a failed post-change verification in workflow_verify.yml
 # automatically attempts a rollback via roles/cvp_rollback and re-verifies
-# before escalating. When false, verification failure escalates immediately
-# without attempting a rollback.
-auto_rollback_on_verification_failure: true
+# before escalating. Default false: auto-rollback with destructive "no vlan"
+# is unsafe until baseline-aware restore exists.
+auto_rollback_on_verification_failure: false
+
+# When true, rollback configlets may emit "no vlan" / VRF teardown. Default
+# false only removes VXLAN mappings (safer if the VLAN pre-existed).
+cvp_rollback_allow_destructive_no_vlan: false
 
 # When true, use arista.avd.eos_cli_config_gen for EOS configlet generation
 # instead of the legacy custom Jinja templates in roles/cvp_deploy.
 use_avd: false
 
 # Default BGP ASN used for AVD-generated router_bgp sections.
-# Per-device values can be set as hostvars (bgp_as / router_id).
+# Per-device values can be set as hostvars (bgp_as / router_id). Required when
+# evpn_enabled=true unless allow_placeholder_fabric_defaults=true.
 avd_default_bgp_as: ""
 
 # -----------------------------------------------------------------------------

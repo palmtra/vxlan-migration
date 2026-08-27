@@ -1,19 +1,19 @@
 # Python dependencies for the execution environment
-# Keep versions aligned with AAP 2.4+ and collection requirements.
+# Keep aligned with requirements.txt (same floors + soft upper bounds).
 
-ansible-core>=2.15.0
-paramiko>=3.0.0
-ansible-pylibssh>=1.1.0
-ncclient>=0.6.13
-xmltodict>=0.13.0
-jmespath>=1.0.0
-pyyaml>=6.0
+ansible-core>=2.15.0,<2.19
+paramiko>=3.0.0,<4.0.0
+ansible-pylibssh>=1.1.0,<2.0.0
+ncclient>=0.6.13,<1.0.0
+xmltodict>=0.13.0,<1.0.0
+jmespath>=1.0.0,<2.0.0
+pyyaml>=6.0,<7.0.0
 
-# Arista AVD Python dependencies
-pyavd>=4.0.0
-jsonschema>=4.0.0
-deepmerge>=1.0.0
-netaddr>=0.8.0
-treelib>=1.6.0
-cvprac>=2.2.0
-pynetbox>=7.0.0
+# Arista AVD / CVP / NetBox Python dependencies
+pyavd>=4.0.0,<6.0.0
+jsonschema>=4.0.0,<5.0.0
+deepmerge>=1.0.0,<3.0.0
+netaddr>=0.8.0,<2.0.0
+treelib>=1.6.0,<2.0.0
+cvprac>=2.2.0,<4.0.0
+pynetbox>=7.0.0,<8.0.0

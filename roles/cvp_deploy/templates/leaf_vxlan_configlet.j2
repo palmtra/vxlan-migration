@@ -8,14 +8,15 @@ vlan {{ target_vlan_id }}
 !
 interface {{ eos_vxlan_interface | default('Vxlan1') }}
  vxlan vlan {{ target_vlan_id }} vni {{ _vlan_to_migrate.vni }}
-{% if _vlan_to_migrate.mcast_group is defined %}
- vxlan vlan {{ target_vlan_id }} multicast group {{ _vlan_to_migrate.mcast_group }}
+{% set _mcast = _vlan_to_migrate.mcast_group | default(vxlan_default_mcast_group | default(''), true) %}
+{% if _mcast | length > 0 %}
+ vxlan vlan {{ target_vlan_id }} multicast group {{ _mcast }}
 {% endif %}
 !
-{% if evpn_enabled | default(false) | bool %}
-router bgp {{ _device_bgp_asn | default(65000) }}
+{% if evpn_enabled | default(false) | bool and (_device_bgp_asn | default('') | length > 0) and (_device_loopback_ip | default('') | length > 0) %}
+router bgp {{ _device_bgp_asn }}
  vlan {{ target_vlan_id }}
-  rd {{ _device_loopback_ip | default('0.0.0.0') }}:{{ _vlan_to_migrate.vni }}
+  rd {{ _device_loopback_ip }}:{{ _vlan_to_migrate.vni }}
   route-target both {{ _vlan_to_migrate.vni }}:{{ _vlan_to_migrate.vni }}
   redistribute learned
 !

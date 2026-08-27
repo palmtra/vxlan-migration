@@ -4,10 +4,18 @@
 interface {{ eos_vxlan_interface | default('Vxlan1') }}
  no vxlan vlan {{ target_vlan_id }} vni {{ _vlan_to_migrate.vni }}
 !
+{% if cvp_rollback_allow_destructive_no_vlan | default(false) | bool %}
 no vlan {{ target_vlan_id }}
 !
+{% else %}
+! skipped: no vlan {{ target_vlan_id }} (set cvp_rollback_allow_destructive_no_vlan=true to delete VLAN)
+!
+{% endif %}
 {% if evpn_enabled | default(false) | bool %}
-router bgp {{ _device_bgp_asn | default(65000) }}
+{% set _bgp_as = _device_bgp_asn | default(avd_default_bgp_as | default(''), true) %}
+{% if _bgp_as | length > 0 %}
+router bgp {{ _bgp_as }}
  no vlan {{ target_vlan_id }}
 !
+{% endif %}
 {% endif %}

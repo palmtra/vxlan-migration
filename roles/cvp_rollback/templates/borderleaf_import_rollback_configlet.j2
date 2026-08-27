@@ -5,12 +5,20 @@ interface Vxlan1
  no vxlan vrf {{ target_vrf }} vni {{ _vlan_to_migrate.vni }}
 {% endif %}
 !
-router bgp {{ _device_bgp_asn | default(65000) }}
+{% if cvp_rollback_allow_destructive_no_vlan | default(false) | bool %}
+{% set _bgp_as = _device_bgp_asn | default(avd_default_bgp_as | default(''), true) %}
+{% if _bgp_as | length > 0 %}
+router bgp {{ _bgp_as }}
 {% if target_vrf is defined and target_vrf != 'default' %}
  no vrf {{ target_vrf }}
 {% endif %}
 !
+{% endif %}
 {% if target_vrf is defined and target_vrf != 'default' %}
 no vrf instance {{ target_vrf }}
+!
+{% endif %}
+{% else %}
+! skipped destructive VRF teardown (set cvp_rollback_allow_destructive_no_vlan=true)
 !
 {% endif %}

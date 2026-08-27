@@ -3,6 +3,11 @@
 # migrate_to_vxlan defaults
 # -----------------------------------------------------------------------------
 
+# HARD GATE: this role applies config directly to EOS devices and bypasses CVP
+# change control. Keep false. Prefer playbooks/core/workflow_deploy.yml.
+# Only set allow_direct_device_push=true for controlled lab use after review.
+allow_direct_device_push: false
+
 # If true, remove the local SVI for a VLAN that is being migrated to VXLAN.
 # Default is false: preserve L3 gateway on the local device until explicitly
 # told otherwise.

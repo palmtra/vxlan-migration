@@ -8,7 +8,7 @@
 
 # When true, write a hand-off artifact that an external tool can consume.
 external_cleanup_write_handoff: true
-external_cleanup_handoff_dir: "{{ playbook_dir }}/../reports"
+external_cleanup_handoff_dir: "{{ reports_dir | default(project_root ~ '/reports') }}/cleanup_handoff"
 
 # Optional REST endpoint to notify an external cleanup orchestrator.
 # Leave empty to skip the API call entirely.

@@ -7,6 +7,8 @@ Ansible automation to **migrate legacy VLANs to VXLAN/EVPN** on Arista EOS via C
 - **Platforms on `main`:** **NXOS** (legacy source discovery) + **EOS** (target deploy/verify). IOS discovery is parked — see [docs/OS_SUPPORT.md](docs/OS_SUPPORT.md).
 - **Cleanup / trunk pruning** is reported as retain-aware `prune_plan` candidates (optional service `prune.retain`). Apply is not automated yet.
 - **NetBox export** is a standalone utility, not part of the migration run.
+- **Safety:** CVP generate-only by default; direct-device migrate path gated (`allow_direct_device_push`); auto-rollback off; secrets tasks use `no_log`.
+- **CI:** `.github/workflows/ci.yml` runs yamllint, unit tests, syntax-check, ansible-lint (`make ci`).
 
 ## Documentation
 

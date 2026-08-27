@@ -1,18 +1,26 @@
 ---
 # Ansible Lint configuration
-# Run with: ansible-lint
+# Run with: ansible-lint   or   make lint
+
+profile: production
 
 exclude_paths:
   - .local/
   - .git/
   - backups/
   - collections/
+  - reports/
+  - .github/
 
 warn_list:
   - experimental
+  - yaml[line-length]
 
 skip_list:
   - name[casing]
+  # Network CLI gather/discovery tasks intentionally use changed_when: false
   - no-changed-when
+  # jinja[spacing] noise on long filter pipes; keep intentional style
+  - jinja[spacing]
 
 use_default_rules: true

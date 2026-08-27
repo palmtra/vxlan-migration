@@ -1,33 +1,18 @@
 ---
 collections:
-  # Core networking collection: facts, config, vlans, etc.
   - name: ansible.netcommon
-    version: ">=6.0.0"
-
-  # Cisco IOS modules (ios_vlans, ios_config, ios_facts, etc.)
+    version: ">=6.0.0,<8.0.0"
   - name: cisco.ios
-    version: ">=7.0.0"
-
-  # Cisco NXOS modules (nxos_vlans, nxos_config, nxos_facts, etc.)
+    version: ">=7.0.0,<10.0.0"
   - name: cisco.nxos
-    version: ">=6.0.0"
-
-  # Arista EOS modules (eos_vlans, eos_config, eos_facts, eos_command, etc.)
+    version: ">=6.0.0,<10.0.0"
   - name: arista.eos
-    version: ">=12.2.0"
-
-  # Useful for RESTCONF/NETCONF based southbound if needed later
+    version: ">=12.2.0,<15.0.0"
   - name: ansible.utils
-    version: ">=3.0.0"
-  
-  # Arista CVP
+    version: ">=3.0.0,<6.0.0"
   - name: arista.cvp
-    version: ">=3.10.0"
-
-  # Arista AVD - structured config generation for EOS / CVP deployments
+    version: ">=3.10.0,<5.0.0"
   - name: arista.avd
-    version: ">=4.0.0"
-
-  # NetBox modules for future inventory/lookup integration.
+    version: ">=4.0.0,<6.0.0"
   - name: netbox.netbox
-    version: ">=3.17.0"
+    version: ">=3.17.0,<5.0.0"

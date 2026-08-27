@@ -4,7 +4,7 @@
 
 {% set _vxlan_intf = eos_vxlan_interface | default('Vxlan1') %}
 {% set _vlan_name = _avd_vlan.vlan_name | default(_avd_vlan.name | default('VLAN' ~ target_vlan_id)) %}
-{% set _mcast = _avd_vlan.mcast_group | default(vxlan_default_mcast_group) %}
+{% set _mcast = _avd_vlan.mcast_group | default(vxlan_default_mcast_group | default(''), true) %}
 {% set _vni = _avd_vlan.vni | int %}
 {% set _bgp_as = hostvars[_target_device].bgp_as | default(avd_default_bgp_as | default('')) %}
 {% set _router_id = hostvars[_target_device].router_id | default(hostvars[_target_device].ansible_host | default('')) %}
@@ -23,7 +23,9 @@ eos_cli: |
   !
   interface {{ _vxlan_intf }}
    vxlan vlan {{ target_vlan_id }} vni {{ _vni }}
+{% if _mcast | length > 0 %}
    vxlan vlan {{ target_vlan_id }} multicast group {{ _mcast }}
+{% endif %}
   !
 {% if evpn_enabled | default(false) | bool and _bgp_as | length > 0 and _router_id | length > 0 %}
   router bgp {{ _bgp_as }}
@@ -33,7 +35,7 @@ eos_cli: |
     redistribute learned
   !
 {% endif %}
-{% if _is_borderleaf | bool and avd_build_borderleaf_config | bool and target_vrf | default('default') != 'default' %}
+{% if _is_borderleaf | bool and avd_build_borderleaf_config | bool and target_vrf | default('default') != 'default' and _router_id | length > 0 %}
   vrf instance {{ target_vrf }}
    rd {{ _router_id }}:{{ _vni }}
    !
