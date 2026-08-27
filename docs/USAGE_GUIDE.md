@@ -122,9 +122,11 @@ ansible-playbook -i inventory/hosts.yml playbooks/core/discover_vlan.yml \
 
 Key report fields:
 
-- `switches_found` — VLAN L2 present
+- `switches_found` — VLAN L2 present (Ports column non-empty)
 - `switches_with_mac_learning` — active MAC learning
 - `switches_with_svi` / `switches_with_arp` — L3 presence
+- Per device: `mac_entries[]` (MAC→interface), `arp_entries[]` (IP→MAC), `uplinks[]`, `access_ports[]`, structured `svi_details`
+- Markdown sections mirror operator reports: MAC table, uplinks, endpoints, gateway/SVI (plus prune candidates)
 - `trunk_cleanup_candidates` — trunks where cleanup should be planned (informational only)
 - `prune_plans` — retain-aware prune **candidates** (trunk/VLAN/SVI; EOS adds statics + BGP). Never applied by discovery.
 - Device JSON: `reports/<dc>/_prune_plans/<host>_prune_plan_<ts>.json`

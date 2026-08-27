@@ -4,22 +4,22 @@ Generated: {{ _report_timestamp_ms }}
 Data center: {{ report.data_center | default('unknown') }}
 Service type: {{ report.service_type | default('unknown') }}
 
-> **Read-only discovery.** This report collects state from `show vlan id`, MAC, SVI, and ARP.
-> Trunk vs access ports are derived from the VLAN **Ports** column cross-referenced with
-> `show interfaces trunk`. Empty Ports means no L2 attachment on that switch.
-> EOS `switchport trunk group mlagpeer` and NXOS `vpc peer-link` trunks are excluded
-> from maintenance/prune lists.
+> **Read-only discovery.** State is collected from `show vlan id`, dynamic MAC,
+> SVI running-config, and ARP. Trunk vs access ports come from the VLAN **Ports**
+> column cross-referenced with `show interfaces trunk`.
+> EOS `switchport trunk group mlagpeer` and NXOS `vpc peer-link` trunks are
+> excluded from prune lists (shown as exempt uplinks).
 
 ## Switches where this VLAN matters
 
-Use these lists to populate `target_switches`, `discovery_switches`, and migration scope in `vars/vlans/{{ report.data_center }}.yml`.
+Use these lists to populate `target_switches`, `discovery_switches`, and migration scope.
 
 | Category | Switches |
 |----------|----------|
 | **L2 port attachment** (`show vlan id` Ports column non-empty) | {{ report.switches_found | join(', ') if report.switches_found | length > 0 else '*(none)*' }} |
 | **VLAN defined (no ports listed)** | {{ (report.switches_vlan_defined | default([]) | difference(report.switches_found | default([]))) | join(', ') if (report.switches_vlan_defined | default([]) | difference(report.switches_found | default([]))) | length > 0 else '*(none)*' }} |
 | **Access / endpoint ports** | {{ report.switches_with_access_ports | default([]) | join(', ') if report.switches_with_access_ports | default([]) | length > 0 else '*(none)*' }} |
-| **Trunk ports (prune candidates)** | {{ report.switches_with_trunk_ports | default([]) | join(', ') if report.switches_with_trunk_ports | default([]) | length > 0 else '*(none)*' }} |
+| **Trunk / uplink ports (prune candidates)** | {{ report.switches_with_trunk_ports | default([]) | join(', ') if report.switches_with_trunk_ports | default([]) | length > 0 else '*(none)*' }} |
 | **Learned MAC addresses** | {{ report.switches_with_mac_learning | join(', ') if report.switches_with_mac_learning | length > 0 else '*(none)*' }} |
 | **SVI (L3) present** | {{ report.switches_with_svi | join(', ') if report.switches_with_svi | length > 0 else '*(none)*' }} |
 | **ARP entries on SVI** | {{ report.switches_with_arp | join(', ') if report.switches_with_arp | length > 0 else '*(none)*' }} |
@@ -33,7 +33,7 @@ A copy-paste YAML snippet was written alongside this report:
 | Switch | OS | Ports | Access | Trunk | MAC | SVI | SVI VRF | ARP |
 |--------|----|-------|--------|-------|-----|-----|---------|-----|
 {% for device in report.devices %}
-| {{ device.hostname }} | {{ device.os_family }} | {{ 'yes' if device.has_port_membership else 'no' }} | {{ device.access_ports | default([]) | length }} | {{ device.trunk_ports | default([]) | length }} | {{ 'yes' if device.mac_learned else 'no' }} | {{ 'yes' if device.svi_present else 'no' }} | {{ device.svi_vrf | default('-') }} | {{ 'yes' if device.arp_learned else 'no' }} |
+| {{ device.hostname }} | {{ device.os_family }} | {{ 'yes' if device.has_port_membership else 'no' }} | {{ device.access_ports | default([]) | length }} | {{ device.trunk_ports | default([]) | length }} | {{ device.mac_entries | default([]) | length if device.mac_entries is defined else ('yes' if device.mac_learned else 'no') }} | {{ 'yes' if device.svi_present else 'no' }} | {{ device.svi_vrf | default('-') }} | {{ device.arp_entries | default([]) | length if device.arp_entries is defined else ('yes' if device.arp_learned else 'no') }} |
 {% endfor %}
 
 ## Trunk ports - prune during decommission
@@ -92,47 +92,107 @@ service bundle (`prune.retain`) or `discovery_prune_retain` appear under
 ## Per-Switch Detail
 
 {% for device in report.devices %}
-### {{ device.hostname }} ({{ device.os_family }})
+### [{{ device.hostname }}] VLAN {{ report.vlan_id }} --- {{ report.vlan_name }}
 
+- **OS:** {{ device.os_family }}
 - **VLAN in database (`show vlan id {{ report.vlan_id }}`):** {{ 'yes' if device.vlan_present else 'no' }}
 - **L2 port attachment (Ports column):** {{ 'yes' if device.has_port_membership else 'no' }}
-- **Access / endpoint ports:** {{ device.access_ports | default([]) | join(', ') if device.access_ports | default([]) | length > 0 else '*(none)*' }}
-- **Trunk ports (maintenance candidates):** {{ device.trunk_ports | default([]) | join(', ') if device.trunk_ports | default([]) | length > 0 else '*(none)*' }}
-{% if device.exempt_trunk_ports | default([]) | length > 0 %}
-- **Exempt trunks (MLAG/vPC peer-link - not for prune):** {{ device.exempt_trunk_ports | join(', ') }}
-{% endif %}
-- **MAC addresses learned:** {{ 'yes' if device.mac_learned else 'no' }}
-- **SVI present (`show run interface Vlan{{ report.vlan_id }}`):** {{ 'yes' if device.svi_present else 'no' }}
-- **SVI VRF (from interface config):** {{ device.svi_vrf | default('n/a') }}
-{% if device.svi_details is defined and device.svi_details.present | default(false) %}
-- **SVI details:** desc=`{{ device.svi_details.description | default('') }}` mtu=`{{ device.svi_details.mtu | default('n/a') }}` ips=`{{ device.svi_details.ip_addresses | default([]) | join(', ') }}` vr_addrs=`{{ device.svi_details.virtual_router_addresses | default([]) | join(', ') }}`
-{% endif %}
-- **ARP learned in SVI VRF:** {{ 'yes' if device.arp_learned else 'no' }}
 
-#### `show vlan id {{ report.vlan_id }}`
+#### Dynamic MAC Address Table - VLAN {{ report.vlan_id }}
+
+{% if device.mac_entries | default([]) | length > 0 %}
+| MAC | Interface | Type | Port role |
+|-----|-----------|------|-----------|
+{% for entry in device.mac_entries %}
+| {{ entry.mac }} | {{ entry.interface }} | {{ entry.entry_type | default('learned') }} | {{ entry.port_role | default('unknown') }} |
+{% endfor %}
+{% else %}
+*(No dynamic MAC entries parsed{% if device.mac_learned %} — see raw dump below{% endif %}.)*
+{% endif %}
+
+#### Uplinks
+
+Trunks that carry this VLAN (from Ports column ∩ trunk inventory). Exempt MLAG/vPC peer-links are labeled.
+
+{% set _uplinks = device.uplinks | default(device.trunk_ports | default([]) + device.exempt_trunk_ports | default([])) %}
+{% if _uplinks | length > 0 %}
+{% for iface in _uplinks %}
+- VLAN {{ report.vlan_id }} is carried on **{{ iface }}**{% if iface in (device.exempt_trunk_ports | default([])) %} *(exempt peer-link — not a prune candidate)*{% elif iface in (device.trunk_ports | default([])) %} *(prune candidate)*{% endif %}
+{% endfor %}
+{% else %}
+*(No uplink / trunk carriage found on this switch.)*
+{% endif %}
+
+#### Endpoints
+
+Access / endpoint ports from the VLAN Ports column (not listed as trunks):
+
+{% if device.access_ports | default([]) | length > 0 %}
+{% for iface in device.access_ports %}
+- **{{ iface }}**
+{% endfor %}
+{% else %}
+*(No access / endpoint ports on this switch — MAC learning may still appear on uplinks only.)*
+{% endif %}
+
+#### Gateway / SVI
+
+{% if device.svi_present %}
+- **SVI present:** yes (`show run interface Vlan{{ report.vlan_id }}`)
+- **VRF:** {{ device.svi_vrf | default('default') }}
+{% if device.svi_details is defined and device.svi_details.present | default(false) %}
+- **Description:** {{ device.svi_details.description | default('(none)') }}
+- **MTU:** {{ device.svi_details.mtu | default('n/a') }}
+- **IP addresses:** {{ device.svi_details.ip_addresses | default([]) | join(', ') if device.svi_details.ip_addresses | default([]) else '*(none)*' }}
+- **Virtual-router addresses:** {{ device.svi_details.virtual_router_addresses | default([]) | join(', ') if device.svi_details.virtual_router_addresses | default([]) else '*(none)*' }}
+{% endif %}
+{% if device.arp_entries | default([]) | length > 0 %}
+
+ARP neighbors (structured):
+
+| IP | MAC | Interface | Age |
+|----|-----|-----------|-----|
+{% for entry in device.arp_entries %}
+| {{ entry.ip }} | {{ entry.mac }} | {{ entry.interface | default('-') }} | {{ entry.age | default('-') }} |
+{% endfor %}
+{% elif device.arp_learned %}
+- ARP learned: yes (see raw dump)
+{% else %}
+- ARP learned: no
+{% endif %}
+{% else %}
+- **No SVI on this switch** for VLAN {{ report.vlan_id }}.
+- Gateway is likely off-box (firewall / another leaf). Confirm via MAC table uplinks and external inventory; discovery does not invent gateway notes.
+{% endif %}
+
+#### Raw CLI appendix
+
+##### `show vlan id {{ report.vlan_id }}`
 
 ```
 {{ device.vlan_id_raw | default('No data collected.') }}
 ```
 
-#### `show running-config interface Vlan{{ report.vlan_id }}`
+##### `show running-config interface Vlan{{ report.vlan_id }}`
 
 ```
 {{ device.svi_raw | default('No data collected.') }}
 ```
 
-#### Dynamic MAC Address Table
+##### Dynamic MAC Address Table (raw)
 
 ```
 {{ device.mac_table_raw | default('No data collected.') }}
 ```
 
 {% if device.svi_present %}
-#### ARP (VRF {{ device.svi_vrf | default('default') }})
+##### ARP (VRF {{ device.svi_vrf | default('default') }}) (raw)
 
 ```
 {{ device.arp_raw | default('No data collected.') }}
 ```
 {% endif %}
+
+---
 
 {% endfor %}

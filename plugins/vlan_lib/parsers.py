@@ -246,46 +246,205 @@ def svi_command_indicates_present(stdout, vlan_id):
     return bool(re.search(rf"\bVlan{vid}\b", text, re.I))
 
 
+def normalize_mac_address(mac):
+    """Normalize a MAC string to lowercase colon form (aa:bb:cc:dd:ee:ff)."""
+    if mac is None:
+        return ""
+    hex_chars = re.sub(r"[^0-9a-fA-F]", "", str(mac))
+    if len(hex_chars) != 12:
+        return str(mac).strip().lower()
+    pairs = [hex_chars[i : i + 2].lower() for i in range(0, 12, 2)]
+    return ":".join(pairs)
+
+
+def _mac_line_is_noise(line):
+    lower = line.lower().strip()
+    if not lower:
+        return True
+    if "----" in lower:
+        return True
+    if lower.startswith("mac address table") or lower.startswith("legend"):
+        return True
+    if lower.startswith("codes:"):
+        return True
+    if "total mac" in lower or "multicast" in lower:
+        return True
+    if "last move" in lower and not _MAC_ADDRESS_RE.search(line):
+        return True
+    if lower.startswith("vlan") and "mac address" in lower:
+        return True
+    if "mac address" in lower and "ports" in lower and not _MAC_ADDRESS_RE.search(line):
+        return True
+    return False
+
+
+def parse_mac_address_table(mac_output, vlan_id=None):
+    """Parse dynamic/static MAC table rows into structured entries.
+
+    Returns a list of dicts::
+        {mac, interface, entry_type, vlan_id}
+
+    Supports EOS dotted MAC tables, NXOS tables, and simplified
+    ``aa:bb:cc:dd:ee:ff Port-ChannelN`` report lines.
+    """
+    if not mac_output or not str(mac_output).strip():
+        return []
+
+    entries = []
+    seen = set()
+    target_vid = str(vlan_id) if vlan_id is not None else None
+
+    for raw_line in str(mac_output).splitlines():
+        line = raw_line.strip()
+        if not line or _mac_line_is_noise(line):
+            continue
+
+        mac_match = _MAC_ADDRESS_RE.search(line)
+        if not mac_match:
+            continue
+
+        mac = normalize_mac_address(mac_match.group(0))
+        remainder = line[: mac_match.start()] + " " + line[mac_match.end() :]
+        iface_match = _PORT_NAME_RE.search(remainder)
+        if not iface_match:
+            continue
+        interface = iface_match.group(0)
+
+        entry_vlan = None
+        # EOS/NXOS table rows start with optional '*' + VLAN id before the MAC.
+        # Do not treat MAC octets (e.g. leading "00:" ) as a VLAN id.
+        prefix = line[: mac_match.start()]
+        vlan_match = re.match(r"^\*?\s*(\d{1,4})\s*$", prefix.strip())
+        if not vlan_match:
+            vlan_match = re.match(r"^\*?\s*(\d{1,4})\b", prefix)
+        if vlan_match and mac_match.start() > 0:
+            entry_vlan = vlan_match.group(1)
+        if target_vid is not None and entry_vlan is not None and entry_vlan != target_vid:
+            continue
+
+        lower = line.lower()
+        if "static" in lower:
+            entry_type = "static"
+        elif "dynamic" in lower:
+            entry_type = "dynamic"
+        else:
+            entry_type = "learned"
+
+        key = (mac, interface.lower())
+        if key in seen:
+            continue
+        seen.add(key)
+        entries.append(
+            {
+                "mac": mac,
+                "interface": interface,
+                "entry_type": entry_type,
+                "vlan_id": int(entry_vlan) if entry_vlan is not None else (
+                    int(target_vid) if target_vid is not None else None
+                ),
+            }
+        )
+
+    return entries
+
+
 def mac_table_has_learned_addresses(mac_output):
     """Return True when the MAC table output contains at least one learned MAC."""
-    if not mac_output or not str(mac_output).strip():
-        return False
-    text = str(mac_output)
-    for line in text.splitlines():
-        lower = line.lower().strip()
-        # Skip headers / separators; do not skip data rows that merely share
-        # column names elsewhere in the table banner.
-        if lower.startswith("mac address table") or lower.startswith("vlan"):
-            if "dynamic" not in lower and "static" not in lower:
-                if not _MAC_ADDRESS_RE.search(line):
-                    continue
-        if any(
-            skip in lower
-            for skip in (
-                "----",
-                "total mac",
-                "multicast",
-                "last move",
-            )
-        ):
+    return bool(parse_mac_address_table(mac_output))
+
+
+def parse_arp_entries(arp_output, vlan_id=None):
+    """Parse ARP table rows into structured entries.
+
+    Returns a list of dicts::
+        {ip, mac, interface, age}
+
+    Prefer rows bound to ``Vlan<id>`` when *vlan_id* is provided; if none match,
+    fall back to all parseable host ARP rows.
+    """
+    if not arp_output or not str(arp_output).strip():
+        return []
+
+    entries = []
+    seen = set()
+    vid = str(vlan_id) if vlan_id is not None else None
+    vlan_iface_re = re.compile(rf"\bvlan\s*{re.escape(vid)}\b", re.I) if vid else None
+
+    for raw_line in str(arp_output).splitlines():
+        line = raw_line.strip()
+        if not line:
             continue
-        if lower.startswith("vlan") and "mac address" in lower:
+        lower = line.lower()
+        if lower.startswith("address") or "hardware addr" in lower or "----" in lower:
             continue
-        if _MAC_ADDRESS_RE.search(line):
-            return True
-    return False
+        if lower.startswith("total number") or lower.startswith("internet address"):
+            if not _IP_ADDRESS_RE.search(line):
+                continue
+
+        ip_match = _IP_ADDRESS_RE.search(line)
+        mac_match = _MAC_ADDRESS_RE.search(line)
+        if not ip_match or not mac_match:
+            continue
+
+        ip_addr = ip_match.group(1) if ip_match.lastindex else ip_match.group(0)
+        mac = normalize_mac_address(mac_match.group(0))
+        iface_match = _PORT_NAME_RE.search(line) or re.search(
+            r"\b(Vlan\d+|vlan\d+)\b", line, re.I
+        )
+        interface = iface_match.group(0) if iface_match else ""
+
+        age = ""
+        age_match = re.search(r"\b(\d+|-+)\b", line[ip_match.end() : mac_match.start()])
+        if age_match:
+            age = age_match.group(1)
+
+        entry = {
+            "ip": ip_addr,
+            "mac": mac,
+            "interface": interface,
+            "age": age,
+        }
+        key = (entry["ip"], entry["mac"], entry["interface"].lower())
+        if key in seen:
+            continue
+        seen.add(key)
+        entries.append(entry)
+
+    if vlan_iface_re is not None:
+        scoped = [item for item in entries if vlan_iface_re.search(item.get("interface", ""))]
+        if scoped:
+            return scoped
+    return entries
 
 
 def arp_table_has_learned_neighbors(arp_output, vlan_id=None):
     """Return True when ARP output contains host IP entries for the VLAN SVI."""
-    if not arp_output or not str(arp_output).strip():
+    return bool(parse_arp_entries(arp_output, vlan_id))
+
+
+def classify_mac_port_role(interface, access_ports=None, trunk_ports=None, exempt_trunk_ports=None):
+    """Classify a MAC-learned interface as access, trunk, exempt, or unknown."""
+    access = access_ports or []
+    trunks = trunk_ports or []
+    exempt = exempt_trunk_ports or []
+    normalized = _normalize_interface_name(interface)
+
+    def _match(candidates):
+        for candidate in candidates:
+            if _normalize_interface_name(candidate) == normalized:
+                return True
         return False
-    text = str(arp_output)
-    if vlan_id is not None and not _output_indicates_missing(text):
-        vid = re.escape(str(vlan_id))
-        if re.search(rf"\bVlan{vid}\b", text, re.I):
-            return bool(_IP_ADDRESS_RE.search(text))
-    return bool(_IP_ADDRESS_RE.search(text))
+
+    if _match(exempt):
+        return "exempt_trunk"
+    if _match(trunks):
+        return "trunk"
+    if _match(access):
+        return "access"
+    # Heuristic: Port-Channel / Po without explicit Ports-column match → treat as trunk/uplink
+    if re.match(r"^(?:po|port-channel)\d+", normalized):
+        return "trunk"
+    return "unknown"
 
 
 def parse_svi_vrf(svi_config, platform="eos"):

@@ -7,8 +7,9 @@ from ansible.errors import AnsibleFilterError
 
 from vlan_lib.common import _str_equal, _vlan_present
 from vlan_lib.parsers import (
-    arp_table_has_learned_neighbors,
-    mac_table_has_learned_addresses,
+    classify_mac_port_role,
+    parse_arp_entries,
+    parse_mac_address_table,
     parse_svi_details,
     parse_svi_vrf,
     parse_vlan_id_ports,
@@ -39,12 +40,22 @@ def extract_vlan_targeted_discovery(vlan, outputs):
     vlan_present = port_membership.get("vlan_present", False)
     svi_present = svi_command_indicates_present(svi_output, vlan_id)
     svi_vrf = parse_svi_vrf(svi_output, platform) if svi_present else ""
-    mac_learned = mac_table_has_learned_addresses(mac_output)
-    arp_learned = arp_table_has_learned_neighbors(arp_output, vlan_id) if svi_present else False
+    mac_entries = parse_mac_address_table(mac_output, vlan_id)
+    arp_entries = parse_arp_entries(arp_output, vlan_id) if svi_present else []
+    mac_learned = bool(mac_entries)
+    arp_learned = bool(arp_entries)
 
     access_ports = port_membership.get("access_ports", [])
     trunk_ports = port_membership.get("trunk_ports", [])
     exempt_trunk_ports = port_membership.get("exempt_trunk_ports", [])
+    for entry in mac_entries:
+        entry["port_role"] = classify_mac_port_role(
+            entry.get("interface", ""),
+            access_ports,
+            trunk_ports,
+            exempt_trunk_ports,
+        )
+
     svi_details = parse_svi_details(svi_output, platform) if svi_present else {
         "present": False,
         "description": "",
@@ -66,6 +77,11 @@ def extract_vlan_targeted_discovery(vlan, outputs):
         for iface in trunk_ports
     ]
 
+    # Uplinks = trunks carrying the VLAN (Ports column ∩ trunk list), plus exempt peer-links.
+    uplinks = list(trunk_ports) + [
+        iface for iface in exempt_trunk_ports if iface not in trunk_ports
+    ]
+
     return {
         "vlan_id": vlan_id,
         "vlan_name": vlan.get("name", ""),
@@ -79,10 +95,13 @@ def extract_vlan_targeted_discovery(vlan, outputs):
         "access_ports": access_ports,
         "trunk_ports": trunk_ports,
         "exempt_trunk_ports": exempt_trunk_ports,
+        "uplinks": uplinks,
         "all_ports": port_membership.get("all_ports", []),
         "ports_raw": port_membership.get("ports_raw", ""),
         "mac_learned": mac_learned,
         "arp_learned": arp_learned,
+        "mac_entries": mac_entries,
+        "arp_entries": arp_entries,
         "vlan_id_raw": vlan_output,
         "svi_raw": svi_output,
         "mac_table_raw": mac_output,
