@@ -2,6 +2,9 @@
 
 Run targeted discovery for one VLAN in a data center before adding it to the local SSOT.
 
+On **`main`**, discovery is first-class for **NXOS** and **EOS**. IOS hosts are skipped unless
+`-e discovery_enable_ios=true`. Platform policy: [OS_SUPPORT.md](../OS_SUPPORT.md).
+
 ## Before you run — preflight
 
 Discovery talks to network devices over SSH. **Ansible does not prompt for a password unless you ask it to.**

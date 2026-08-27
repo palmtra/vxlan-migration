@@ -2,6 +2,9 @@
 # -----------------------------------------------------------------------------
 # Cisco IOS/IOS-XE defaults
 # -----------------------------------------------------------------------------
+# Parked on main: discovery does not run for ios_devices unless
+# discovery_enable_ios=true. See docs/OS_SUPPORT.md.
+# -----------------------------------------------------------------------------
 ansible_network_os: ios
 network_os_family: ios
 

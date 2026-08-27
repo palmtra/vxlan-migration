@@ -1,7 +1,8 @@
 # Workflows — Core vs Advanced
 
 This repository automates **legacy VLAN → VXLAN/EVPN migration** on Arista EOS via CloudVision (CVP).
-Discovery spans EOS, NXOS, and IOS; config generation and CVP push target **Arista EOS only**.
+On **`main`**, discovery targets **NXOS** (legacy) and **EOS** (fabric); deploy/verify are **EOS only**.
+IOS discovery is parked — see [OS_SUPPORT.md](OS_SUPPORT.md).
 
 Two workflow tiers share the same roles. **Build and harden Core first**, then enable Advanced when ServiceNow integration is ready.
 
@@ -11,11 +12,12 @@ Two workflow tiers share the same roles. **Build and harden Core first**, then e
 
 | In scope (this repo) | Out of scope |
 |---|---|
-| Read-only VLAN discovery and reporting | Greenfield / new VLAN deployments (separate app) |
+| Read-only VLAN discovery (NXOS + EOS; optional IOS) | Greenfield / new VLAN deployments (separate app) |
 | Local per-DC VLAN DB as primary SSOT | Automatic trunk/SVI cleanup **apply** on devices (candidates only today) |
 | Optional service bundles (`vars/services/`) for multi-VLAN cutovers | Executing prune/delete sessions (planned; retain-aware plans only) |
 | AVD or Jinja → CVP configlet generation | NetBox export as part of the migration run |
 | CVP change control creation (pending approval) | Executing CVP change control automatically |
+| NXOS→EOS as the supported migration path on `main` | Expanding IOS as a first-class platform on `main` |
 
 Legacy VLAN cleanup and trunk pruning are **reported** during discovery as retain-aware
 `prune_plan` candidates. Application is not automated yet (future in-repo prune role).

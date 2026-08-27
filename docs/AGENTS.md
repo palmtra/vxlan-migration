@@ -9,6 +9,7 @@ docs/
 ├── README.md              # Master index — always update when adding docs
 ├── AGENTS.md              # This file
 ├── WORKFLOWS.md           # Architecture (Core vs Advanced, mermaid)
+├── OS_SUPPORT.md          # NXOS+EOS on main; IOS archive policy
 ├── VXLAN_SERVICE_TYPES.md # L2 vs L3 vs l2_l3 service_type guide
 ├── USAGE_GUIDE.md         # Full operator reference (flags, variables, AAP)
 ├── ROADMAP.md             # Planned and completed work
@@ -24,6 +25,7 @@ docs/
 | Content type | Location | Max scope |
 |---|---|---|
 | Architecture, workflow tiers, SSOT model | `docs/WORKFLOWS.md` | Conceptual; link to examples for commands |
+| Network OS support / IOS archive policy | `docs/OS_SUPPORT.md` | Platforms on main vs parked |
 | L2 vs L3 migration intent, `service_type` | `docs/VXLAN_SERVICE_TYPES.md` | Conceptual; link from VLAN DB schema |
 | Variable / flag reference, troubleshooting | `docs/USAGE_GUIDE.md` | Comprehensive tables |
 | Runnable command for one task | `docs/examples/<task>.md` | One page, one goal |

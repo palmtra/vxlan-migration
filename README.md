@@ -4,7 +4,7 @@ Ansible automation to **migrate legacy VLANs to VXLAN/EVPN** on Arista EOS via C
 
 - **Core workflow:** discover → local VLAN SSOT → AVD/Jinja config → CVP (pending change control). No ServiceNow.
 - **Advanced workflow:** Core + ServiceNow intake and ticket closure.
-- **Discovery** is read-only across EOS, NXOS, and IOS; **deploy** targets Arista EOS only.
+- **Platforms on `main`:** **NXOS** (legacy source discovery) + **EOS** (target deploy/verify). IOS discovery is parked — see [docs/OS_SUPPORT.md](docs/OS_SUPPORT.md).
 - **Cleanup / trunk pruning** is reported as retain-aware `prune_plan` candidates (optional service `prune.retain`). Apply is not automated yet.
 - **NetBox export** is a standalone utility, not part of the migration run.
 
@@ -15,6 +15,7 @@ Ansible automation to **migrate legacy VLANs to VXLAN/EVPN** on Arista EOS via C
 | Doc | Purpose |
 |---|---|
 | [docs/WORKFLOWS.md](docs/WORKFLOWS.md) | Core vs Advanced architecture (mermaid diagrams) |
+| [docs/OS_SUPPORT.md](docs/OS_SUPPORT.md) | NXOS+EOS on main; IOS archive tag/branch |
 | [docs/VXLAN_SERVICE_TYPES.md](docs/VXLAN_SERVICE_TYPES.md) | L2 vs L3 vs l2_l3 (`service_type`) |
 | [docs/USAGE_GUIDE.md](docs/USAGE_GUIDE.md) | Flags, options, and CLI reference |
 | [docs/examples/](docs/examples/) | Short task-focused examples (discover, generate-only CVP, NetBox export) |
@@ -193,6 +194,7 @@ discovery_switches:       # optional; defaults to target_switches
 - `cvp_apply_configlets=false` by default (generate files only).
 - CVP change controls are **pending** by default; manual approval in CloudVision.
 - Discovery and trunk analysis are **read-only** - no device or trunk config changes.
+- On `main`, discovery runs for **NXOS + EOS** by default; IOS requires `discovery_enable_ios=true` ([OS_SUPPORT.md](docs/OS_SUPPORT.md)).
 
 ## AAP integration
 

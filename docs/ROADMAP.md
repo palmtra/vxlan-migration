@@ -16,6 +16,8 @@ Open features and planned work. Completed items are kept for context.
 - [x] Trunk cleanup **recommendations** in discovery reports (no config command generation)
 - [x] Standalone NetBox export playbook (`playbooks/export_vlan_to_netbox.yml`)
 - [x] Workflow docs with mermaid diagrams (`docs/WORKFLOWS.md`, `docs/USAGE_GUIDE.md`)
+- [x] Service bundles + retain-aware discovery prune plans
+- [x] Platform policy: `main` = NXOS→EOS; IOS parked (`docs/OS_SUPPORT.md`, archive tag/branch)
 
 ---
 

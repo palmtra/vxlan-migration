@@ -75,6 +75,7 @@ Collects VLAN, MAC, SVI, ARP, and trunk carriage. Writes reports under `reports/
 | `discovery_collect_prune_context` | `true` | EOS: collect static routes + BGP for prune plans |
 | `discovery_write_prune_plan` | `true` | Emit retain-aware prune plan candidates (never applies deletes) |
 | `discovery_write_device_prune_plans` | `true` | Write `reports/<dc>/_prune_plans/*.json` |
+| `discovery_enable_ios` | `false` | Parked IOS discovery; set `true` to run `gather_ios*` (see [OS_SUPPORT.md](OS_SUPPORT.md)) |
 | `discovery_write_markdown` | `true` | Write `.md` report |
 | `discovery_write_csv` | `true` | Write `.csv` report |
 | `discovery_write_json` | `true` | Write `.json` report |

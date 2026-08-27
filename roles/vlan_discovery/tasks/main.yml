@@ -21,9 +21,21 @@
   ansible.builtin.include_tasks: gather_nxos.yml
   when: network_os_family == 'nxos'
 
-- name: Include IOS discovery tasks
+- name: Include IOS discovery tasks (parked on main — see docs/OS_SUPPORT.md)
   ansible.builtin.include_tasks: gather_ios.yml
-  when: network_os_family == 'ios'
+  when:
+    - network_os_family == 'ios'
+    - discovery_enable_ios | default(false) | bool
+
+- name: Skip parked IOS hosts when discovery_enable_ios is false
+  ansible.builtin.debug:
+    msg: >-
+      Skipping IOS discovery for {{ inventory_hostname }}.
+      Main develops NXOS→EOS only. Set discovery_enable_ios=true or use
+      archive/ios-discovery / tag archive/multi-os-ios-nxos-eos-2026-08.
+  when:
+    - network_os_family == 'ios'
+    - not (discovery_enable_ios | default(false) | bool)
 
 - name: Write legacy per-host JSON report
   ansible.builtin.template:
