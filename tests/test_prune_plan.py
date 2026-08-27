@@ -19,7 +19,9 @@ if "ansible" not in sys.modules:
     sys.modules["ansible"] = ansible
     sys.modules["ansible.errors"] = ansible_errors
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "plugins", "filter"))
+_REPO = os.path.join(os.path.dirname(__file__), "..")
+sys.path.insert(0, os.path.join(_REPO, "plugins"))
+sys.path.insert(0, os.path.join(_REPO, "plugins", "filter"))
 
 from vlan_filters import (  # noqa: E402
     build_device_prune_plan,

@@ -1,0 +1,7 @@
+---
+galaxy_info:
+  role_name: vlan_db
+  description: Load per-DC VLAN SSOT records from vars/vlans
+  license: MIT
+  min_ansible_version: "2.14"
+dependencies: []

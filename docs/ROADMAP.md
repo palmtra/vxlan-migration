@@ -19,6 +19,9 @@ Open features and planned work. Completed items are kept for context.
 - [x] Service bundles + retain-aware discovery prune plans
 - [x] Platform policy: `main` = NXOS→EOS; IOS parked (`docs/OS_SUPPORT.md`, archive tag/branch)
 - [x] P0 hardening: `no_log` on secrets, gate direct-device migrate, safer rollback defaults, GitHub CI
+- [x] Split `vlan_filters` into `plugins/vlan_lib/` + thin `plugins/filter/vlan_filters.py`
+- [x] JSON Schema validation for VLAN/service SSOT (`schemas/*.schema.json`)
+- [x] Molecule localhost scenarios for `vlan_db` and `service_db`
 
 ---
 
@@ -37,8 +40,8 @@ Open features and planned work. Completed items are kept for context.
 ### VLAN database
 
 - [x] Optional service bundles under `vars/services/<dc>/` (multi-VLAN orchestrator + retain)
+- [x] JSON Schema validation for `vars/vlans/<dc>/*.yml` and `vars/services/<dc>/*.yml`
 - [ ] Document and enforce additional fields (customer ID, old VRF, gateway, subnet, etc.)
-- [ ] JSON Schema or Ansible spec validation for `vars/vlans/<dc>/*.yml`
 - [ ] Support VLANs shared across DCs vs DC-exclusive IDs (collision policy)
 
 ### Core workflow hardening

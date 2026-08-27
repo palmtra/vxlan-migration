@@ -1,0 +1,9 @@
+---
+- name: Destroy (unmanaged localhost)
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks:
+    - name: Nothing to tear down
+      ansible.builtin.debug:
+        msg: "service_db molecule leaves localhost unchanged"

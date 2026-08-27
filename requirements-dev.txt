@@ -1,0 +1,4 @@
+# Optional local/CI tools for developers (not required on the EE runtime path).
+molecule>=24.0,<26
+yamllint>=1.35.0
+ansible-lint>=24.0.0

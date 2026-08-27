@@ -1,0 +1,28 @@
+---
+id: demo_svc
+name: Molecule demo service
+data_center: lisle
+order: prune_then_build
+pattern: hybrid_firewall_evpn
+vlans:
+  - id: 100
+    role: l3svi
+    service_type: l3
+    vlan_name: WEB_VXLAN
+    vrf: default
+    target_switches:
+      - eos-leaf-lis-01
+  - id: 200
+    role: l3svi
+    service_type: l3
+    vlan_name: APP_VXLAN
+    vrf: default
+prune:
+  retain:
+    vrfs:
+      - v0000822a
+    bgp_neighbors:
+      - vrf: v0000822a
+        neighbor: 169.254.255.29
+    interfaces:
+      - Ethernet3.200

@@ -49,6 +49,7 @@ discovery_switches:
 ```
 
 See `_example.yml` in each DC directory for the full field list.
+Records are validated against [`schemas/vlan_record.schema.json`](../../schemas/vlan_record.schema.json) on load (`jsonschema` required).
 
 Choosing `l2` vs `l3` vs `l2_l3`: [docs/VXLAN_SERVICE_TYPES.md](../docs/VXLAN_SERVICE_TYPES.md).
 

@@ -1,0 +1,25 @@
+---
+- name: Verify vlan_db facts
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    project_root: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}"
+    target_data_center: lisle
+    manual_vlan_id: 100
+  tasks:
+    - name: Reload VLAN database for assertions
+      ansible.builtin.include_role:
+        name: vlan_db
+
+    - name: Assert VLAN DB bootstrap facts
+      ansible.builtin.assert:
+        that:
+          - hostvars['localhost']['_vlan_db_data_center'] == 'lisle'
+          - hostvars['localhost'].target_vlan_id | int == 100
+          - hostvars['localhost']['_ssot_vlan'].name == 'legacy_web'
+          - hostvars['localhost']['_ssot_vlan'].service_type == 'l3'
+          - hostvars['localhost']['_ssot_vlan'].vni | int == 50100
+          - "'eos-leaf-lis-01' in hostvars['localhost']['_workflow_cvp_target_switches']"
+          - hostvars['localhost']['_effective_vlans'] | length >= 1
+        quiet: true

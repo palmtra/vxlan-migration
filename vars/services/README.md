@@ -14,6 +14,8 @@ vars/services/
     _example.yml
 ```
 
+Loaded bundles are validated against [`schemas/service_bundle.schema.json`](../../schemas/service_bundle.schema.json).
+
 ## Filename convention
 
 ```text

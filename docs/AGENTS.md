@@ -72,8 +72,10 @@ When changing behaviour, verify these stay aligned:
 | `cvp_apply_configlets` default / gating | `examples/generate-config-without-cvp-push.md`, USAGE_GUIDE § Core deploy |
 | Core vs Advanced playbooks | WORKFLOWS.md mermaid diagrams |
 | Discovery report fields | USAGE_GUIDE § Discovery, examples/discover-vlan.md |
-| `vars/vlans/` schema | WORKFLOWS.md VLAN DB table, [VXLAN_SERVICE_TYPES.md](VXLAN_SERVICE_TYPES.md), USAGE_GUIDE, root README data model |
-| `vars/services/` schema | WORKFLOWS.md service bundles, [vars/services/README.md](../vars/services/README.md), examples/discover-vlan.md |
+| `vars/vlans/` schema | WORKFLOWS.md VLAN DB table, [VXLAN_SERVICE_TYPES.md](VXLAN_SERVICE_TYPES.md), USAGE_GUIDE, root README data model, `schemas/vlan_record.schema.json` |
+| `vars/services/` schema | WORKFLOWS.md service bundles, [vars/services/README.md](../vars/services/README.md), examples/discover-vlan.md, `schemas/service_bundle.schema.json` |
+| Filter implementation | `plugins/filter/vlan_filters.py` (entry) + `plugins/vlan_lib/` (parsers/db/schema) |
+| Molecule role checks | `molecule/vlan_db`, `molecule/service_db` (`make molecule`) |
 | Discovery prune plans | USAGE_GUIDE § Discovery, examples/discover-vlan.md (candidates only; no applies) |
 | NetBox export playbook | examples/export-vlan-to-netbox.md |
 

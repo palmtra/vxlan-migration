@@ -20,7 +20,9 @@ if "ansible" not in sys.modules:
     sys.modules["ansible"] = ansible
     sys.modules["ansible.errors"] = ansible_errors
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "plugins", "filter"))
+_REPO = os.path.join(os.path.dirname(__file__), "..")
+sys.path.insert(0, os.path.join(_REPO, "plugins"))
+sys.path.insert(0, os.path.join(_REPO, "plugins", "filter"))
 
 from vlan_filters import (  # noqa: E402
     load_vlan_db_from_directory,
@@ -58,30 +60,52 @@ class VlanDbLoaderTests(unittest.TestCase):
     def test_skips_example_files(self):
         self._write(
             "lisle/_example.yml",
-            "---\n_meta:\n  example: true\nid: 999\nname: example\n",
+            "---\n_meta:\n  example: true\nid: 999\nname: example\naction: migrate\nservice_type: l3\n",
         )
         self._write(
             "lisle/0100_legacy_web.yml",
-            "---\nid: 100\nname: legacy_web\naction: migrate\n",
+            "---\nid: 100\nname: legacy_web\naction: migrate\nservice_type: l3\n",
         )
         result = load_vlan_db_from_directory(self.tempdir, "lisle")
         self.assertEqual([record["id"] for record in result["vlans"]], [100])
 
     def test_targeted_load_only_matching_prefix(self):
-        self._write("lisle/0100_legacy_web.yml", "---\nid: 100\nname: a\n")
-        self._write("lisle/0200_legacy_app.yml", "---\nid: 200\nname: b\n")
+        self._write(
+            "lisle/0100_legacy_web.yml",
+            "---\nid: 100\nname: a\naction: migrate\nservice_type: l2\n",
+        )
+        self._write(
+            "lisle/0200_legacy_app.yml",
+            "---\nid: 200\nname: b\naction: migrate\nservice_type: l3\n",
+        )
         result = load_vlan_db_from_directory(self.tempdir, "lisle", [100])
         self.assertEqual([record["id"] for record in result["vlans"]], [100])
 
     def test_duplicate_vlan_ids_fail(self):
-        self._write("lisle/0100_a.yml", "---\nid: 100\nname: a\n")
-        self._write("lisle/0100_b.yml", "---\nid: 100\nname: b\n")
+        self._write(
+            "lisle/0100_a.yml",
+            "---\nid: 100\nname: a\naction: migrate\nservice_type: l3\n",
+        )
+        self._write(
+            "lisle/0100_b.yml",
+            "---\nid: 100\nname: b\naction: migrate\nservice_type: l3\n",
+        )
         with self.assertRaises(Exception):
             load_vlan_db_from_directory(self.tempdir, "lisle")
 
     def test_parse_vlan_record_list_wrapper(self):
-        record = parse_vlan_record({"vlans": [{"id": 10, "name": "x"}]}, "test.yml")
+        record = parse_vlan_record(
+            {"vlans": [{"id": 10, "name": "x", "action": "migrate", "service_type": "l2"}]},
+            "test.yml",
+        )
         self.assertEqual(record["id"], 10)
+
+    def test_schema_rejects_invalid_service_type(self):
+        with self.assertRaises(Exception):
+            parse_vlan_record(
+                {"id": 1, "name": "x", "action": "migrate", "service_type": "l4"},
+                "bad.yml",
+            )
 
 
     def test_coalesce_trimmed(self):

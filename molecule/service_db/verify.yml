@@ -1,0 +1,29 @@
+---
+- name: Verify service_db facts
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    project_root: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}"
+    service_db_dir: "{{ project_root }}/molecule/service_db/fixtures/services"
+    target_data_center: lisle
+    manual_service_id: demo_svc
+  tasks:
+    - name: Reload service bundle for assertions
+      ansible.builtin.include_role:
+        name: service_db
+
+    - name: Reload VLAN DB after service seeds target_vlan_ids
+      ansible.builtin.include_role:
+        name: vlan_db
+
+    - name: Assert service load and seeded VLAN selection
+      ansible.builtin.assert:
+        that:
+          - hostvars['localhost']['_service_record'].id == 'demo_svc'
+          - hostvars['localhost']['_service_record'].order == 'prune_then_build'
+          - "'v0000822a' in hostvars['localhost']['_prune_retain'].vrfs"
+          - hostvars['localhost']['_service_seeded_vlan_ids'] | default(false) | bool
+          - hostvars['localhost'].target_vlan_ids | map('int') | list | sort == [100, 200]
+          - hostvars['localhost']['_effective_vlans'] | map(attribute='id') | map('int') | list | sort == [100, 200]
+        quiet: true

@@ -1,0 +1,13 @@
+---
+- name: Converge vlan_db
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    project_root: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}"
+    target_data_center: lisle
+    manual_vlan_id: 100
+  tasks:
+    - name: Load VLAN database for Lisle VLAN 100
+      ansible.builtin.include_role:
+        name: vlan_db

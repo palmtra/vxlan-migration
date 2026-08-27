@@ -1,0 +1,9 @@
+---
+- name: Create (unmanaged localhost)
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks:
+    - name: No instance bootstrap required
+      ansible.builtin.debug:
+        msg: "service_db molecule uses unmanaged localhost + fixture service dir"

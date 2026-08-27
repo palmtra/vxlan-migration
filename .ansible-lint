@@ -7,10 +7,12 @@ profile: production
 exclude_paths:
   - .local/
   - .git/
+  - .venv/
   - backups/
   - collections/
   - reports/
   - .github/
+  - .molecule/
 
 warn_list:
   - experimental

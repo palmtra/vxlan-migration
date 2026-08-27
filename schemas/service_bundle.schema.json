@@ -1,0 +1,65 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://vxlan-migration.local/schemas/service_bundle.schema.json",
+  "title": "Service migration bundle",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["id", "data_center"],
+  "properties": {
+    "id": { "type": "string", "minLength": 1 },
+    "name": { "type": "string" },
+    "data_center": { "type": "string", "minLength": 1 },
+    "customer_id": { "type": "string" },
+    "customer_prefix": { "type": "string" },
+    "order": {
+      "type": "string",
+      "enum": ["prune_then_build", "build_then_prune", "shut_cutover"]
+    },
+    "pattern": { "type": "string" },
+    "vlans": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id"],
+        "properties": {
+          "id": { "type": "integer", "minimum": 1, "maximum": 4094 },
+          "role": { "type": "string" },
+          "vni": { "type": ["integer", "null"] },
+          "service_type": { "type": "string", "enum": ["l2", "l3", "l2_l3"] },
+          "vlan_name": { "type": "string" },
+          "vrf": { "type": "string" },
+          "target_switches": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "discovery_switches": {
+            "type": "array",
+            "items": { "type": "string" }
+          }
+        },
+        "additionalProperties": true
+      }
+    },
+    "vrfs": { "type": "array" },
+    "build": { "type": "object" },
+    "prune": {
+      "type": "object",
+      "properties": {
+        "retain": {
+          "type": "object",
+          "properties": {
+            "vrfs": { "type": "array", "items": { "type": "string" } },
+            "bgp_neighbors": { "type": "array" },
+            "interfaces": { "type": "array", "items": { "type": "string" } },
+            "static_route_names": { "type": "array", "items": { "type": "string" } }
+          },
+          "additionalProperties": true
+        },
+        "devices": { "type": "object" }
+      },
+      "additionalProperties": true
+    },
+    "_meta": { "type": "object" },
+    "_source_file": { "type": "string" }
+  }
+}

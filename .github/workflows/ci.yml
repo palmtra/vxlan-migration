@@ -23,7 +23,8 @@ jobs:
       - name: Install lint and test tools
         run: |
           python -m pip install --upgrade pip
-          pip install "ansible-core>=2.16,<2.19" ansible-lint yamllint PyYAML
+          pip install "ansible-core>=2.16,<2.19" ansible-lint yamllint PyYAML jsonschema molecule
+          pip install -r requirements.txt
 
       - name: Install Ansible collections
         run: ansible-galaxy collection install -r collections/requirements.yml -p collections/
@@ -33,6 +34,11 @@ jobs:
 
       - name: Unit tests
         run: python -m unittest discover -s tests -v
+
+      - name: Molecule (vlan_db + service_db)
+        run: |
+          molecule test -s vlan_db
+          molecule test -s service_db
 
       - name: Ansible syntax-check (core playbooks)
         run: |
