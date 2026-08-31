@@ -7,6 +7,7 @@ from ansible.errors import AnsibleFilterError
 
 from vlan_lib.common import _str_equal, _vlan_present
 from vlan_lib.parsers import (
+    _normalize_interface_name,
     classify_mac_port_role,
     parse_arp_entries,
     parse_mac_address_table,
@@ -29,6 +30,7 @@ def extract_vlan_targeted_discovery(vlan, outputs):
     platform = outputs.get("platform", "eos")
     trunk_interface_names = outputs.get("trunk_interface_names", []) or []
     exempt_trunk_interface_names = outputs.get("exempt_trunk_interface_names", []) or []
+    trunk_summaries = outputs.get("trunk_summaries") or []
 
     port_membership = parse_vlan_id_ports(
         vlan_output,
@@ -63,14 +65,35 @@ def extract_vlan_targeted_discovery(vlan, outputs):
         "vrf": "",
         "ip_addresses": [],
         "virtual_router_addresses": [],
+        "hsrp_addresses": [],
+        "hsrp_groups": [],
     }
+    summary_by_norm = {}
+    for item in trunk_summaries:
+        if not isinstance(item, dict):
+            continue
+        iface = item.get("interface") or ""
+        if iface:
+            summary_by_norm[_normalize_interface_name(iface, platform)] = item.get(
+                "allowed_summary", ""
+            )
+    trunk_allowed = []
+    for iface in trunk_ports:
+        trunk_allowed.append(
+            {
+                "interface": iface,
+                "allowed_summary": summary_by_norm.get(
+                    _normalize_interface_name(iface, platform), ""
+                ),
+            }
+        )
     trunk_cleanup_recommendations = [
         {
             "interface": iface,
             "port_role": "trunk",
             "cli": "switchport trunk allowed vlan remove %s" % int(vlan_id),
             "recommendation": (
-                "VLAN %s is carried on trunk %s. Cleanup is "
+                "VLAN %s is carried on trunk %s. Human prune CLI is "
                 "`switchport trunk allowed vlan remove %s` on that interface "
                 "(candidate only; discovery never applies deletes)."
                 % (vlan_id, iface, vlan_id)
@@ -87,6 +110,8 @@ def extract_vlan_targeted_discovery(vlan, outputs):
     return {
         "vlan_id": vlan_id,
         "vlan_name": vlan.get("name", ""),
+        "vlan_name_on_box": port_membership.get("vlan_name_on_box", ""),
+        "os_family": str(platform).lower(),
         "target_vrf": svi_vrf or outputs.get("target_vrf", vlan.get("vrf", "")),
         "svi_vrf": svi_vrf,
         "svi_details": svi_details,
@@ -97,6 +122,7 @@ def extract_vlan_targeted_discovery(vlan, outputs):
         "access_ports": access_ports,
         "trunk_ports": trunk_ports,
         "exempt_trunk_ports": exempt_trunk_ports,
+        "trunk_allowed": trunk_allowed,
         "uplinks": uplinks,
         "all_ports": port_membership.get("all_ports", []),
         "ports_raw": port_membership.get("ports_raw", ""),

@@ -110,8 +110,8 @@ ansible-playbook -i inventory/hosts.yml playbooks/core/discover_vlan.yml \
 Effects:
 
 - Seeds `target_vlan_ids` from the service `vlans:` list (when you did not pass VLAN ids).
-- Applies `prune.retain` when building candidate prune plans (retained VRFs/neighbors are `blocked_by_retain`).
-- Still **read-only** — no deletes are applied.
+- Applies `prune.retain` when tagging L3 review objects (`blocked_by_retain`).
+- Still **read-only** — no deletes are applied. A human uses the prune report.
 
 Without a service file you can pass retain inline:
 
@@ -180,9 +180,14 @@ that far without failing on earlier hosts.
 <repo-root>/reports/<dc>/_prune_plans/<hostname>_prune_plan_<timestamp>.json
 ```
 
-Markdown/JSON VLAN reports include a **Prune plan candidates** section (trunk/VLAN/SVI,
-plus EOS statics and BGP neighbors when `discovery_collect_prune_context=true`).
-Device-level JSON plans under `_prune_plans/` are candidates only (`destructive: false`).
+Markdown/JSON VLAN reports are structured for the operator journey:
+
+1. **App-owner view** — MACs, access ports, trunks, switches (shareable).
+2. **Where to prune** — trunk / SVI / VLAN candidates only. Access ports block prune.
+3. **L3 discovery** — SVI, HSRP/anycast, VRF (labelled shared), statics and BGP in that VRF. Not prune actions.
+4. **SSOT snippet** → fill VNI → generate VXLAN config (`workflow_deploy.yml`, `cvp_apply_configlets=false` by default).
+
+Device-level JSON plans under `_prune_plans/` are candidates only (`destructive: false`, `apply_automated: false`).
 
 The directory is **auto-created** (`ansible.builtin.file` with `state: directory`) during discovery.
 It is listed in `.gitignore`, so it will not appear in `git status` even when present.

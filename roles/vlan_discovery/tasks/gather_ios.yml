@@ -6,6 +6,13 @@
 - name: IOS - initialize per-VLAN discovery results
   ansible.builtin.set_fact:
     _ios_per_vlan_results: []
+    _ios_static_routes: []
+    _ios_bgp_neighbors: []
+    _ios_bgp_vlan_blocks: []
+    _ios_bgp_vrfs: []
+    _ios_bgp_as: ""
+    _ios_ip_route_raw: ""
+    _ios_bgp_raw: ""
 
 - name: IOS - collect trunk interface names for port classification
   ansible.builtin.include_tasks: gather_ios_trunks.yml
@@ -17,12 +24,18 @@
     loop_var: _disc_vlan
     label: "{{ _disc_vlan.id }}"
 
-- name: IOS - build retain-aware prune plan candidates (VLAN/SVI/trunk only)
+- name: IOS - collect L3 discovery context (statics + BGP)
+  ansible.builtin.include_tasks: gather_ios_l3_context.yml
+  when: discovery_collect_prune_context | default(true) | bool
+
+- name: IOS - build retain-aware prune plan candidates (VLAN/SVI/trunk)
   ansible.builtin.set_fact:
-    _ios_prune_plan: "{{ inventory_hostname | string | build_device_prune_plan(_pp_vlans, _pp_retain, [], [], none) }}"
+    _ios_prune_plan: "{{ inventory_hostname | string | build_device_prune_plan(_pp_vlans, _pp_retain, _pp_statics, _pp_bgp, none) }}"
   vars:
     _pp_vlans: "{{ _ios_per_vlan_results | default([]) }}"
     _pp_retain: "{{ hostvars['localhost']['_prune_retain'] | default(discovery_prune_retain | default({})) }}"
+    _pp_statics: "{{ _ios_static_routes | default([]) }}"
+    _pp_bgp: "{{ _ios_bgp_neighbors | default([]) }}"
   when: discovery_write_prune_plan | default(true) | bool
 
 - name: IOS - default empty prune plan when disabled
@@ -37,7 +50,12 @@
       data_center: "{{ data_center | default('unknown') }}"
       os_family: "{{ network_os_family }}"
       timestamp: "{{ ansible_date_time.iso8601 }}"
-      static_routes: []
-      bgp_neighbors: []
+      static_routes: "{{ _ios_static_routes | default([]) }}"
+      bgp_neighbors: "{{ _ios_bgp_neighbors | default([]) }}"
+      bgp_vlan_blocks: "{{ _ios_bgp_vlan_blocks | default([]) }}"
+      bgp_vrfs: "{{ _ios_bgp_vrfs | default([]) }}"
+      bgp_as: "{{ _ios_bgp_as | default('') }}"
+      ip_route_raw: "{{ _ios_ip_route_raw | default('') }}"
+      bgp_raw: "{{ _ios_bgp_raw | default('') }}"
       prune_plan: "{{ _ios_prune_plan | default({}) }}"
       per_vlan: "{{ _ios_per_vlan_results | default([]) }}"

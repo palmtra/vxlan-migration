@@ -89,14 +89,15 @@ target_switches:
 
 ### Discovery
 
-Discovery is **read-only** and uses `service_type` to scope L3 checks:
+Discovery is **read-only**. `service_type` documents migration intent. SVI and ARP are collected whenever an SVI exists (including if SSOT still says `l2`). BGP, statics, and VRF context are collected on L3-capable devices and scoped to the SVI VRF in the report — even when that VRF is shared.
 
 | Check | Runs for |
 |---|---|
 | `show vlan id` / ports / trunks | All types |
 | MAC table | All types |
-| `show run interface Vlan<id>` (SVI) | `l3`, `l2_l3` |
-| ARP in SVI VRF | `l3`, `l2_l3` (when SVI exists) |
+| `show run interface Vlan<id>` (SVI) | Whenever collected (always queried; parsed if present) |
+| ARP in SVI VRF | When an SVI exists |
+| BGP / statics / VRF RD-RT | When `discovery_collect_prune_context=true` (default); shown if an SVI is present |
 
 Probe mode (`discovery_allow_probe=true`) defaults new records to `l3`; override with `-e discovery_probe_service_type=l2` when you know the VLAN is L2-only.
 
@@ -139,4 +140,4 @@ flowchart TD
 
 - Greenfield VXLAN VLAN creation (separate tooling)
 - Automatic SVI creation or full EVPN policy design (configlets are migration snippets; fabric baseline is assumed)
-- Trunk prune / legacy cleanup (reported in discovery; executed via `decomm-vlan`)
+- Trunk prune / legacy cleanup (reported in discovery for a human; apply is parked)

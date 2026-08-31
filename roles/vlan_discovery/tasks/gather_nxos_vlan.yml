@@ -32,7 +32,6 @@
     _disc_arp_command: "{{ 'nxos' | arp_discovery_command(_disc_vlan.id, _disc_svi_vrf, _disc_svi_present) }}"
   when:
     - _disc_svi_present | bool
-    - (_disc_vlan.service_type | default('l3')) in ['l3', 'l2_l3']
     - _disc_arp_command | length > 0
   check_mode: false
   changed_when: false
@@ -64,5 +63,6 @@
       'arp_output': _nxos_arp_show.stdout | default(''),
       'trunk_interface_names': _trunk_interface_names | default([]),
       'exempt_trunk_interface_names': _trunk_exempt_interface_names | default([]),
+      'trunk_summaries': _nxos_trunk_summaries | default([]),
       'target_vrf': target_vrf | default('')
     }) }}"

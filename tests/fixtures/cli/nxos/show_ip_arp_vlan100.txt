@@ -1,0 +1,5 @@
+IP ARP Table for context TENANT1
+Total number of entries: 2
+Address         Age       MAC Address     Interface
+10.10.100.10    00:00:12  0050.56ab.1001  Vlan100
+10.10.100.1     00:00:00  001c.7300.aa01  Vlan100

@@ -1,0 +1,34 @@
+---
+# -----------------------------------------------------------------------------
+# IOS - L3 discovery context (statics + BGP). Parked platform; same visibility.
+# -----------------------------------------------------------------------------
+
+- name: IOS - show running-config ip route lines
+  ansible.netcommon.cli_command:
+    command: show running-config | include ^ip route
+  register: _ios_ip_route_section
+  check_mode: false
+  changed_when: false
+  failed_when: false
+
+- name: IOS - show running-config section router bgp
+  ansible.netcommon.cli_command:
+    command: show running-config | section router bgp
+  register: _ios_bgp_section
+  check_mode: false
+  changed_when: false
+  failed_when: false
+
+- name: IOS - parse static routes and BGP context
+  ansible.builtin.set_fact:
+    _ios_static_routes: "{{ _ios_ip_route_section.stdout | default('') | parse_ip_route_statics }}"
+    _ios_bgp_context: "{{ _ios_bgp_section.stdout | default('') | parse_bgp_context }}"
+    _ios_ip_route_raw: "{{ _ios_ip_route_section.stdout | default('') }}"
+    _ios_bgp_raw: "{{ _ios_bgp_section.stdout | default('') }}"
+
+- name: IOS - unpack BGP neighbors, VLAN blocks, and VRF RD/RT
+  ansible.builtin.set_fact:
+    _ios_bgp_neighbors: "{{ _ios_bgp_context.neighbors | default([]) }}"
+    _ios_bgp_vlan_blocks: "{{ _ios_bgp_context.vlan_blocks | default([]) }}"
+    _ios_bgp_vrfs: "{{ _ios_bgp_context.vrfs | default([]) }}"
+    _ios_bgp_as: "{{ _ios_bgp_context.bgp_as | default('') }}"

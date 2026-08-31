@@ -8,6 +8,9 @@
     _eos_per_vlan_results: []
     _eos_static_routes: []
     _eos_bgp_neighbors: []
+    _eos_bgp_vlan_blocks: []
+    _eos_bgp_vrfs: []
+    _eos_bgp_as: ""
     _eos_ip_route_raw: ""
     _eos_bgp_raw: ""
 
@@ -29,11 +32,11 @@
   changed_when: false
   failed_when: false
 
-- name: EOS - collect prune context (statics + BGP)
+- name: EOS - collect L3 discovery context (statics + BGP)
   ansible.builtin.include_tasks: gather_eos_prune_context.yml
   when: discovery_collect_prune_context | default(true) | bool
 
-- name: EOS - build retain-aware prune plan candidates
+- name: EOS - build human-review prune plan (trunk / SVI / VLAN)
   ansible.builtin.set_fact:
     _eos_prune_plan: "{{ inventory_hostname | string | build_device_prune_plan(_pp_vlans, _pp_retain, _pp_statics, _pp_bgp, none) }}"
   vars:
@@ -58,6 +61,9 @@
       vxlan_raw: "{{ _eos_show_vxlan.stdout | default('') }}"
       static_routes: "{{ _eos_static_routes | default([]) }}"
       bgp_neighbors: "{{ _eos_bgp_neighbors | default([]) }}"
+      bgp_vlan_blocks: "{{ _eos_bgp_vlan_blocks | default([]) }}"
+      bgp_vrfs: "{{ _eos_bgp_vrfs | default([]) }}"
+      bgp_as: "{{ _eos_bgp_as | default('') }}"
       ip_route_raw: "{{ _eos_ip_route_raw | default('') }}"
       bgp_raw: "{{ _eos_bgp_raw | default('') }}"
       prune_plan: "{{ _eos_prune_plan | default({}) }}"

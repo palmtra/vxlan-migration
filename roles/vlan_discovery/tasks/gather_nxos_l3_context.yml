@@ -1,0 +1,42 @@
+---
+# -----------------------------------------------------------------------------
+# NXOS - L3 discovery context (VRF-context statics + BGP). Visibility only.
+# -----------------------------------------------------------------------------
+
+- name: NXOS - show running-config bgp
+  ansible.netcommon.cli_command:
+    command: show running-config bgp
+  register: _nxos_bgp_section
+  check_mode: false
+  changed_when: false
+  failed_when: false
+
+- name: NXOS - show running-config vrf context blocks (statics live here)
+  ansible.netcommon.cli_command:
+    command: show running-config | section vrf context
+  register: _nxos_vrf_context_section
+  check_mode: false
+  changed_when: false
+  failed_when: false
+
+- name: NXOS - show global ip route lines
+  ansible.netcommon.cli_command:
+    command: show running-config | include "^ip route"
+  register: _nxos_ip_route_include
+  check_mode: false
+  changed_when: false
+  failed_when: false
+
+- name: NXOS - parse static routes and BGP context
+  ansible.builtin.set_fact:
+    _nxos_static_routes: "{{ (_nxos_vrf_context_section.stdout | default('') ~ '\n' ~ (_nxos_ip_route_include.stdout | default(''))) | parse_ip_route_statics }}"
+    _nxos_bgp_context: "{{ _nxos_bgp_section.stdout | default('') | parse_bgp_context }}"
+    _nxos_ip_route_raw: "{{ (_nxos_vrf_context_section.stdout | default('') ~ '\n' ~ (_nxos_ip_route_include.stdout | default(''))) }}"
+    _nxos_bgp_raw: "{{ _nxos_bgp_section.stdout | default('') }}"
+
+- name: NXOS - unpack BGP neighbors, VLAN blocks, and VRF RD/RT
+  ansible.builtin.set_fact:
+    _nxos_bgp_neighbors: "{{ _nxos_bgp_context.neighbors | default([]) }}"
+    _nxos_bgp_vlan_blocks: "{{ _nxos_bgp_context.vlan_blocks | default([]) }}"
+    _nxos_bgp_vrfs: "{{ _nxos_bgp_context.vrfs | default([]) }}"
+    _nxos_bgp_as: "{{ _nxos_bgp_context.bgp_as | default('') }}"

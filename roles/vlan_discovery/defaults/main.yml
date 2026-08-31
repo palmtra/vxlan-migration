@@ -13,8 +13,8 @@ discovery_write_json: true
 discovery_write_yaml: true
 discovery_write_vlan_db_snippet: true
 
-# Collect EOS static routes + BGP neighbors and emit retain-aware prune_plan
-# candidates on discovery reports. Never applies deletes.
+# Collect static routes + BGP as first-class L3 discovery (EOS/NXOS/IOS).
+# Visibility only — never prune actions (especially default VRF / shared VRF).
 discovery_collect_prune_context: true
 discovery_write_prune_plan: true
 discovery_write_device_prune_plans: true

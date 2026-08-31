@@ -44,9 +44,9 @@ ansible-playbook -i inventory/hosts.yml playbooks/core/discover_vlan.yml \
   --limit dc_lisle
 ```
 
-Discovery stays **read-only**. The service `prune.retain` list is applied when
-building the candidate `prune_plan` so retained VRFs/neighbors/interfaces are
-marked `blocked_by_retain` instead of delete candidates.
+Discovery stays **read-only**. The service `prune.retain` list tags L3 review
+objects (`blocked_by_retain`). Prune **actions** remain trunk / SVI / VLAN only;
+statics and BGP are never auto-candidates.
 
 ## Related
 

@@ -1,0 +1,14 @@
+router bgp 65001
+  router-id 10.1.0.1
+  neighbor 10.1.0.21
+    remote-as 65001
+    update-source loopback0
+    description spine-peer
+  vrf TENANT1
+    rd auto
+    address-family ipv4 unicast
+      route-target both auto
+    neighbor 10.10.1.1
+      remote-as 65099
+      update-source Vlan100
+      description FW

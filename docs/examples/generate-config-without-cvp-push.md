@@ -4,6 +4,7 @@ Review VXLAN migration configlets locally before any CloudVision API call.
 
 ## When to use this
 
+- After discovery of a VLAN (report section 4) — generate overlay config from the SSOT snippet once `vni` is assigned.
 - First migration for a VLAN — validate generated EOS snippets against design standards.
 - Lab or change-window prep — produce artifacts for peer review without creating a CVP change control.
 - CI / preflight — confirm AVD or Jinja output renders without CVP credentials.

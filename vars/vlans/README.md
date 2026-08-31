@@ -41,6 +41,9 @@ action: migrate
 service_type: l3          # l2 | l3 | l2_l3 - see docs/VXLAN_SERVICE_TYPES.md
 vni: 50100
 vrf: default
+gateway: 10.10.100.1      # optional; discovery fills from VR / HSRP
+prefixes:                 # optional; derived from SVI CIDRs
+  - 10.10.100.0/24
 target_switches:
   - eos-leaf-lis-01
 discovery_switches:
@@ -48,8 +51,14 @@ discovery_switches:
   - nxos-spine-lis-01
 ```
 
-See `_example.yml` in each DC directory for the full field list.
-Records are validated against [`schemas/vlan_record.schema.json`](../../schemas/vlan_record.schema.json) on load (`jsonschema` required).
+Records are validated against [`schemas/vlan_record.schema.json`](../../schemas/vlan_record.schema.json) on load (`jsonschema` required). Discovery writes a paste-ready snippet with VRF, gateway (anycast/HSRP), prefixes, `service_type`, and switch lists filled in; **VNI must still be assigned** before migrate. L3 objects in a shared VRF are shown on the discovery report but are not unique to this VLAN.
+
+| Field | Required | Notes |
+|---|---|---|
+| `vrf` | yes | Target VRF (discovery fills from SVI) |
+| `gateway` | no | Anycast / HSRP / virtual-router address |
+| `prefixes` | no | Subnets from SVI CIDRs |
+| `target_switches` | yes (migrate) | EOS hosts for CVP |
 
 Choosing `l2` vs `l3` vs `l2_l3`: [docs/VXLAN_SERVICE_TYPES.md](../docs/VXLAN_SERVICE_TYPES.md).
 

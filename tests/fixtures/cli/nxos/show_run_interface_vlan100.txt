@@ -1,0 +1,7 @@
+interface Vlan100
+  description legacy_web
+  no shutdown
+  vrf member TENANT1
+  ip address 10.10.100.2 255.255.255.0
+  hsrp 1
+    ip 10.10.100.1

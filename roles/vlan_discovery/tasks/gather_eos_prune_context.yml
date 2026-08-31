@@ -1,8 +1,9 @@
 ---
 # -----------------------------------------------------------------------------
-# EOS - optional static route + BGP neighbor collection for prune_plan candidates
+# EOS - L3 discovery context (statics + BGP). Visibility only, not prune actions.
 # -----------------------------------------------------------------------------
-# Read-only. Used to harden discovery prune plans for multi-VRF services.
+# Read-only. Shared-VRF objects are shown even when they are not unique to
+# this VLAN. Default-VRF fabric statics/iBGP stay parked as prune actions.
 # -----------------------------------------------------------------------------
 
 - name: EOS - show running-config section ip route
@@ -21,9 +22,16 @@
   changed_when: false
   failed_when: false
 
-- name: EOS - parse static routes and BGP neighbors
+- name: EOS - parse static routes and BGP context
   ansible.builtin.set_fact:
     _eos_static_routes: "{{ _eos_ip_route_section.stdout | default('') | parse_ip_route_statics }}"
-    _eos_bgp_neighbors: "{{ _eos_bgp_section.stdout | default('') | parse_bgp_neighbors }}"
+    _eos_bgp_context: "{{ _eos_bgp_section.stdout | default('') | parse_bgp_context }}"
     _eos_ip_route_raw: "{{ _eos_ip_route_section.stdout | default('') }}"
     _eos_bgp_raw: "{{ _eos_bgp_section.stdout | default('') }}"
+
+- name: EOS - unpack BGP neighbors, VLAN blocks, and VRF RD/RT
+  ansible.builtin.set_fact:
+    _eos_bgp_neighbors: "{{ _eos_bgp_context.neighbors | default([]) }}"
+    _eos_bgp_vlan_blocks: "{{ _eos_bgp_context.vlan_blocks | default([]) }}"
+    _eos_bgp_vrfs: "{{ _eos_bgp_context.vrfs | default([]) }}"
+    _eos_bgp_as: "{{ _eos_bgp_context.bgp_as | default('') }}"

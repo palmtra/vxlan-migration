@@ -108,8 +108,36 @@ _BGP_ROUTER_RE = re.compile(r"^\s*router\s+bgp\s+(\d+)\s*$", re.I)
 
 _BGP_VRF_RE = re.compile(r"^\s*vrf\s+(\S+)\s*$", re.I)
 
+_BGP_VLAN_RE = re.compile(r"^\s*vlan\s+(\d+)\s*$", re.I)
+
+_BGP_RD_RE = re.compile(r"^\s*rd\s+(\S+)\s*$", re.I)
+
+_BGP_RT_RE = re.compile(r"^\s*route-target\s+(.+?)\s*$", re.I)
+
+_BGP_REDIST_RE = re.compile(r"^\s*redistribute\s+(.+?)\s*$", re.I)
+
+_BGP_NEIGHBOR_STANZA_RE = re.compile(r"^\s*neighbor\s+(\S+)\s*$", re.I)
+
+_BGP_INDENTED_ATTR_RE = re.compile(
+    r"^\s+(remote-as|update-source|description|route-map)\s+(.+?)\s*$",
+    re.I,
+)
+
 _BGP_NEIGHBOR_ATTR_RE = re.compile(
     r"^\s*neighbor\s+(?P<neighbor>\S+)\s+(?P<attr>remote-as|update-source|description|route-map)\s+(?P<value>.+?)\s*$",
+    re.I,
+)
+
+_VRF_CONTEXT_RE = re.compile(r"^\s*vrf\s+context\s+(\S+)", re.I)
+
+_IP_ROUTE_LINE_RE = re.compile(
+    r"^\s*ip\s+route(?:\s+vrf\s+(?P<vrf>\S+))?\s+"
+    r"(?:"
+    r"(?P<network>\d+\.\d+\.\d+\.\d+)\s+(?P<mask>\d+\.\d+\.\d+\.\d+)\s+(?P<nexthop_mask>\S+)"
+    r"|"
+    r"(?P<prefix>\S+)\s+(?P<nexthop>\S+)"
+    r")"
+    r"(?:.*?\s+name\s+(?P<name>\S+))?",
     re.I,
 )
 

@@ -30,19 +30,31 @@ Open features and planned work. Completed items are kept for context.
 ### Discovery quality
 
 - [x] Structured SVI parse (description, MTU, IP, virtual-router address, VRF)
-- [x] EOS static route + BGP neighbor collection for prune plan candidates
+- [x] EOS static route + BGP neighbor collection for **L3 review** (not prune actions)
+- [x] NXOS L3 discovery (VRF-context statics, split-stanza BGP, HSRP groups)
+- [x] First-class `l3_discovery` on VLAN reports (shared-VRF warning; SVI/HSRP/BGP/statics)
+- [x] App-owner L2 inventory (MACs, access ports, trunks) plus prune-where and SSOT next-step sections
 - [x] Retain-aware `prune_plan` candidates in discovery reports (no deletes applied)
 - [x] Structured MAC address table + ARP entry parsing (MAC→port / IP→MAC) in discovery reports
 - [x] Trunk cleanup intent kept simple: list VLAN-carrying trunks + `switchport trunk allowed vlan remove <id>` (no per-interface config dump)
-- [ ] NXOS cumulative allow-list parsing for `add`/`remove` trunk lines
-- [ ] CLI output fixture tests (EOS/NXOS/IOS sample files)
+- [x] NXOS cumulative allow-list parsing for `add`/`remove` trunk lines
+- [x] CLI output fixture tests (EOS/NXOS sample files under `tests/fixtures/cli/`)
+- [x] Human-only prune report: trunk / SVI / VLAN candidates with access-port blockers
+- [x] Discovery SSOT snippet fills VRF, gateway, prefixes, `service_type`, switch lists from facts
+
+### Parked / hold (do not implement until there is a use-case)
+
+- [ ] Default-VRF static route + BGP neighbor **prune candidates** (shown as L3 review only; not actions)
 - [ ] In-repo prune apply role (session diffs + commit timer + retain fail-closed)
+
+Human operators prune L3/SVIs from the discovery report. Automated apply is reserved for a future greenfield/new-customer deployment app, not this migration workflow.
 
 ### VLAN database
 
 - [x] Optional service bundles under `vars/services/<dc>/` (multi-VLAN orchestrator + retain)
 - [x] JSON Schema validation for `vars/vlans/<dc>/*.yml` and `vars/services/<dc>/*.yml`
-- [ ] Document and enforce additional fields (customer ID, old VRF, gateway, subnet, etc.)
+- [x] Document optional SSOT fields filled by discovery (`gateway`, `prefixes`)
+- [ ] Document and enforce additional fields (customer ID, old VRF, etc.)
 - [ ] Support VLANs shared across DCs vs DC-exclusive IDs (collision policy)
 
 ### Core workflow hardening
@@ -82,7 +94,7 @@ Open features and planned work. Completed items are kept for context.
 
 - Multi-VLAN batch migration from a single Core job
 - Integration test harness with mocked EOS/NXOS (`ansible.netcommon` + text fixtures)
-- Post-migration handoff to `decomm-vlan` with structured cleanup payload
+- Post-migration handoff to `decomm-vlan` with structured cleanup payload (human prune report is the payload today)
 - Git-backed VLAN DB change review (MR per VLAN addition)
 - Prometheus / AWX artifact upload for report URLs on ticket
 

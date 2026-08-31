@@ -1,0 +1,16 @@
+router bgp 65001
+   router-id 10.1.0.17
+   neighbor 10.1.0.21 remote-as 65001
+   neighbor 10.1.0.21 update-source Loopback0
+   neighbor 10.1.0.21 description spine-iBGP
+   !
+   vlan 100
+      rd 10.1.0.17:100
+      route-target both 65001:100
+      redistribute learned
+   !
+   vrf TENANT1
+      rd 10.1.0.17:1
+      route-target import evpn 65001:1
+      neighbor 10.10.1.1 remote-as 65099
+      neighbor 10.10.1.1 description FW

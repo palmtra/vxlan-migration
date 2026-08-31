@@ -6,13 +6,20 @@ import re
 from ansible.errors import AnsibleFilterError
 
 from vlan_lib.common import (
+    _BGP_INDENTED_ATTR_RE,
     _BGP_NEIGHBOR_ATTR_RE,
+    _BGP_NEIGHBOR_STANZA_RE,
+    _BGP_RD_RE,
+    _BGP_REDIST_RE,
     _BGP_ROUTER_RE,
+    _BGP_RT_RE,
+    _BGP_VLAN_RE,
     _BGP_VRF_RE,
     _IP_ADDRESS_RE,
-    _IP_ROUTE_RE,
+    _IP_ROUTE_LINE_RE,
     _MAC_ADDRESS_RE,
     _PORT_NAME_RE,
+    _VRF_CONTEXT_RE,
     _SVI_DESC_RE,
     _SVI_IP_RE,
     _SVI_MTU_RE,
@@ -117,6 +124,21 @@ def _extract_port_names_from_fragments(fragments):
     return ports
 
 
+def parse_vlan_id_name(vlan_output, vlan_id):
+    """Return the on-box VLAN name from `show vlan id` when present."""
+    vid = str(int(vlan_id))
+    for line in str(vlan_output or "").splitlines():
+        match = re.match(
+            rf"^\s*{re.escape(vid)}\s+(\S+)\s+"
+            r"(?:active|inactive|suspend(?:ed)?|act/unsup|unsupport(?:ed)?)\b",
+            line,
+            re.I,
+        )
+        if match:
+            return match.group(1)
+    return ""
+
+
 def parse_vlan_id_ports(
     vlan_output,
     vlan_id,
@@ -149,6 +171,7 @@ def parse_vlan_id_ports(
     if _output_indicates_missing(vlan_output):
         return {
             "vlan_present": False,
+            "vlan_name_on_box": "",
             "has_port_membership": False,
             "ports_raw": "",
             "all_ports": [],
@@ -177,6 +200,7 @@ def parse_vlan_id_ports(
 
     return {
         "vlan_present": vlan_present,
+        "vlan_name_on_box": parse_vlan_id_name(vlan_output, vlan_id) if vlan_present else "",
         "has_port_membership": bool(all_ports),
         "ports_raw": ports_raw,
         "all_ports": all_ports,
@@ -460,6 +484,109 @@ def parse_svi_vrf(svi_config, platform="eos"):
     return "default"
 
 
+def _dotted_mask_to_prefix_len(mask):
+    """Convert a dotted IPv4 mask to a prefix length."""
+    octets = [int(part) for part in str(mask).split(".")]
+    if len(octets) != 4 or any(part < 0 or part > 255 for part in octets):
+        return None
+    bits = "".join(bin(part)[2:].zfill(8) for part in octets)
+    if "01" in bits:
+        return None
+    return bits.count("1")
+
+
+def network_prefix(cidr):
+    """Return the network prefix for a host CIDR (10.10.100.2/24 → 10.10.100.0/24)."""
+    text = str(cidr or "").strip()
+    if "/" not in text:
+        return text
+    ip_text, plen_text = text.split("/", 1)
+    try:
+        plen = int(plen_text)
+        octets = [int(part) for part in ip_text.split(".")]
+    except ValueError:
+        return text
+    if len(octets) != 4 or plen < 0 or plen > 32:
+        return text
+    value = (octets[0] << 24) + (octets[1] << 16) + (octets[2] << 8) + octets[3]
+    mask = (0xFFFFFFFF << (32 - plen)) & 0xFFFFFFFF if plen else 0
+    value &= mask
+    return "%d.%d.%d.%d/%d" % (
+        (value >> 24) & 255,
+        (value >> 16) & 255,
+        (value >> 8) & 255,
+        value & 255,
+        plen,
+    )
+
+
+def parse_svi_ip_addresses(svi_config):
+    """Parse SVI IPv4 addresses (CIDR or dotted-mask NXOS/IOS form)."""
+    addresses = []
+    seen = set()
+    pattern = re.compile(
+        r"^\s*ip\s+address\s+(\d+\.\d+\.\d+\.\d+)"
+        r"(?:/(\d+)|(?:\s+(\d+\.\d+\.\d+\.\d+)))?"
+        r"(?:\s+secondary)?\s*$",
+        re.I | re.M,
+    )
+    for match in pattern.finditer(str(svi_config or "")):
+        ip_addr = match.group(1)
+        if match.group(2):
+            cidr = "%s/%s" % (ip_addr, match.group(2))
+        elif match.group(3):
+            plen = _dotted_mask_to_prefix_len(match.group(3))
+            cidr = "%s/%s" % (ip_addr, plen) if plen is not None else ip_addr
+        else:
+            cidr = ip_addr
+        if cidr in seen:
+            continue
+        seen.add(cidr)
+        addresses.append(cidr)
+    return addresses
+
+
+def parse_hsrp_groups(svi_config):
+    """Parse NXOS HSRP groups from an SVI snippet as ``{group, ip}`` dicts."""
+    groups = []
+    current = None
+    for raw_line in str(svi_config or "").splitlines():
+        group_match = re.match(r"^\s*hsrp\s+(\d+)(?:\s+\S+)?\s*$", raw_line, re.I)
+        if group_match and not re.match(r"^\s*hsrp\s+version\b", raw_line, re.I):
+            current = {"group": int(group_match.group(1)), "ip": ""}
+            groups.append(current)
+            continue
+        if current is None:
+            continue
+        if re.match(r"^\s*interface\b", raw_line, re.I):
+            current = None
+            continue
+        if re.match(r"^\s*hsrp\s+\d+", raw_line, re.I):
+            continue
+        match = re.match(r"^\s+ip\s+(\d+\.\d+\.\d+\.\d+)\s*$", raw_line, re.I)
+        if match:
+            if not current.get("ip"):
+                current["ip"] = match.group(1)
+            continue
+        stripped = raw_line.strip()
+        if stripped and not raw_line.startswith((" ", "\t")):
+            current = None
+    return [group for group in groups if group.get("ip")]
+
+
+def parse_hsrp_addresses(svi_config):
+    """Parse NXOS HSRP VIP addresses from an SVI snippet."""
+    addresses = []
+    seen = set()
+    for group in parse_hsrp_groups(svi_config):
+        vip = group.get("ip")
+        if not vip or vip in seen:
+            continue
+        seen.add(vip)
+        addresses.append(vip)
+    return addresses
+
+
 def parse_svi_details(svi_config, platform="eos"):
     """Parse structured fields from an SVI running-config snippet."""
     if not svi_config or _output_indicates_missing(svi_config):
@@ -470,35 +597,71 @@ def parse_svi_details(svi_config, platform="eos"):
             "vrf": "",
             "ip_addresses": [],
             "virtual_router_addresses": [],
+            "hsrp_addresses": [],
+            "hsrp_groups": [],
         }
 
     text = str(svi_config)
     desc_match = _SVI_DESC_RE.search(text)
     mtu_match = _SVI_MTU_RE.search(text)
+    vr_addrs = [match.group(1) for match in _SVI_VR_ADDR_RE.finditer(text)]
+    hsrp_groups = parse_hsrp_groups(text)
+    hsrp_addrs = parse_hsrp_addresses(text)
     return {
         "present": True,
         "description": desc_match.group(1).strip() if desc_match else "",
         "mtu": int(mtu_match.group(1)) if mtu_match else None,
         "vrf": parse_svi_vrf(text, platform),
-        "ip_addresses": [match.group(1) for match in _SVI_IP_RE.finditer(text)],
-        "virtual_router_addresses": [
-            match.group(1) for match in _SVI_VR_ADDR_RE.finditer(text)
+        "ip_addresses": parse_svi_ip_addresses(text) or [
+            match.group(1) for match in _SVI_IP_RE.finditer(text)
         ],
+        "virtual_router_addresses": vr_addrs,
+        "hsrp_addresses": hsrp_addrs,
+        "hsrp_groups": hsrp_groups,
     }
 
 
 def parse_ip_route_statics(route_config):
-    """Parse static `ip route [vrf X] ...` lines from running-config output."""
+    """Parse static routes from EOS ``ip route [vrf X]`` and NXOS vrf-context."""
     if not route_config or not str(route_config).strip():
         return []
 
     routes = []
     seen = set()
-    for match in _IP_ROUTE_RE.finditer(str(route_config)):
+    current_vrf = None
+    for raw_line in str(route_config).splitlines():
+        line = raw_line.rstrip()
+        stripped = line.strip()
+        if not stripped or stripped.startswith("!"):
+            continue
+
+        ctx_match = _VRF_CONTEXT_RE.match(line)
+        if ctx_match:
+            current_vrf = ctx_match.group(1)
+            continue
+
+        if current_vrf and not raw_line[:1] in (" ", "\t"):
+            if not _VRF_CONTEXT_RE.match(line):
+                current_vrf = None
+
+        match = _IP_ROUTE_LINE_RE.match(line)
+        if not match:
+            continue
+        if match.group("network") and match.group("mask"):
+            plen = _dotted_mask_to_prefix_len(match.group("mask"))
+            prefix = (
+                "%s/%s" % (match.group("network"), plen)
+                if plen is not None
+                else match.group("network")
+            )
+            next_hop = match.group("nexthop_mask")
+        else:
+            prefix = match.group("prefix")
+            next_hop = match.group("nexthop")
         route = {
-            "vrf": match.group("vrf") or "default",
-            "prefix": match.group("prefix"),
-            "next_hop": match.group("nexthop"),
+            "vrf": match.group("vrf") or current_vrf or "default",
+            "prefix": prefix,
+            "next_hop": next_hop,
             "name": match.group("name") or "",
         }
         key = (
@@ -514,50 +677,51 @@ def parse_ip_route_statics(route_config):
     return routes
 
 
-def parse_bgp_neighbors(bgp_config):
-    """Parse VRF-scoped BGP neighbors from `show run section router bgp` output."""
+def _bgp_apply_neighbor_attr(entry, attr, value):
+    attr = str(attr or "").lower()
+    value = str(value or "").strip()
+    if attr == "remote-as":
+        entry["remote_as"] = value
+    elif attr == "update-source":
+        entry["update_source"] = value
+    elif attr == "description":
+        entry["description"] = value
+    elif attr == "route-map":
+        entry["route_maps"].append(value)
+
+
+def parse_bgp_context(bgp_config):
+    """Parse BGP running-config: ASN, VRF RD/RT, VLAN EVPN blocks, neighbors.
+
+    Handles EOS same-line ``neighbor X remote-as`` and NXOS split stanzas
+    (``neighbor X`` then indented ``remote-as``).
+    """
+    empty = {
+        "bgp_as": "",
+        "neighbors": [],
+        "vlan_blocks": [],
+        "vrfs": [],
+    }
     if not bgp_config or not str(bgp_config).strip():
-        return []
+        return empty
 
     neighbors = {}
+    vlan_blocks = {}
+    vrf_blocks = {}
     current_vrf = "default"
+    vrf_indent = None
+    current_vlan = None
+    vlan_indent = None
+    current_neighbor = None
+    neighbor_indent = None
     bgp_as = ""
 
-    for raw_line in str(bgp_config).splitlines():
-        line = raw_line.rstrip()
-        if not line.strip() or line.strip().startswith("!"):
-            continue
-
-        router_match = _BGP_ROUTER_RE.match(line)
-        if router_match:
-            bgp_as = router_match.group(1)
-            current_vrf = "default"
-            continue
-
-        # Ignore address-family nesting for activation; keep last seen VRF.
-        if re.match(r"^\s*address-family\b", line, re.I):
-            continue
-
-        vrf_match = _BGP_VRF_RE.match(line)
-        if vrf_match and not re.match(r"^\s*neighbor\b", line, re.I):
-            # Only treat top-ish `vrf NAME` stanzas (not route-target lines).
-            indent = len(line) - len(line.lstrip())
-            if indent <= 3:
-                current_vrf = vrf_match.group(1)
-            continue
-
-        attr_match = _BGP_NEIGHBOR_ATTR_RE.match(line)
-        if not attr_match:
-            continue
-
-        neighbor = attr_match.group("neighbor")
-        attr = attr_match.group("attr").lower()
-        value = attr_match.group("value").strip()
-        key = (current_vrf, neighbor)
-        entry = neighbors.setdefault(
+    def ensure_neighbor(vrf, neighbor):
+        key = (vrf, neighbor)
+        return neighbors.setdefault(
             key,
             {
-                "vrf": current_vrf,
+                "vrf": vrf,
                 "neighbor": neighbor,
                 "bgp_as": bgp_as,
                 "remote_as": "",
@@ -566,16 +730,144 @@ def parse_bgp_neighbors(bgp_config):
                 "route_maps": [],
             },
         )
-        if attr == "remote-as":
-            entry["remote_as"] = value
-        elif attr == "update-source":
-            entry["update_source"] = value
-        elif attr == "description":
-            entry["description"] = value
-        elif attr == "route-map":
-            entry["route_maps"].append(value)
 
-    return list(neighbors.values())
+    def ensure_vlan(vlan_id):
+        vid = int(vlan_id)
+        return vlan_blocks.setdefault(
+            vid,
+            {
+                "vlan_id": vid,
+                "rd": "",
+                "route_targets": [],
+                "redistribute": [],
+            },
+        )
+
+    def ensure_vrf(name):
+        return vrf_blocks.setdefault(
+            name,
+            {"name": name, "rd": "", "route_targets": []},
+        )
+
+    for raw_line in str(bgp_config).splitlines():
+        line = raw_line.rstrip()
+        stripped = line.strip()
+        if not stripped or stripped.startswith("!"):
+            continue
+
+        indent = len(line) - len(line.lstrip())
+
+        router_match = _BGP_ROUTER_RE.match(line)
+        if router_match:
+            bgp_as = router_match.group(1)
+            current_vrf = "default"
+            vrf_indent = None
+            current_vlan = None
+            vlan_indent = None
+            current_neighbor = None
+            neighbor_indent = None
+            continue
+
+        if current_neighbor is not None and neighbor_indent is not None:
+            if indent <= neighbor_indent:
+                current_neighbor = None
+                neighbor_indent = None
+        if current_vlan is not None and vlan_indent is not None:
+            if indent <= vlan_indent:
+                current_vlan = None
+                vlan_indent = None
+        if current_vrf != "default" and vrf_indent is not None:
+            if indent <= vrf_indent:
+                current_vrf = "default"
+                vrf_indent = None
+
+        if re.match(r"^\s*address-family\b", line, re.I):
+            continue
+
+        vlan_match = _BGP_VLAN_RE.match(line)
+        if vlan_match:
+            current_vlan = int(vlan_match.group(1))
+            vlan_indent = indent
+            current_neighbor = None
+            neighbor_indent = None
+            ensure_vlan(current_vlan)
+            continue
+
+        if current_vlan is not None:
+            block = ensure_vlan(current_vlan)
+            rd_match = _BGP_RD_RE.match(line)
+            if rd_match:
+                block["rd"] = rd_match.group(1)
+                continue
+            rt_match = _BGP_RT_RE.match(line)
+            if rt_match:
+                block["route_targets"].append(rt_match.group(1).strip())
+                continue
+            redist_match = _BGP_REDIST_RE.match(line)
+            if redist_match:
+                block["redistribute"].append(redist_match.group(1).strip())
+                continue
+            continue
+
+        vrf_match = _BGP_VRF_RE.match(line)
+        if vrf_match and not re.match(r"^\s*neighbor\b", line, re.I):
+            name = vrf_match.group(1)
+            if name.lower() not in ("context", "forwarding", "member"):
+                if indent <= 3:
+                    current_vrf = name
+                    vrf_indent = indent
+                    current_neighbor = None
+                    neighbor_indent = None
+                    ensure_vrf(name)
+                    continue
+
+        attr_match = _BGP_NEIGHBOR_ATTR_RE.match(line)
+        if attr_match:
+            neighbor = attr_match.group("neighbor")
+            current_neighbor = neighbor
+            neighbor_indent = indent
+            entry = ensure_neighbor(current_vrf, neighbor)
+            _bgp_apply_neighbor_attr(
+                entry, attr_match.group("attr"), attr_match.group("value")
+            )
+            continue
+
+        stanza_match = _BGP_NEIGHBOR_STANZA_RE.match(line)
+        if stanza_match:
+            current_neighbor = stanza_match.group(1)
+            neighbor_indent = indent
+            ensure_neighbor(current_vrf, current_neighbor)
+            continue
+
+        if current_neighbor is not None:
+            indented = _BGP_INDENTED_ATTR_RE.match(line)
+            if indented:
+                entry = ensure_neighbor(current_vrf, current_neighbor)
+                _bgp_apply_neighbor_attr(entry, indented.group(1), indented.group(2))
+                continue
+
+        if current_vrf != "default":
+            vrf_entry = ensure_vrf(current_vrf)
+            rd_match = _BGP_RD_RE.match(line)
+            if rd_match:
+                vrf_entry["rd"] = rd_match.group(1)
+                continue
+            rt_match = _BGP_RT_RE.match(line)
+            if rt_match:
+                vrf_entry["route_targets"].append(rt_match.group(1).strip())
+                continue
+
+    return {
+        "bgp_as": bgp_as,
+        "neighbors": list(neighbors.values()),
+        "vlan_blocks": [vlan_blocks[key] for key in sorted(vlan_blocks)],
+        "vrfs": [vrf_blocks[key] for key in sorted(vrf_blocks)],
+    }
+
+
+def parse_bgp_neighbors(bgp_config):
+    """Parse VRF-scoped BGP neighbors from ``show run`` BGP output."""
+    return parse_bgp_context(bgp_config).get("neighbors") or []
 
 
 def arp_discovery_command(platform, vlan_id, svi_vrf=None, svi_present=False):
@@ -639,18 +931,97 @@ def _allowed_summary_is_all(allowed_summary):
 def parse_trunk_interfaces(show_trunk_output, platform="eos"):
     """Parse `show interfaces trunk` into interface names and allowed summaries."""
     text = str(show_trunk_output or "")
-    pattern = _TRUNK_INTERFACE_NAME_RES.get(str(platform).lower())
+    plat = str(platform).lower()
+    if plat == "nxos":
+        return _parse_nxos_trunk_interfaces(text)
+    pattern = _TRUNK_INTERFACE_NAME_RES.get(plat)
     if not pattern:
         return []
     interfaces = []
+    seen = set()
     for match in pattern.finditer(text):
+        iface = match.group("iface").strip()
+        key = iface.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        allowed = match.group("allowed").strip()
+        # EOS prints Allowed then Forwarding; keep the first token group.
+        allowed = re.split(r"\s{2,}", allowed, maxsplit=1)[0].strip()
         interfaces.append(
             {
-                "interface": match.group("iface").strip(),
-                "allowed_summary": match.group("allowed").strip(),
+                "interface": iface,
+                "allowed_summary": allowed,
             }
         )
     return interfaces
+
+
+def _parse_nxos_trunk_interfaces(text):
+    """Parse NXOS `show interface trunk`, preferring the Allowed-on-Trunk table."""
+    body = text
+    section = re.search(
+        r"Vlans Allowed on Trunk\s*\n[^\n]*\n(.*?)(?=\n\s*Port\s+Vlans |\n\s*Port\s+STP|\Z)",
+        text,
+        re.I | re.S,
+    )
+    if section:
+        body = section.group(1)
+    pattern = re.compile(
+        r"^(?P<iface>(?:Eth|Ethernet|po|Po|port-channel)\S+)\s+(?P<allowed>\S.*)$",
+        re.I | re.M,
+    )
+    interfaces = []
+    seen = set()
+    for match in pattern.finditer(body):
+        iface = match.group("iface").strip()
+        allowed = match.group("allowed").strip()
+        if allowed.lower() in {"trunking", "--"}:
+            continue
+        key = iface.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        interfaces.append({"interface": iface, "allowed_summary": allowed})
+    return interfaces
+
+
+def resolve_trunk_allowed_vlans(config):
+    """Resolve the effective allowed VLAN set from cumulative trunk config lines.
+
+    NXOS (and some EOS) running-config accumulates::
+
+        switchport trunk allowed vlan 1-100
+        switchport trunk allowed vlan add 200
+        switchport trunk allowed vlan remove 50
+
+    Returns a dict ``{mode, vlans}`` or ``None`` when no allowed-vlan statement
+    exists (platform default: all VLANs).
+    """
+    matches = list(_TRUNK_ALLOWED_VLAN_RE.finditer(str(config or "")))
+    if not matches:
+        return None
+
+    allowed = set()
+    initialized = False
+    for match in matches:
+        modifier = (match.group("modifier") or "").lower()
+        tokens = match.group("vlans") or ""
+        vlans = expand_vlan_spec(tokens)
+        if modifier == "except":
+            return {"mode": "except", "vlans": vlans}
+        if modifier == "add":
+            allowed.update(vlans)
+            initialized = True
+        elif modifier == "remove":
+            allowed.difference_update(vlans)
+            initialized = True
+        else:
+            allowed = set(vlans)
+            initialized = True
+    if not initialized:
+        return None
+    return {"mode": "allow_list", "vlans": allowed}
 
 
 def _trunk_entry(
@@ -696,43 +1067,38 @@ def analyze_trunk_vlan_carriage(vlan_id, trunk_interfaces, platform="eos"):
         allowed_summary = str(trunk.get("allowed_summary", "") or "").strip()
         matches = list(_TRUNK_ALLOWED_VLAN_RE.finditer(config))
         config_line = matches[-1].group(0).strip() if matches else ""
+        resolved = resolve_trunk_allowed_vlans(config)
 
-        if matches:
-            modifier = None
-            vlan_tokens = ""
-            for match in matches:
-                modifier = (match.group("modifier") or "").lower() or modifier
-                vlan_tokens = match.group("vlans") or vlan_tokens
-
-            if modifier == "except":
-                except_set = expand_vlan_spec(vlan_tokens)
-                if vid in except_set:
-                    results.append(
-                        _trunk_entry(
-                            iface,
-                            "except",
-                            False,
-                            False,
-                            "VLAN is excluded on this except-style trunk.",
-                            allowed_summary,
-                            config_line,
-                        )
+        if resolved and resolved.get("mode") == "except":
+            except_set = resolved.get("vlans") or set()
+            if vid in except_set:
+                results.append(
+                    _trunk_entry(
+                        iface,
+                        "except",
+                        False,
+                        False,
+                        "VLAN is excluded on this except-style trunk.",
+                        allowed_summary,
+                        config_line,
                     )
-                else:
-                    results.append(
-                        _trunk_entry(
-                            iface,
-                            "except",
-                            True,
-                            True,
-                            "VLAN is allowed on an except-style trunk (not in the except list).",
-                            allowed_summary,
-                            config_line,
-                        )
+                )
+            else:
+                results.append(
+                    _trunk_entry(
+                        iface,
+                        "except",
+                        True,
+                        True,
+                        "VLAN is allowed on an except-style trunk (not in the except list).",
+                        allowed_summary,
+                        config_line,
                     )
-                continue
+                )
+            continue
 
-            allowed_set = expand_vlan_spec(vlan_tokens)
+        if resolved and resolved.get("mode") == "allow_list":
+            allowed_set = resolved.get("vlans") or set()
             if not allowed_set:
                 results.append(
                     _trunk_entry(

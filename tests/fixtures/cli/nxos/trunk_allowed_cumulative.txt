@@ -1,0 +1,5 @@
+interface port-channel10
+  switchport mode trunk
+  switchport trunk allowed vlan 1-100
+  switchport trunk allowed vlan add 200-210
+  switchport trunk allowed vlan remove 50

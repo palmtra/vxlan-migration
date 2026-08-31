@@ -14,13 +14,15 @@ Two workflow tiers share the same roles. **Build and harden Core first**, then e
 |---|---|
 | Read-only VLAN discovery (NXOS + EOS; optional IOS) | Greenfield / new VLAN deployments (separate app) |
 | Local per-DC VLAN DB as primary SSOT | Automatic trunk/SVI cleanup **apply** on devices (candidates only today) |
-| Optional service bundles (`vars/services/`) for multi-VLAN cutovers | Executing prune/delete sessions (planned; retain-aware plans only) |
+| Optional service bundles (`vars/services/`) for multi-VLAN cutovers | Executing prune/delete sessions (parked; human prune from the report) |
 | AVD or Jinja → CVP configlet generation | NetBox export as part of the migration run |
 | CVP change control creation (pending approval) | Executing CVP change control automatically |
 | NXOS→EOS as the supported migration path on `main` | Expanding IOS as a first-class platform on `main` |
 
-Legacy VLAN cleanup and trunk pruning are **reported** during discovery as retain-aware
-`prune_plan` candidates. Application is not automated yet (future in-repo prune role).
+Legacy VLAN cleanup and trunk pruning are **reported** during discovery as a
+human-review `prune_plan` (trunk / SVI / VLAN only). Application is not automated
+and is parked until there is a use-case. Default-VRF statics and BGP are L3 review
+only, never prune actions.
 
 ---
 
@@ -127,13 +129,15 @@ Per switch, per VLAN (read-only):
 | VLAN + L2 ports | `show vlan id <id>` (Ports column; empty = no access/trunk) |
 | Access vs trunk | Ports from `show vlan id` vs `show interfaces trunk` names |
 | Learned MACs | `show mac address-table dynamic vlan <id>` |
-| SVI / L3 | `show run interface Vlan<id>` (parsed: VRF, IP, VR address, MTU, description) |
-| SVI VRF + ARP | VRF from SVI config; `show ip arp vrf <vrf> …` |
-| Static routes (EOS) | `show running-config section ip route` → prune plan candidates |
-| BGP neighbors (EOS) | `show running-config section router bgp` → prune plan candidates |
+| SVI / L3 | `show run interface Vlan<id>` (parsed: VRF, IP, VR/anycast, HSRP, MTU, description) |
+| SVI VRF + ARP | VRF from SVI config; ARP whenever an SVI exists (not gated on `service_type`) |
+| Static routes (EOS + NXOS) | EOS `section ip route`; NXOS `vrf context` + global `ip route` → **L3 discovery** (shared VRF OK; not prune actions) |
+| BGP (EOS + NXOS) | Neighbors (incl. NXOS split stanzas), VLAN EVPN blocks, VRF RD/RT → **L3 discovery** |
 | Retain keep-list | Service `prune.retain` or `discovery_prune_retain` → `blocked_by_retain` |
 
-**Port logic:** Empty **Ports** on `show vlan id` means no L2 attachment. Remaining ports are access/endpoints unless they appear in `show interfaces trunk`, in which case they are trunk prune candidates — except EOS MLAG peer (`switchport trunk group mlagpeer`) and NXOS vPC peer-link trunks, which are excluded from maintenance lists. Trunk cleanup intent is intentionally simple: confirm carriage, then `switchport trunk allowed vlan remove <vlan_id>` (discovery does not dump or parse full interface configs for this).
+**Port logic:** Empty **Ports** on `show vlan id` means no L2 attachment. Remaining ports are access/endpoints unless they appear in `show interfaces trunk`, in which case they are trunk prune candidates — except EOS MLAG peer (`switchport trunk group mlagpeer`) and NXOS vPC peer-link trunks, which are excluded from maintenance lists. Trunk cleanup intent is: confirm carriage, then a human runs `switchport trunk allowed vlan remove <vlan_id>` (discovery does not apply deletes).
+
+**Human prune plan:** actions are trunk remove, `no interface VlanX`, and `no vlan X` only. Access ports **block** prune on that switch (`blocked_by_access_ports`) until they are rehomed. SVI IPs / anycast / HSRP are listed so a human can remove the gateway without an automated session. Default-VRF statics and BGP, and objects in a **shared VRF**, are L3 discovery / review only — never prune candidates.
 
 Reports land under:
 
@@ -159,20 +163,22 @@ Pass `-e manual_service_id=<id>` on discovery to seed VLAN IDs and apply `prune.
 | `name` | yes | Human label; used in report filenames |
 | `action` | yes | `migrate` |
 | `service_type` | yes | `l2`, `l3`, or `l2_l3` - see [VXLAN_SERVICE_TYPES.md](VXLAN_SERVICE_TYPES.md) |
-| `vni` | yes for migrate | VXLAN network identifier |
-| `vrf` | yes | Target VRF |
+| `vni` | yes for migrate | VXLAN network identifier (not inferred by discovery) |
+| `vrf` | yes | Target VRF (discovery fills from SVI when present) |
 | `target_switches` | yes | Inventory hostnames for CVP config push |
 | `discovery_switches` | no | Switches to query; defaults to `target_switches` |
-| `vlan_name` | no | Post-migration VLAN name |
+| `vlan_name` | no | On-box / post-migration VLAN name |
+| `gateway` | no | Anycast / HSRP / VR address discovered on the SVI |
+| `prefixes` | no | Subnets derived from SVI CIDRs |
 | `mcast_group` | no | BUM group override |
 
 ---
 
 ## Typical operator journey (Core)
 
-1. **Discover** an unknown VLAN → review report → copy snippet to `vars/vlans/<dc>/{vid}_{slug}.yml`.
-2. **Complete the VLAN record** (VNI, VRF, `target_switches`, `service_type`).
-3. **Deploy** configlets to CVP (`cvp_apply_configlets=true`).
+1. **Discover** an unknown VLAN → share the app-owner section (MACs, access ports, trunks) → review **where to prune** → review **L3** (SVI/HSRP/VRF/BGP; shared VRF is expected).
+2. **Copy the snippet** to `vars/vlans/<dc>/{vid}_{slug}.yml` and complete the VLAN record (VNI is required; confirm VRF, `target_switches`, `service_type`).
+3. **Generate overlay config** from that SSOT (`workflow_deploy.yml` with `cvp_apply_configlets=false`), then push when ready.
 4. **Approve and execute** the change control in CloudVision.
 5. *(Optional)* **Verify** with `workflow_verify.yml` after the change is live.
 6. *(Optional)* **Export to NetBox** with `export_vlan_to_netbox.yml` when inventory should reflect the migrated VLAN.

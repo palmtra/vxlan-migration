@@ -43,7 +43,7 @@ Each VLAN record requires `service_type`. It describes whether you are migrating
 | `l3` | SVI + ARP present; gateway on the fabric |
 | `l2_l3` | Both host L2 attachment and SVI/gateway |
 
-Discovery runs SVI/ARP tasks only for `l3` and `l2_l3`. Probe mode defaults to `l3`; pass `-e discovery_probe_service_type=l2` for L2-only probes.
+Discovery always queries SVI; ARP runs when an SVI is present. Probe mode defaults to `l3`; pass `-e discovery_probe_service_type=l2` for L2-only probes.
 
 Full guide: **[VXLAN_SERVICE_TYPES.md](VXLAN_SERVICE_TYPES.md)**.
 
@@ -53,7 +53,7 @@ Full guide: **[VXLAN_SERVICE_TYPES.md](VXLAN_SERVICE_TYPES.md)**.
 
 **Playbook:** `playbooks/core/discover_vlan.yml`
 
-Collects VLAN, MAC, SVI, ARP, and trunk carriage. Writes reports under `reports/<dc>/<vlan_name>/`.
+Collects VLAN, MAC, SVI, ARP, trunks, and (on L3-capable devices) VRF/HSRP/BGP/statics. Writes reports under `reports/<dc>/<vlan_name>/`.
 
 ### Required extra vars
 
@@ -72,8 +72,8 @@ Collects VLAN, MAC, SVI, ARP, and trunk carriage. Writes reports under `reports/
 | `discovery_allow_probe` | `true` in discover playbook | Allow discovering a VLAN **not yet** in the DC database |
 | `discovery_probe_service_type` | `l3` | `service_type` assigned to synthetic probe records |
 | `vlan_discovery_backup_enabled` | `false` | Capture config backup before discovery |
-| `discovery_collect_prune_context` | `true` | EOS: collect static routes + BGP for prune plans |
-| `discovery_write_prune_plan` | `true` | Emit retain-aware prune plan candidates (never applies deletes) |
+| `discovery_collect_prune_context` | `true` | Collect static routes + BGP (EOS and NXOS) as **L3 discovery** (not prune actions) |
+| `discovery_write_prune_plan` | `true` | Emit human-review prune plan (trunk/SVI/VLAN; never applies deletes) |
 | `discovery_write_device_prune_plans` | `true` | Write `reports/<dc>/_prune_plans/*.json` |
 | `discovery_enable_ios` | `false` | Parked IOS discovery; set `true` to run `gather_ios*` (see [OS_SUPPORT.md](OS_SUPPORT.md)) |
 | `discovery_write_markdown` | `true` | Write `.md` report |
@@ -118,17 +118,19 @@ ansible-playbook -i inventory/hosts.yml playbooks/core/discover_vlan.yml \
 | `<vlan>_discovery_<ts>.csv` | One row per switch |
 | `<vlan>_discovery_<ts>.json` | Full structured report |
 | `<vlan>_discovery_<ts>.yml` | Full structured report (YAML, same data as JSON) |
-| `0100_legacy_web.yml` | Starter per-VLAN record for `vars/vlans/<dc>/` |
+| `0100_legacy_web.yml` | Starter per-VLAN record for `vars/vlans/<dc>/` (VRF, gateway, prefixes, switches filled from discovery; VNI still TODO) |
 
 Key report fields:
 
 - `switches_found` — VLAN L2 present (Ports column non-empty)
 - `switches_with_mac_learning` — active MAC learning
 - `switches_with_svi` / `switches_with_arp` — L3 presence
-- Per device: `mac_entries[]` (MAC→interface), `arp_entries[]` (IP→MAC), `uplinks[]`, `access_ports[]`, structured `svi_details`
-- Markdown sections mirror operator reports: MAC table, uplinks, endpoints, gateway/SVI (plus prune candidates)
+- `endpoint_inventory` / `access_inventory` / `trunk_inventory` — app-owner shareable L2 view (MACs, access ports, trunks)
+- `l3_discovery` — SVI IPs, HSRP/anycast, VRF (labelled **shared**), statics and BGP neighbors scoped to that VRF, plus EOS `vlan <id>` EVPN blocks
+- Per device: `mac_entries[]` (MAC→interface), `arp_entries[]` (IP→MAC), `uplinks[]`, `access_ports[]`, structured `svi_details` (incl. HSRP groups)
+- Markdown sections: (1) app-owner L2 (2) where to prune (3) L3 discovery (4) SSOT → generate VXLAN config
 - `trunk_cleanup_candidates` — trunks where cleanup should be planned (informational only)
-- `prune_plans` — retain-aware prune **candidates** (trunk/VLAN/SVI; EOS adds statics + BGP). Never applied by discovery.
+- `prune_plans` — human-review prune **candidates** for trunk / SVI / VLAN only. Access ports set `status: blocked_by_access_ports`. Static routes, BGP, and shared-VRF objects are L3 discovery / `l3_review`, not actions. Never applied by discovery.
 - Device JSON: `reports/<dc>/_prune_plans/<host>_prune_plan_<ts>.json`
 
 ---

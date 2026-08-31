@@ -6,7 +6,7 @@ This repository migrates **legacy Cisco NX-OS → Arista EOS (VXLAN/EVPN)**.
 
 | OS | Role |
 |---|---|
-| **NXOS** | Legacy source — discovery (VLAN/SVI/trunk/MAC/ARP) |
+| **NXOS** | Legacy source — discovery (VLAN/SVI/HSRP/trunk/MAC/ARP/VRF/BGP) |
 | **EOS** | Target fabric — discovery, AVD/Jinja configlets, CVP, verify |
 
 New features (service bundles, prune plans, AVD patterns) are designed for this pair.

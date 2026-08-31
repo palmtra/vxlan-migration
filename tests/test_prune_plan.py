@@ -26,6 +26,7 @@ sys.path.insert(0, os.path.join(_REPO, "plugins", "filter"))
 from vlan_filters import (  # noqa: E402
     build_device_prune_plan,
     load_service_from_directory,
+    parse_bgp_context,
     parse_bgp_neighbors,
     parse_ip_route_statics,
     parse_svi_details,
@@ -99,6 +100,43 @@ class PrunePlanParserTests(unittest.TestCase):
         self.assertIn("v0000001c_fnts_routes_out out", peer["route_maps"])
         self.assertIn(("v0000822a", "169.254.255.29"), by_key)
 
+    def test_parse_bgp_context_vlan_and_vrf(self):
+        context = parse_bgp_context(BGP_SAMPLE)
+        self.assertEqual(context["bgp_as"], "20034")
+        vlan_890 = next(item for item in context["vlan_blocks"] if item["vlan_id"] == 890)
+        self.assertEqual(vlan_890["rd"], "66.180.0.17:890")
+        self.assertIn("both 22015:890", vlan_890["route_targets"])
+        self.assertIn("learned", vlan_890["redistribute"])
+        vrf_names = {item["name"] for item in context["vrfs"]}
+        self.assertIn("v0000822a", vrf_names)
+        self.assertIn("v0000001c", vrf_names)
+
+    def test_l3_review_skipped_without_svi(self):
+        plan = build_device_prune_plan(
+            "nxos-spine-lis-01",
+            [
+                {
+                    "vlan_id": 100,
+                    "vlan_present": True,
+                    "svi_present": False,
+                    "trunk_ports": ["Po1"],
+                }
+            ],
+            static_routes=[
+                {
+                    "vrf": "default",
+                    "prefix": "0.0.0.0/0",
+                    "next_hop": "10.1.0.1",
+                    "name": "fabric_default",
+                }
+            ],
+            bgp_neighbors=[
+                {"vrf": "default", "neighbor": "10.1.0.21", "remote_as": "65001"}
+            ],
+        )
+        self.assertEqual(plan["l3_review"], [])
+        self.assertIn("trunk_remove_vlans", [item["op"] for item in plan["actions"]])
+
     def test_build_device_prune_plan_retain(self):
         per_vlan = [
             {
@@ -144,12 +182,19 @@ class PrunePlanParserTests(unittest.TestCase):
         self.assertIn("trunk_remove_vlans", ops)
         self.assertIn("no_vlan", ops)
         self.assertIn("no_interface_vlan", ops)
-        self.assertIn("no_ip_route", ops)
-        self.assertIn("no_bgp_neighbor", ops)
+        self.assertNotIn("no_ip_route", ops)
+        self.assertNotIn("no_bgp_neighbor", ops)
+        self.assertEqual(plan["status"], "candidate")
+        self.assertTrue(plan["human_required"])
+        self.assertFalse(plan["apply_automated"])
+
+        l3_ops = [item["op"] for item in plan["l3_review"]]
+        self.assertIn("no_ip_route", l3_ops)
+        self.assertIn("no_bgp_neighbor", l3_ops)
 
         peer_actions = [
             item
-            for item in plan["actions"]
+            for item in plan["l3_review"]
             if item["op"] == "no_bgp_neighbor" and item["neighbor"] == "10.202.9.117"
         ]
         self.assertEqual(len(peer_actions), 1)
@@ -167,7 +212,7 @@ class PrunePlanParserTests(unittest.TestCase):
         }
         self.assertIn("10.210.93.0/24", retained_static_prefixes)
         action_static_prefixes = {
-            item["prefix"] for item in plan["actions"] if item["op"] == "no_ip_route"
+            item["prefix"] for item in plan["l3_review"] if item["op"] == "no_ip_route"
         }
         self.assertIn("0.0.0.0/0", action_static_prefixes)
         self.assertNotIn("10.210.93.0/24", action_static_prefixes)

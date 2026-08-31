@@ -13,6 +13,7 @@
 
 - name: IOS - cache trunk interface names
   ansible.builtin.set_fact:
+    _ios_trunk_summaries: "{{ _ios_trunk_show.stdout | default('') | parse_trunk_interfaces('ios') }}"
     _trunk_interface_names: "{{ _ios_trunk_show.stdout | default('') | trunk_interface_names('ios') }}"
     _trunk_exempt_interface_names: []
   check_mode: false
@@ -21,4 +22,5 @@
   ansible.builtin.set_fact:
     _trunk_interface_names: []
     _trunk_exempt_interface_names: []
+    _ios_trunk_summaries: []
   when: _trunk_interface_names is not defined

@@ -31,6 +31,11 @@
     },
     "vrf": { "type": "string" },
     "mcast_group": { "type": "string" },
+    "gateway": { "type": "string" },
+    "prefixes": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 }
+    },
     "target_switches": {
       "type": "array",
       "items": { "type": "string", "minLength": 1 }
