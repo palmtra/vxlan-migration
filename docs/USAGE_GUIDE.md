@@ -73,7 +73,8 @@ Collects VLAN, MAC, SVI, ARP, trunks, and (on L3-capable devices) VRF/HSRP/BGP/s
 | `discovery_probe_service_type` | `l3` | `service_type` assigned to synthetic probe records |
 | `vlan_discovery_backup_enabled` | `false` | Capture config backup before discovery |
 | `discovery_collect_prune_context` | `true` | Collect static routes + BGP (EOS and NXOS) as **L3 discovery** (not prune actions) |
-| `discovery_write_prune_plan` | `true` | Emit human-review prune plan (trunk/SVI/VLAN; never applies deletes) |
+| `discovery_write_prune_plan` | `true` | Write the separate prune report (trunk/SVI/VLAN + EOS session text; never applies deletes) |
+| `prune_commit_timer` | `00:10:00` | EOS `commit timer` value printed in the prune report |
 | `discovery_write_device_prune_plans` | `true` | Write `reports/<dc>/_prune_plans/*.json` |
 | `discovery_enable_ios` | `false` | Parked IOS discovery; set `true` to run `gather_ios*` (see [OS_SUPPORT.md](OS_SUPPORT.md)) |
 | `discovery_write_markdown` | `true` | Write `.md` report |
@@ -114,24 +115,28 @@ ansible-playbook -i inventory/hosts.yml playbooks/core/discover_vlan.yml \
 
 | File | Contents |
 |---|---|
-| `<vlan>_discovery_<ts>.md` | Human-readable summary + raw CLI |
-| `<vlan>_discovery_<ts>.csv` | One row per switch |
-| `<vlan>_discovery_<ts>.json` | Full structured report |
-| `<vlan>_discovery_<ts>.yml` | Full structured report (YAML, same data as JSON) |
+| `<vlan>_discovery_<ts>.md` | Compute-facing MAC/endpoint view (no prune CLI) |
+| `<vlan>_discovery_<ts>.csv` | One row per switch (compute ports / MACs / uplinks) |
+| `<vlan>_discovery_<ts>.json` | Discovery JSON (`discovery_export`; prune fields omitted) |
+| `<vlan>_discovery_<ts>.yml` | Same data as discovery JSON |
+| `<vlan>_prune_<ts>.md` | Human prune report: EOS session + commit timer, NXOS checkpoint |
+| `<vlan>_prune_<ts>.json` | Execution-shaped prune payload (`apply_automated: false`) |
 | `0100_legacy_web.yml` | Starter per-VLAN record for `vars/vlans/<dc>/` (VRF, gateway, prefixes, switches filled from discovery; VNI still TODO) |
 
-Key report fields:
+Key **discovery** fields:
 
-- `switches_found` — VLAN L2 present (Ports column non-empty)
-- `switches_with_mac_learning` — active MAC learning
-- `switches_with_svi` / `switches_with_arp` — L3 presence
-- `endpoint_inventory` / `access_inventory` / `trunk_inventory` — app-owner shareable L2 view (MACs, access ports, trunks)
-- `l3_discovery` — SVI IPs, HSRP/anycast, VRF (labelled **shared**), statics and BGP neighbors scoped to that VRF, plus EOS `vlan <id>` EVPN blocks
-- Per device: `mac_entries[]` (MAC→interface), `arp_entries[]` (IP→MAC), `uplinks[]`, `access_ports[]`, structured `svi_details` (incl. HSRP groups)
-- Markdown sections: (1) app-owner L2 (2) where to prune (3) L3 discovery (4) SSOT → generate VXLAN config
-- `trunk_cleanup_candidates` — trunks where cleanup should be planned (informational only)
-- `prune_plans` — human-review prune **candidates** for trunk / SVI / VLAN only. Access ports set `status: blocked_by_access_ports`. Static routes, BGP, and shared-VRF objects are L3 discovery / `l3_review`, not actions. Never applied by discovery.
+- `endpoint_inventory` / `compute_inventory` — MACs and ports on compute links (servers, IBM Z, Nutanix, UCS, HCI). Switch-to-switch MAC learning is omitted.
+- `uplink_inventory` — trunks toward other switches (context only)
+- `unknown_inventory` — ports that could not be classified; treated as endpoints until reviewed
+- Per device: `endpoint_mac_entries[]`, `port_attachments[]` (role + description + raw `show run`), `svi_details`
+
+Key **prune** fields (separate files):
+
+- `prune_plans[].execution` — EOS `configure session` / `commit timer` / `configure confirm` / abort; NXOS checkpoint + rollback
+- Compute or unknown ports set `status: blocked_by_compute_endpoints`
+- Static routes, BGP, and shared-VRF objects stay in `l3_review`, never actions
 - Device JSON: `reports/<dc>/_prune_plans/<host>_prune_plan_<ts>.json`
+- `prune_commit_timer` default `00:10:00` (report text only; nothing is applied)
 
 ---
 

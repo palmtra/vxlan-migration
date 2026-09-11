@@ -14,10 +14,13 @@ discovery_write_yaml: true
 discovery_write_vlan_db_snippet: true
 
 # Collect static routes + BGP as first-class L3 discovery (EOS/NXOS/IOS).
-# Visibility only — never prune actions (especially default VRF / shared VRF).
+# Visibility only - never prune actions (especially default VRF / shared VRF).
 discovery_collect_prune_context: true
 discovery_write_prune_plan: true
 discovery_write_device_prune_plans: true
+
+# EOS commit-timer used in the prune report session text (not applied).
+prune_commit_timer: "00:10:00"
 
 # Platform policy on main: NXOS (legacy source) + EOS (target) are first-class.
 # IOS discovery code remains in-tree for reuse but is disabled by default.

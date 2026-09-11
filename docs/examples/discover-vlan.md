@@ -177,15 +177,16 @@ that far without failing on earlier hosts.
 
 ```text
 <repo-root>/reports/<dc>/<vlan_name>/<vlan_name>_discovery_<timestamp>.md
+<repo-root>/reports/<dc>/<vlan_name>/<vlan_name>_prune_<timestamp>.md
 <repo-root>/reports/<dc>/_prune_plans/<hostname>_prune_plan_<timestamp>.json
 ```
 
-Markdown/JSON VLAN reports are structured for the operator journey:
+Two reports:
 
-1. **App-owner view** — MACs, access ports, trunks, switches (shareable).
-2. **Where to prune** — trunk / SVI / VLAN candidates only. Access ports block prune.
-3. **L3 discovery** — SVI, HSRP/anycast, VRF (labelled shared), statics and BGP in that VRF. Not prune actions.
-4. **SSOT snippet** → fill VNI → generate VXLAN config (`workflow_deploy.yml`, `cvp_apply_configlets=false` by default).
+1. **Discovery** — MACs learned on compute links (servers, IBM Z, Nutanix, UCS, HCI), plus those endpoint configs. Switch-to-switch uplinks are listed for context. No prune CLI.
+2. **Prune** — copy-paste EOS `configure session` / `commit timer` / `configure confirm` (NXOS: checkpoint + rollback). Compute endpoints still attached **block** prune. L3 (SVI/HSRP/VRF/BGP) is review-only.
+
+SSOT snippet → fill VNI → generate VXLAN config (`workflow_deploy.yml`, `cvp_apply_configlets=false` by default).
 
 Device-level JSON plans under `_prune_plans/` are candidates only (`destructive: false`, `apply_automated: false`).
 
@@ -212,6 +213,7 @@ It is listed in `.gitignore`, so it will not appear in `git status` even when pr
 
 ```text
 reports/<dc>/<vlan_name>/<vlan_name>_discovery_<timestamp>.{md,csv,json,yml}
+reports/<dc>/<vlan_name>/<vlan_name>_prune_<timestamp>.{md,json}
 ```
 
 Use the `{vid}_{slug}.yml` snippet written under the report directory to bootstrap

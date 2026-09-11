@@ -306,7 +306,7 @@ class DiscoveryReportSsotTests(unittest.TestCase):
         eos_plan_row = next(
             plan for plan in report["prune_plans"] if plan["hostname"] == "eos-leaf-lis-01"
         )
-        self.assertEqual(eos_plan_row["status"], "blocked_by_access_ports")
+        self.assertEqual(eos_plan_row["status"], "blocked_by_compute_endpoints")
         self.assertTrue(eos_plan_row["human_required"])
         self.assertFalse(eos_plan_row["apply_automated"])
         l3_ops = {item["op"] for item in eos_plan_row.get("l3_review") or []}
@@ -315,6 +315,11 @@ class DiscoveryReportSsotTests(unittest.TestCase):
         self.assertTrue(report["l3_discovery"]["present"])
         self.assertTrue(report["l3_discovery"]["shared_vrf"])
         self.assertTrue(report["endpoint_inventory"])
+        self.assertIn("discovery_export", report)
+        self.assertNotIn("prune_plans", report["discovery_export"])
+        self.assertIn("prune_plans", report["prune_export"])
+        self.assertIn("execution", eos_plan_row)
+        self.assertIn("configure session", eos_plan_row["execution"]["full_cli"])
         l3_by_host = {
             item["hostname"]: item for item in report["l3_discovery"]["devices"]
         }

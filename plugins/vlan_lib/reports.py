@@ -5,7 +5,7 @@ from ansible.errors import AnsibleFilterError
 
 from vlan_lib.common import _str_equal, sanitize_report_slug
 from vlan_lib.parsers import network_prefix
-from vlan_lib.prune import build_device_prune_plan
+from vlan_lib.prune import build_device_prune_plan, build_prune_execution
 
 _SHARED_VRF_NOTE = (
     "This VRF may be shared by other VLANs. Neighbors, static routes, RD/RT, "
@@ -29,23 +29,47 @@ def _filter_by_vrf(items, vrf):
 
 def _build_endpoint_inventory(devices):
     endpoints = []
+    compute = []
+    uplinks = []
+    unknown = []
     access = []
     trunks = []
     for device in devices:
         hostname = device.get("hostname")
-        for entry in device.get("mac_entries") or []:
+        for entry in device.get("endpoint_mac_entries") or []:
             endpoints.append(
                 {
                     "hostname": hostname,
                     "mac": entry.get("mac", ""),
                     "interface": entry.get("interface", ""),
                     "port_role": entry.get("port_role", "unknown"),
+                    "attachment_role": entry.get("attachment_role", "unknown"),
+                    "description": entry.get("description", ""),
                     "entry_type": entry.get("entry_type", "learned"),
                 }
             )
+        for item in device.get("port_attachments") or []:
+            row = {
+                "hostname": hostname,
+                "interface": item.get("interface", ""),
+                "role": item.get("role", "unknown"),
+                "description": item.get("description", ""),
+                "mode": item.get("mode", ""),
+                "raw": item.get("raw", ""),
+                "mac_count": item.get("mac_count", 0),
+            }
+            role = item.get("role")
+            if role == "compute":
+                compute.append(row)
+            elif role == "switch_uplink":
+                uplinks.append(row)
+            elif role == "peer_link":
+                uplinks.append(dict(row, exempt=True))
+            else:
+                unknown.append(row)
         for iface in device.get("access_ports") or []:
             access.append({"hostname": hostname, "interface": iface})
-        for iface in device.get("trunk_ports") or []:
+        for iface in device.get("switch_uplink_ports") or device.get("trunk_ports") or []:
             trunks.append(
                 {
                     "hostname": hostname,
@@ -54,7 +78,7 @@ def _build_endpoint_inventory(devices):
                     "exempt": False,
                 }
             )
-        for iface in device.get("exempt_trunk_ports") or []:
+        for iface in device.get("peer_link_ports") or device.get("exempt_trunk_ports") or []:
             trunks.append(
                 {
                     "hostname": hostname,
@@ -63,13 +87,13 @@ def _build_endpoint_inventory(devices):
                     "exempt": True,
                 }
             )
-    return endpoints, access, trunks
+    return endpoints, access, trunks, compute, uplinks, unknown
 
 
 def build_l3_discovery(vlan_id, devices):
     """First-class L3 view for a VLAN: SVI/HSRP, VRF, statics, BGP.
 
-    Objects are scoped to the SVI VRF. The VRF is always labelled shared —
+    Objects are scoped to the SVI VRF. The VRF is always labelled shared -
     discovery cannot prove uniqueness without scanning every other VLAN.
     """
     devices_l3 = []
@@ -168,12 +192,18 @@ def build_vlan_discovery_reports(vlans, play_hosts, hostvars):
                     "access_ports": per_vlan.get("access_ports", []),
                     "trunk_ports": per_vlan.get("trunk_ports", []),
                     "exempt_trunk_ports": per_vlan.get("exempt_trunk_ports", []),
+                    "compute_ports": per_vlan.get("compute_ports", []),
+                    "switch_uplink_ports": per_vlan.get("switch_uplink_ports", []),
+                    "peer_link_ports": per_vlan.get("peer_link_ports", []),
+                    "unknown_ports": per_vlan.get("unknown_ports", []),
+                    "port_attachments": per_vlan.get("port_attachments", []),
                     "trunk_allowed": per_vlan.get("trunk_allowed", []),
                     "all_ports": per_vlan.get("all_ports", []),
                     "ports_raw": per_vlan.get("ports_raw", ""),
                     "mac_learned": per_vlan.get("mac_learned", False),
                     "arp_learned": per_vlan.get("arp_learned", False),
                     "mac_entries": per_vlan.get("mac_entries", []),
+                    "endpoint_mac_entries": per_vlan.get("endpoint_mac_entries", []),
                     "arp_entries": per_vlan.get("arp_entries", []),
                     "uplinks": per_vlan.get("uplinks", []),
                     "svi_vrf": per_vlan.get("svi_vrf", ""),
@@ -227,15 +257,25 @@ def build_vlan_discovery_reports(vlans, play_hosts, hostvars):
             for device in devices
             if device.get("access_ports")
         ]
+        switches_with_compute_ports = [
+            device["hostname"]
+            for device in devices
+            if device.get("compute_ports")
+        ]
         switches_with_trunk_ports = [
             device["hostname"]
             for device in devices
-            if device.get("trunk_ports")
+            if device.get("switch_uplink_ports") or device.get("trunk_ports")
         ]
         switches_with_mac_learning = [
             device["hostname"]
             for device in devices
-            if device.get("mac_learned")
+            if device.get("endpoint_mac_entries") or device.get("mac_learned")
+        ]
+        switches_with_compute_macs = [
+            device["hostname"]
+            for device in devices
+            if device.get("endpoint_mac_entries")
         ]
         switches_with_svi = [
             device["hostname"]
@@ -265,6 +305,9 @@ def build_vlan_discovery_reports(vlans, play_hosts, hostvars):
                             "svi_details": device.get("svi_details"),
                             "trunk_ports": device.get("trunk_ports"),
                             "access_ports": device.get("access_ports"),
+                            "compute_ports": device.get("compute_ports"),
+                            "unknown_ports": device.get("unknown_ports"),
+                            "switch_uplink_ports": device.get("switch_uplink_ports"),
                         }
                     ],
                     retain=None,
@@ -291,18 +334,23 @@ def build_vlan_discovery_reports(vlans, play_hosts, hostvars):
                         )
                 l3_review = list(device_plan.get("l3_review") or [])
                 blocked = list(device_plan.get("blocked_by_retain") or [])
+                endpoint_ports = list(device.get("compute_ports") or []) + list(
+                    device.get("unknown_ports") or []
+                )
+                if not endpoint_ports:
+                    endpoint_ports = list(device.get("access_ports") or [])
                 status = device_plan.get("status") or "candidate"
-                if device.get("access_ports"):
-                    status = "blocked_by_access_ports"
+                if endpoint_ports:
+                    status = "blocked_by_compute_endpoints"
                 elif not vlan_actions:
                     status = "none"
+                os_family = device.get("os_family") or device_plan.get("os_family", "")
                 device_plan = {
                     "hostname": device.get("hostname"),
-                    "os_family": device.get("os_family")
-                    or device_plan.get("os_family", ""),
+                    "os_family": os_family,
                     "vlan_ids": [int(vlan_id)],
                     "svi_vrfs": [device.get("svi_vrf")] if device.get("svi_vrf") else [],
-                    "endpoint_ports": device.get("access_ports") or [],
+                    "endpoint_ports": endpoint_ports,
                     "svi_inventory": device_plan.get("svi_inventory") or [],
                     "actions": vlan_actions,
                     "l3_review": l3_review,
@@ -314,11 +362,14 @@ def build_vlan_discovery_reports(vlans, play_hosts, hostvars):
                     "status": status,
                     "order": device_plan.get("order")
                     or [
-                        "Rehome or shut access/endpoint ports",
-                        "Remove VLAN from non-exempt trunks",
+                        "Rehome or shut compute endpoints (servers / IBM Z / Nutanix / UCS / HCI)",
+                        "Remove VLAN from switch-to-switch trunks (EOS session + commit timer)",
                         "no interface Vlan<id> (gateway)",
                         "no vlan <id>",
                     ],
+                    "execution": build_prune_execution(
+                        os_family, [vlan_id], vlan_actions
+                    ),
                 }
             if (
                 device_plan.get("actions")
@@ -330,50 +381,111 @@ def build_vlan_discovery_reports(vlans, play_hosts, hostvars):
                 prune_plans.append(device_plan)
 
         ssot = _ssot_from_discovery(vlan, devices)
-        endpoints, access_inventory, trunk_inventory = _build_endpoint_inventory(
-            devices
-        )
+        (
+            endpoints,
+            access_inventory,
+            trunk_inventory,
+            compute_inventory,
+            uplink_inventory,
+            unknown_inventory,
+        ) = _build_endpoint_inventory(devices)
         l3_discovery = build_l3_discovery(vlan_id, devices)
 
-        reports.append(
+        report = {
+            "vlan_id": vlan_id,
+            "vlan_name": vlan.get("name", ""),
+            "vlan_slug": sanitize_report_slug(
+                ssot.get("name") or vlan.get("name")
+            ),
+            "vlan_name_on_box": ssot.get("vlan_name_on_box", ""),
+            "service_type": vlan.get("service_type")
+            or ssot.get("inferred_service_type", ""),
+            "inferred_service_type": ssot.get("inferred_service_type", ""),
+            "target_switches": vlan.get("target_switches")
+            or ssot.get("target_switches", []),
+            "snippet_target_switches": ssot.get("target_switches", []),
+            "snippet_discovery_switches": ssot.get("discovery_switches", []),
+            "switches_found": switches_found,
+            "switches_vlan_defined": switches_vlan_defined,
+            "switches_with_access_ports": switches_with_access_ports,
+            "switches_with_compute_ports": switches_with_compute_ports,
+            "switches_with_trunk_ports": switches_with_trunk_ports,
+            "switches_with_mac_learning": switches_with_mac_learning,
+            "switches_with_compute_macs": switches_with_compute_macs,
+            "switches_with_svi": switches_with_svi,
+            "switches_with_arp": switches_with_arp,
+            "trunk_cleanup_candidates": trunk_cleanup_candidates,
+            "prune_plans": prune_plans,
+            "vni": vlan.get("vni"),
+            "vrf": vlan.get("vrf") or ssot.get("discovered_vrf", "default"),
+            "discovered_vrf": ssot.get("discovered_vrf", ""),
+            "gateway": ssot.get("gateway", ""),
+            "prefixes": ssot.get("prefixes", []),
+            "svi_inventory": ssot.get("svi_inventory", []),
+            "endpoint_inventory": endpoints,
+            "access_inventory": access_inventory,
+            "trunk_inventory": trunk_inventory,
+            "compute_inventory": compute_inventory,
+            "uplink_inventory": uplink_inventory,
+            "unknown_inventory": unknown_inventory,
+            "l3_discovery": l3_discovery,
+            "data_center": vlan.get("data_center", ""),
+            "devices": devices,
+        }
+        report["discovery_export"] = _discovery_export(report)
+        report["prune_export"] = _prune_export(report)
+        reports.append(report)
+    return reports
+
+
+_DISCOVERY_OMIT = frozenset(
+    {
+        "prune_plans",
+        "trunk_cleanup_candidates",
+        "discovery_export",
+        "prune_export",
+    }
+)
+_DEVICE_DISCOVERY_OMIT = frozenset(
+    {"prune_plan", "trunk_cleanup_recommendations"}
+)
+
+
+def _discovery_export(report):
+    """Public discovery payload: no prune CLI or session text."""
+    export = {key: value for key, value in report.items() if key not in _DISCOVERY_OMIT}
+    devices = []
+    for device in export.get("devices") or []:
+        devices.append(
             {
-                "vlan_id": vlan_id,
-                "vlan_name": vlan.get("name", ""),
-                "vlan_slug": sanitize_report_slug(
-                    ssot.get("name") or vlan.get("name")
-                ),
-                "vlan_name_on_box": ssot.get("vlan_name_on_box", ""),
-                "service_type": vlan.get("service_type")
-                or ssot.get("inferred_service_type", ""),
-                "inferred_service_type": ssot.get("inferred_service_type", ""),
-                "target_switches": vlan.get("target_switches")
-                or ssot.get("target_switches", []),
-                "snippet_target_switches": ssot.get("target_switches", []),
-                "snippet_discovery_switches": ssot.get("discovery_switches", []),
-                "switches_found": switches_found,
-                "switches_vlan_defined": switches_vlan_defined,
-                "switches_with_access_ports": switches_with_access_ports,
-                "switches_with_trunk_ports": switches_with_trunk_ports,
-                "switches_with_mac_learning": switches_with_mac_learning,
-                "switches_with_svi": switches_with_svi,
-                "switches_with_arp": switches_with_arp,
-                "trunk_cleanup_candidates": trunk_cleanup_candidates,
-                "prune_plans": prune_plans,
-                "vni": vlan.get("vni"),
-                "vrf": vlan.get("vrf") or ssot.get("discovered_vrf", "default"),
-                "discovered_vrf": ssot.get("discovered_vrf", ""),
-                "gateway": ssot.get("gateway", ""),
-                "prefixes": ssot.get("prefixes", []),
-                "svi_inventory": ssot.get("svi_inventory", []),
-                "endpoint_inventory": endpoints,
-                "access_inventory": access_inventory,
-                "trunk_inventory": trunk_inventory,
-                "l3_discovery": l3_discovery,
-                "data_center": vlan.get("data_center", ""),
-                "devices": devices,
+                key: value
+                for key, value in device.items()
+                if key not in _DEVICE_DISCOVERY_OMIT
             }
         )
-    return reports
+    export["devices"] = devices
+    return export
+
+
+def _prune_export(report):
+    """Public prune payload: execution-shaped CLI plus L3 review."""
+    return {
+        "vlan_id": report.get("vlan_id"),
+        "vlan_name": report.get("vlan_name"),
+        "vlan_slug": report.get("vlan_slug"),
+        "data_center": report.get("data_center"),
+        "gateway": report.get("gateway"),
+        "prefixes": report.get("prefixes"),
+        "compute_inventory": report.get("compute_inventory"),
+        "unknown_inventory": report.get("unknown_inventory"),
+        "uplink_inventory": report.get("uplink_inventory"),
+        "svi_inventory": report.get("svi_inventory"),
+        "l3_discovery": report.get("l3_discovery"),
+        "trunk_cleanup_candidates": report.get("trunk_cleanup_candidates"),
+        "prune_plans": report.get("prune_plans"),
+        "apply_automated": False,
+        "human_required": True,
+    }
 
 
 def _ssot_from_discovery(vlan, devices):
@@ -394,7 +506,7 @@ def _ssot_from_discovery(vlan, devices):
         hostname = device.get("hostname")
         if device.get("vlan_present") and hostname:
             discovery_switches.append(hostname)
-        if device.get("access_ports"):
+        if device.get("access_ports") or device.get("compute_ports"):
             has_access = True
         box_name = device.get("vlan_name_on_box") or ""
         if box_name:
@@ -436,7 +548,11 @@ def _ssot_from_discovery(vlan, devices):
     if not target_switches:
         for device in devices:
             hostname = device.get("hostname")
-            if hostname and (device.get("svi_present") or device.get("access_ports")):
+            if hostname and (
+                device.get("svi_present")
+                or device.get("access_ports")
+                or device.get("compute_ports")
+            ):
                 if hostname not in target_switches:
                     target_switches.append(hostname)
 

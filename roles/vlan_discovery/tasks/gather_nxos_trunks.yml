@@ -31,10 +31,12 @@
   ansible.builtin.set_fact:
     _trunk_interface_names: "{{ _nxos_trunk_summaries | default([]) | map(attribute='interface') | list }}"
     _trunk_exempt_interface_names: "{{ _nxos_trunk_run_results.results | default([]) | build_trunk_exempt_interface_names('nxos') }}"
+    _interface_config_entries: "{{ _nxos_trunk_run_results.results | default([]) | interface_config_entries_from_cli_results('nxos') }}"
   check_mode: false
 
 - name: NXOS - default empty trunk interface lists
   ansible.builtin.set_fact:
     _trunk_interface_names: []
     _trunk_exempt_interface_names: []
+    _interface_config_entries: []
   when: _trunk_interface_names is not defined

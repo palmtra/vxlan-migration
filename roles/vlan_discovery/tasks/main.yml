@@ -2,8 +2,9 @@
 # -----------------------------------------------------------------------------
 # vlan_discovery
 # -----------------------------------------------------------------------------
-# Gathers current VLAN/SVI/trunk/VXLAN state per device and writes VLAN-centric
-# reports under reports/<dc>/<vlan_name>/.
+# Gathers current VLAN/SVI/trunk/VXLAN state per device and writes:
+#   reports/<dc>/<vlan_name>/<vlan>_discovery_<ts>.*  (compute MACs / endpoints)
+#   reports/<dc>/<vlan_name>/<vlan>_prune_<ts>.*      (EOS session / NXOS checkpoint)
 # -----------------------------------------------------------------------------
 
 - name: Set a millisecond timestamp for this discovery run
@@ -21,7 +22,7 @@
   ansible.builtin.include_tasks: gather_nxos.yml
   when: network_os_family == 'nxos'
 
-- name: Include IOS discovery tasks (parked on main — see docs/OS_SUPPORT.md)
+- name: Include IOS discovery tasks (parked on main - see docs/OS_SUPPORT.md)
   ansible.builtin.include_tasks: gather_ios.yml
   when:
     - network_os_family == 'ios'
@@ -154,6 +155,40 @@
     - discovery_write_vlan_reports | bool
     - discovery_write_vlan_db_snippet | bool
 
+- name: Write VLAN-centric prune Markdown report
+  ansible.builtin.template:
+    src: vlan_prune_report.md.j2
+    dest: "{{ discovery_reports_dir }}/{{ report.data_center | default('unknown') }}/{{ report.vlan_slug }}/{{ report.vlan_slug }}_prune_{{ _report_timestamp_ms }}.md"
+    mode: '0644'
+  delegate_to: localhost
+  become: false
+  run_once: true
+  loop: "{{ _vlan_discovery_reports | default([]) }}"
+  loop_control:
+    loop_var: report
+    label: "{{ report.vlan_name }}"
+  when:
+    - discovery_write_vlan_reports | bool
+    - discovery_write_prune_plan | default(true) | bool
+    - discovery_write_markdown | bool
+
+- name: Write VLAN-centric prune JSON report
+  ansible.builtin.template:
+    src: vlan_prune_report.json.j2
+    dest: "{{ discovery_reports_dir }}/{{ report.data_center | default('unknown') }}/{{ report.vlan_slug }}/{{ report.vlan_slug }}_prune_{{ _report_timestamp_ms }}.json"
+    mode: '0644'
+  delegate_to: localhost
+  become: false
+  run_once: true
+  loop: "{{ _vlan_discovery_reports | default([]) }}"
+  loop_control:
+    loop_var: report
+    label: "{{ report.vlan_name }}"
+  when:
+    - discovery_write_vlan_reports | bool
+    - discovery_write_prune_plan | default(true) | bool
+    - discovery_write_json | bool
+
 - name: Collect per-device prune plans from discovery facts
   ansible.builtin.set_fact:
     _device_prune_plans: "{{ ansible_play_hosts | map('extract', hostvars, '_vlan_discovery') | selectattr('prune_plan', 'defined') | map(attribute='prune_plan') | selectattr('hostname', 'defined') | list }}"
@@ -201,9 +236,10 @@
 - name: Display VLAN report output paths
   ansible.builtin.debug:
     msg: >-
-      Wrote VLAN discovery reports under
+      Wrote discovery reports under
       {{ discovery_reports_dir }}/{{ item.data_center | default('unknown') }}/{{ item.vlan_slug }}/
-      (prefix {{ item.vlan_slug }}_discovery_{{ _report_timestamp_ms }})
+      ({{ item.vlan_slug }}_discovery_{{ _report_timestamp_ms }} and
+      {{ item.vlan_slug }}_prune_{{ _report_timestamp_ms }})
   delegate_to: localhost
   become: false
   run_once: true

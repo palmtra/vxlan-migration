@@ -76,11 +76,11 @@ When changing behaviour, verify these stay aligned:
 | `vars/services/` schema | WORKFLOWS.md service bundles, [vars/services/README.md](../vars/services/README.md), examples/discover-vlan.md, `schemas/service_bundle.schema.json` |
 | Filter implementation | `plugins/filter/vlan_filters.py` (entry) + `plugins/vlan_lib/` (parsers/db/schema) |
 | Molecule role checks | `molecule/vlan_db`, `molecule/service_db` (`make molecule`) |
-| Discovery prune plans | USAGE_GUIDE § Discovery, examples/discover-vlan.md (human review; trunk/SVI/VLAN only; no apply) |
+| Discovery prune plans | USAGE_GUIDE § Discovery, examples/discover-vlan.md (separate prune report; EOS session + timer; no apply) |
 | L3 discovery (SVI/HSRP/VRF/BGP) | USAGE_GUIDE § Discovery, WORKFLOWS.md discovery table, examples/discover-vlan.md |
 | NetBox export playbook | examples/export-vlan-to-netbox.md |
 
 ## What not to document here
 
 - Greenfield / new VLAN deployment app (out of scope for this migration repo)
-- Automatic trunk cleanup commands (discovery is report-only; a human prunes from the report)
+- Automatic trunk cleanup apply (prune report is copy-paste / session-shaped; a human still commits)

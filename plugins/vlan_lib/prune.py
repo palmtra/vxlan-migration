@@ -6,6 +6,8 @@ under ``l3_review`` for operators, never as prune actions. Discovery never
 applies deletes.
 """
 
+import re
+
 from ansible.errors import AnsibleFilterError
 
 _L3_PARKED_NOTE = (
@@ -85,6 +87,88 @@ def _vlan_remove_cli(vlan_id):
     return "no vlan %s" % int(vlan_id)
 
 
+_DEFAULT_COMMIT_TIMER = "00:10:00"
+_EOS_SESSION_NAME_MAX = 32
+
+
+def _sanitize_session_name(vlan_ids):
+    parts = ["prune"] + ["v%s" % int(vid) for vid in (vlan_ids or [])[:5]]
+    name = "_".join(parts)
+    name = re.sub(r"[^A-Za-z0-9_-]", "", name)
+    return (name or "prune_vlan")[:_EOS_SESSION_NAME_MAX]
+
+
+def _actions_config_body(actions):
+    lines = []
+    for action in actions or []:
+        cli = (action.get("cli") or "").strip()
+        if cli:
+            lines.append(cli)
+    return "\n".join(lines)
+
+
+def build_prune_execution(
+    os_family, vlan_ids, actions, commit_timer=None, hostname=""
+):
+    """Build copy-paste execution text. Never applied by discovery."""
+    timer = commit_timer or _DEFAULT_COMMIT_TIMER
+    family = str(os_family or "eos").lower()
+    vids = [int(vid) for vid in (vlan_ids or [])]
+    session_name = _sanitize_session_name(vids)
+    config_body = _actions_config_body(actions)
+    if family == "eos":
+        full_cli = "configure session %s\n" % session_name
+        if config_body:
+            full_cli += config_body + "\n"
+        full_cli += "!\nshow session-config diffs\ncommit timer %s\n" % timer
+        return {
+            "platform": "eos",
+            "session_name": session_name,
+            "commit_timer": timer,
+            "enter": "configure session %s" % session_name,
+            "show_diffs": "show session-config diffs",
+            "commit_timer_cmd": "commit timer %s" % timer,
+            "confirm": "configure confirm",
+            "abort": "configure session %s abort" % session_name,
+            "config_body": config_body,
+            "full_cli": full_cli,
+            "notes": [
+                "Paste the session, review diffs, then commit with the rollback timer.",
+                "Confirm only after checks pass. If checks fail, wait: the timer rolls back.",
+                "This report does not apply the session.",
+            ],
+        }
+    if family == "nxos":
+        checkpoint = session_name[:31]
+        full_cli = "checkpoint %s\nconfigure terminal\n" % checkpoint
+        if config_body:
+            full_cli += config_body + "\n"
+        full_cli += "end\n"
+        return {
+            "platform": "nxos",
+            "checkpoint": checkpoint,
+            "enter": "checkpoint %s" % checkpoint,
+            "rollback": "rollback running-config checkpoint %s" % checkpoint,
+            "save": "copy running-config startup-config",
+            "config_body": config_body,
+            "full_cli": full_cli,
+            "notes": [
+                "Create the checkpoint first so you can roll back.",
+                "Save running-config only after verification.",
+                "This report does not apply the config.",
+            ],
+        }
+    return {
+        "platform": family,
+        "config_body": config_body,
+        "full_cli": (config_body + "\n") if config_body else "",
+        "notes": [
+            "IOS prune is parked on main. Review and paste manually.",
+            "This report does not apply the config.",
+        ],
+    }
+
+
 def build_device_prune_plan(
     hostname,
     per_vlan,
@@ -92,6 +176,7 @@ def build_device_prune_plan(
     static_routes=None,
     bgp_neighbors=None,
     vlan_ids=None,
+    commit_timer=None,
 ):
     """Build a human-review prune candidate plan for one device (read-only).
 
@@ -131,7 +216,13 @@ def build_device_prune_plan(
         if svi_vrf:
             svi_vrfs.add(str(svi_vrf))
 
-        for iface in entry.get("access_ports") or []:
+        compute_ports = entry.get("compute_ports")
+        unknown_ports = entry.get("unknown_ports")
+        if compute_ports is None and unknown_ports is None:
+            endpoint_candidates = list(entry.get("access_ports") or [])
+        else:
+            endpoint_candidates = list(compute_ports or []) + list(unknown_ports or [])
+        for iface in endpoint_candidates:
             if iface not in endpoint_ports:
                 endpoint_ports.append(iface)
 
@@ -154,7 +245,10 @@ def build_device_prune_plan(
                 }
             )
 
-        for iface in entry.get("trunk_ports") or []:
+        prune_trunks = entry.get("switch_uplink_ports")
+        if prune_trunks is None:
+            prune_trunks = entry.get("trunk_ports") or []
+        for iface in prune_trunks:
             actions.append(
                 _prune_action(
                     "trunk_remove_vlans",
@@ -222,7 +316,7 @@ def build_device_prune_plan(
     default_vrf_in_scope = "default" in svi_vrfs
 
     # Routing objects are only in scope when this device has an SVI for the
-    # VLAN(s). Empty svi_vrfs means L2-only — do not attach fabric default-VRF
+    # VLAN(s). Empty svi_vrfs means L2-only - do not attach fabric default-VRF
     # statics/iBGP as if they belonged to the VLAN.
     if svi_vrfs:
         for route in static_routes or []:
@@ -293,7 +387,7 @@ def build_device_prune_plan(
 
     status = "candidate"
     if endpoint_ports:
-        status = "blocked_by_access_ports"
+        status = "blocked_by_compute_endpoints"
     elif not actions:
         status = "none"
 
@@ -322,9 +416,12 @@ def build_device_prune_plan(
         "status": status,
         "default_vrf_routing_parked": default_vrf_in_scope,
         "order": [
-            "Rehome or shut access/endpoint ports",
-            "Remove VLAN from non-exempt trunks",
+            "Rehome or shut compute endpoints (servers / IBM Z / Nutanix / UCS / HCI)",
+            "Remove VLAN from switch-to-switch trunks (EOS session + commit timer)",
             "no interface Vlan<id> (gateway)",
             "no vlan <id>",
         ],
+        "execution": build_prune_execution(
+            os_family, vlan_id_list, actions, commit_timer, hostname
+        ),
     }

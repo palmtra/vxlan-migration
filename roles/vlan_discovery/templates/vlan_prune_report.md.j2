@@ -1,0 +1,118 @@
+# VLAN {{ report.vlan_name }} (VID {{ report.vlan_id }}) - Prune
+
+Generated: {{ _report_timestamp_ms }}
+Data center: {{ report.data_center | default('unknown') }}
+
+This file is **human-review only**. Discovery never applies deletes.
+Use it after compute endpoints have moved to VXLAN-EVPN. The CLI is shaped so it can later feed an apply role (not enabled).
+
+## How to run (Arista EOS)
+
+1. Confirm the discovery report has **no remaining compute MACs** on this VLAN.
+2. Paste the session on the switch.
+3. `show session-config diffs` and check the change.
+4. `commit timer 00:10:00` (or the timer in the device block). Traffic should keep flowing.
+5. If checks pass: `configure confirm`.
+6. If checks fail: do nothing. The timer aborts the session and rolls back.
+   To abort immediately: `configure session <name> abort`.
+
+Do **not** put prune CLI in the discovery report. Keep this file for operators.
+
+## How to run (Cisco NXOS)
+
+1. Create the checkpoint first.
+2. Paste the `configure terminal` block.
+3. Verify. Roll back with `rollback running-config checkpoint <name>` if needed.
+4. Save only after verification.
+
+{% if report.compute_inventory | default([]) | length > 0 or report.unknown_inventory | default([]) | length > 0 %}
+## Compute endpoints still attached (do not prune yet)
+
+| Switch | Interface | Role | Description |
+|--------|-----------|------|-------------|
+{% for item in report.compute_inventory | default([]) %}
+| {{ item.hostname }} | {{ item.interface }} | compute | {{ item.description | default('') }} |
+{% endfor %}
+{% for item in report.unknown_inventory | default([]) %}
+| {{ item.hostname }} | {{ item.interface }} | unknown | {{ item.description | default('') }} |
+{% endfor %}
+{% endif %}
+
+{% if report.prune_plans | default([]) | length > 0 %}
+{% for plan in report.prune_plans %}
+## {{ plan.hostname }} ({{ plan.os_family | default('eos') }})
+
+- Status: `{{ plan.status | default('candidate') }}`
+- Human required: yes. Apply automated: no.
+{% if plan.endpoint_ports | default([]) | length > 0 %}
+- **Blocked:** compute / unknown ports still attached: {{ plan.endpoint_ports | join(', ') }}
+{% endif %}
+
+**Order:** (1) rehome compute endpoints (2) remove VLAN from switch-to-switch trunks (3) `no interface Vlan{{ report.vlan_id }}` (4) `no vlan {{ report.vlan_id }}`.
+
+{% if plan.svi_inventory | default([]) | length > 0 %}
+SVI / gateway to remove after overlay is live:
+
+| VLAN | VRF | SVI IPs | Gateway (VR / HSRP) |
+|------|-----|---------|---------------------|
+{% for svi in plan.svi_inventory %}
+| {{ svi.vlan_id }} | {{ svi.vrf }} | {{ svi.ip_addresses | default([]) | join(', ') if svi.ip_addresses | default([]) else '(none)' }} | {{ (svi.virtual_router_addresses | default([]) + svi.hsrp_addresses | default([])) | join(', ') if (svi.virtual_router_addresses | default([]) + svi.hsrp_addresses | default([])) else '(none)' }} |
+{% endfor %}
+{% endif %}
+
+{% set exec = plan.execution | default({}) %}
+{% if exec.full_cli | default('') %}
+### Copy-paste session
+
+```
+{{ exec.full_cli | trim }}
+```
+
+{% if exec.platform | default('') == 'eos' %}
+After the timer, confirm or abort:
+
+```
+{{ exec.confirm }}
+{{ exec.abort }}
+```
+{% elif exec.platform | default('') == 'nxos' %}
+Rollback / save:
+
+```
+{{ exec.rollback }}
+{{ exec.save }}
+```
+{% endif %}
+{% else %}
+*(No session CLI for this switch.)*
+{% endif %}
+
+{% if plan.l3_review | default([]) | length > 0 %}
+### L3 review (not prune actions; VRF may be shared)
+
+| Op | Details |
+|----|---------|
+{% for action in plan.l3_review %}
+| `{{ action.op }}` | {% if action.neighbor is defined %}{{ action.vrf }} neighbor {{ action.neighbor }}{% elif action.prefix is defined %}{{ action.vrf }} {{ action.prefix }}{% elif action.name is defined %}{{ action.name }}{% else %}{{ action }}{% endif %} |
+{% endfor %}
+{% endif %}
+
+{% endfor %}
+{% else %}
+*(No prune plan candidates were generated for this VLAN.)*
+{% endif %}
+
+{% set l3 = report.l3_discovery | default({}) %}
+{% if l3.present | default(false) %}
+---
+
+## L3 context (before removing the SVI)
+
+{% if l3.shared_vrf | default(false) %}
+Shared VRF: {{ l3.shared_vrf_note }}
+{% endif %}
+
+Discovered VRF(s): **{{ l3.vrfs | join(', ') if l3.vrfs | default([]) else 'default' }}**
+Gateway: **{{ report.gateway | default('(none)') }}**
+Prefixes: **{{ report.prefixes | default([]) | join(', ') if report.prefixes | default([]) else '(none)' }}**
+{% endif %}

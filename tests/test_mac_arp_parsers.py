@@ -142,6 +142,8 @@ VLAN  Name                             Status    Ports
             any(e["port_role"] == "trunk" for e in record["mac_entries"])
         )
         self.assertEqual(record["access_ports"], [])
+        self.assertEqual(record["endpoint_mac_entries"], [])
+        self.assertTrue(record["switch_uplink_ports"])
 
 
 if __name__ == "__main__":

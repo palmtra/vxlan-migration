@@ -1,1 +1,2 @@
-{{ report | combine({'generated_at': _report_timestamp_ms}) | to_nice_yaml }}
+{{ report.discovery_export | default(report) | combine({'generated_at': _report_timestamp_ms}) | to_nice_yaml }}
+

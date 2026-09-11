@@ -39,7 +39,8 @@ Open features and planned work. Completed items are kept for context.
 - [x] Trunk cleanup intent kept simple: list VLAN-carrying trunks + `switchport trunk allowed vlan remove <id>` (no per-interface config dump)
 - [x] NXOS cumulative allow-list parsing for `add`/`remove` trunk lines
 - [x] CLI output fixture tests (EOS/NXOS sample files under `tests/fixtures/cli/`)
-- [x] Human-only prune report: trunk / SVI / VLAN candidates with access-port blockers
+- [x] Split discovery (compute MACs / endpoints) from prune (EOS session + commit timer)
+- [x] Human-only prune report: trunk / SVI / VLAN candidates with compute-endpoint blockers
 - [x] Discovery SSOT snippet fills VRF, gateway, prefixes, `service_type`, switch lists from facts
 
 ### Parked / hold (do not implement until there is a use-case)
@@ -47,7 +48,7 @@ Open features and planned work. Completed items are kept for context.
 - [ ] Default-VRF static route + BGP neighbor **prune candidates** (shown as L3 review only; not actions)
 - [ ] In-repo prune apply role (session diffs + commit timer + retain fail-closed)
 
-Human operators prune L3/SVIs from the discovery report. Automated apply is reserved for a future greenfield/new-customer deployment app, not this migration workflow.
+Human operators prune from the **prune report** (EOS configure session + timer). Automated apply is reserved until that report is proven; discovery never deletes.
 
 ### VLAN database
 

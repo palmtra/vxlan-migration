@@ -16,6 +16,7 @@
     _ios_trunk_summaries: "{{ _ios_trunk_show.stdout | default('') | parse_trunk_interfaces('ios') }}"
     _trunk_interface_names: "{{ _ios_trunk_show.stdout | default('') | trunk_interface_names('ios') }}"
     _trunk_exempt_interface_names: []
+    _interface_config_entries: []
   check_mode: false
 
 - name: IOS - default empty trunk interface lists
@@ -23,4 +24,5 @@
     _trunk_interface_names: []
     _trunk_exempt_interface_names: []
     _ios_trunk_summaries: []
+    _interface_config_entries: []
   when: _trunk_interface_names is not defined

@@ -127,22 +127,29 @@ Per switch, per VLAN (read-only):
 | Attribute | Source |
 |---|---|
 | VLAN + L2 ports | `show vlan id <id>` (Ports column; empty = no access/trunk) |
-| Access vs trunk | Ports from `show vlan id` vs `show interfaces trunk` names |
-| Learned MACs | `show mac address-table dynamic vlan <id>` |
+| Compute vs switch uplink | Interface `description` (z14/Nutanix/UCS vs `to ...-sw`) plus access-vs-trunk fallback |
+| Learned MACs | `show mac address-table dynamic vlan <id>` (discovery shows compute/unknown links only) |
 | SVI / L3 | `show run interface Vlan<id>` (parsed: VRF, IP, VR/anycast, HSRP, MTU, description) |
 | SVI VRF + ARP | VRF from SVI config; ARP whenever an SVI exists (not gated on `service_type`) |
 | Static routes (EOS + NXOS) | EOS `section ip route`; NXOS `vrf context` + global `ip route` → **L3 discovery** (shared VRF OK; not prune actions) |
 | BGP (EOS + NXOS) | Neighbors (incl. NXOS split stanzas), VLAN EVPN blocks, VRF RD/RT → **L3 discovery** |
 | Retain keep-list | Service `prune.retain` or `discovery_prune_retain` → `blocked_by_retain` |
 
-**Port logic:** Empty **Ports** on `show vlan id` means no L2 attachment. Remaining ports are access/endpoints unless they appear in `show interfaces trunk`, in which case they are trunk prune candidates — except EOS MLAG peer (`switchport trunk group mlagpeer`) and NXOS vPC peer-link trunks, which are excluded from maintenance lists. Trunk cleanup intent is: confirm carriage, then a human runs `switchport trunk allowed vlan remove <vlan_id>` (discovery does not apply deletes).
+**Port logic:** Empty **Ports** on `show vlan id` means no L2 attachment. Remaining ports are classified from interface descriptions plus access-vs-trunk:
 
-**Human prune plan:** actions are trunk remove, `no interface VlanX`, and `no vlan X` only. Access ports **block** prune on that switch (`blocked_by_access_ports`) until they are rehomed. SVI IPs / anycast / HSRP are listed so a human can remove the gateway without an automated session. Default-VRF statics and BGP, and objects in a **shared VRF**, are L3 discovery / review only — never prune candidates.
+- **Compute** — servers, IBM Z, Nutanix, UCS, HCI (including compute trunks such as z14 OSA)
+- **Switch uplink** — links to other switches (prune candidates)
+- **Peer-link** — EOS MLAG peer (`switchport trunk group mlagpeer`) and NXOS vPC peer-link (exempt)
+
+Discovery reports MACs learned on compute / unknown links only. Prune CLI is a **separate** report: EOS `configure session` + `commit timer` + `configure confirm`; NXOS checkpoint + rollback. Nothing is applied.
+
+**Human prune plan:** actions are trunk remove on switch-to-switch uplinks, `no interface VlanX`, and `no vlan X` only. Compute or unknown ports **block** prune (`blocked_by_compute_endpoints`) until they are rehomed. SVI IPs / anycast / HSRP are listed so a human can remove the gateway. Default-VRF statics and BGP, and objects in a **shared VRF**, are L3 review only — never prune candidates.
 
 Reports land under:
 
 ```text
 reports/<dc>/<vlan_slug>/<vlan_slug>_discovery_<timestamp>.{md,csv,json,yml}
+reports/<dc>/<vlan_slug>/<vlan_slug>_prune_<timestamp>.{md,json}
 reports/<dc>/_prune_plans/<hostname>_prune_plan_<timestamp>.json
 ```
 
@@ -176,7 +183,7 @@ Pass `-e manual_service_id=<id>` on discovery to seed VLAN IDs and apply `prune.
 
 ## Typical operator journey (Core)
 
-1. **Discover** an unknown VLAN → share the app-owner section (MACs, access ports, trunks) → review **where to prune** → review **L3** (SVI/HSRP/VRF/BGP; shared VRF is expected).
+1. **Discover** an unknown VLAN → share the compute MAC / endpoint view → review the **prune report** (EOS session + timer) → review **L3** before removing the SVI.
 2. **Copy the snippet** to `vars/vlans/<dc>/{vid}_{slug}.yml` and complete the VLAN record (VNI is required; confirm VRF, `target_switches`, `service_type`).
 3. **Generate overlay config** from that SSOT (`workflow_deploy.yml` with `cvp_apply_configlets=false`), then push when ready.
 4. **Approve and execute** the change control in CloudVision.

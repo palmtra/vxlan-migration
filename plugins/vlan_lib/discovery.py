@@ -8,7 +8,9 @@ from ansible.errors import AnsibleFilterError
 from vlan_lib.common import _str_equal, _vlan_present
 from vlan_lib.parsers import (
     _normalize_interface_name,
+    classify_attachment_role,
     classify_mac_port_role,
+    index_interface_configs,
     parse_arp_entries,
     parse_mac_address_table,
     parse_svi_details,
@@ -16,6 +18,85 @@ from vlan_lib.parsers import (
     parse_vlan_id_ports,
     svi_command_indicates_present,
 )
+
+_ENDPOINT_MAC_ROLES = frozenset({"compute", "unknown"})
+
+
+def _attachment_for_port(
+    iface,
+    config_by_norm,
+    platform,
+    access_ports,
+    trunk_ports,
+    exempt_trunk_ports,
+    switch_hostnames,
+    mac_count=0,
+):
+    parsed = config_by_norm.get(_normalize_interface_name(iface, platform), {})
+    role = classify_attachment_role(
+        iface,
+        parsed,
+        access_ports,
+        trunk_ports,
+        exempt_trunk_ports,
+        switch_hostnames,
+    )
+    return {
+        "interface": parsed.get("interface") or iface,
+        "role": role,
+        "description": parsed.get("description") or "",
+        "mode": parsed.get("mode") or "",
+        "raw": parsed.get("raw") or "",
+        "mac_count": mac_count,
+    }
+
+
+def _build_port_attachments(
+    all_ports,
+    mac_entries,
+    config_by_norm,
+    platform,
+    access_ports,
+    trunk_ports,
+    exempt_trunk_ports,
+    switch_hostnames,
+):
+    mac_counts = {}
+    extra_mac_ports = []
+    for entry in mac_entries or []:
+        iface = entry.get("interface") or ""
+        if not iface:
+            continue
+        norm = _normalize_interface_name(iface, platform)
+        mac_counts[norm] = mac_counts.get(norm, 0) + 1
+        extra_mac_ports.append(iface)
+
+    attachments = []
+    seen = set()
+    for iface in list(all_ports or []) + extra_mac_ports:
+        if not iface:
+            continue
+        norm = _normalize_interface_name(iface, platform)
+        if norm in seen:
+            continue
+        seen.add(norm)
+        attachments.append(
+            _attachment_for_port(
+                iface,
+                config_by_norm,
+                platform,
+                access_ports,
+                trunk_ports,
+                exempt_trunk_ports,
+                switch_hostnames,
+                mac_counts.get(norm, 0),
+            )
+        )
+    return attachments
+
+
+def _ifaces_with_role(attachments, role):
+    return [item["interface"] for item in attachments if item.get("role") == role]
 
 def extract_vlan_targeted_discovery(vlan, outputs):
     """Build a per-VLAN discovery record from targeted CLI commands."""
@@ -31,6 +112,10 @@ def extract_vlan_targeted_discovery(vlan, outputs):
     trunk_interface_names = outputs.get("trunk_interface_names", []) or []
     exempt_trunk_interface_names = outputs.get("exempt_trunk_interface_names", []) or []
     trunk_summaries = outputs.get("trunk_summaries") or []
+    switch_hostnames = outputs.get("switch_hostnames") or []
+    config_by_norm = index_interface_configs(
+        outputs.get("interface_configs") or [], platform
+    )
 
     port_membership = parse_vlan_id_ports(
         vlan_output,
@@ -50,13 +135,54 @@ def extract_vlan_targeted_discovery(vlan, outputs):
     access_ports = port_membership.get("access_ports", [])
     trunk_ports = port_membership.get("trunk_ports", [])
     exempt_trunk_ports = port_membership.get("exempt_trunk_ports", [])
+    port_attachments = _build_port_attachments(
+        port_membership.get("all_ports", []),
+        mac_entries,
+        config_by_norm,
+        platform,
+        access_ports,
+        trunk_ports,
+        exempt_trunk_ports,
+        switch_hostnames,
+    )
+    attachment_by_norm = {
+        _normalize_interface_name(item["interface"], platform): item
+        for item in port_attachments
+    }
+    compute_ports = _ifaces_with_role(port_attachments, "compute")
+    switch_uplink_ports = _ifaces_with_role(port_attachments, "switch_uplink")
+    peer_link_ports = _ifaces_with_role(port_attachments, "peer_link")
+    unknown_ports = _ifaces_with_role(port_attachments, "unknown")
     for entry in mac_entries:
+        iface = entry.get("interface", "")
         entry["port_role"] = classify_mac_port_role(
-            entry.get("interface", ""),
+            iface,
             access_ports,
             trunk_ports,
             exempt_trunk_ports,
         )
+        attached = attachment_by_norm.get(
+            _normalize_interface_name(iface, platform), {}
+        )
+        entry["attachment_role"] = attached.get("role") or classify_attachment_role(
+            iface,
+            config_by_norm.get(_normalize_interface_name(iface, platform), {}),
+            access_ports,
+            trunk_ports,
+            exempt_trunk_ports,
+            switch_hostnames,
+        )
+        entry["description"] = attached.get("description") or (
+            config_by_norm.get(_normalize_interface_name(iface, platform), {}).get(
+                "description"
+            )
+            or ""
+        )
+    endpoint_mac_entries = [
+        entry
+        for entry in mac_entries
+        if entry.get("attachment_role") in _ENDPOINT_MAC_ROLES
+    ]
 
     svi_details = parse_svi_details(svi_output, platform) if svi_present else {
         "present": False,
@@ -87,25 +213,29 @@ def extract_vlan_targeted_discovery(vlan, outputs):
                 ),
             }
         )
+    prune_trunks = switch_uplink_ports or trunk_ports
     trunk_cleanup_recommendations = [
         {
             "interface": iface,
             "port_role": "trunk",
             "cli": "switchport trunk allowed vlan remove %s" % int(vlan_id),
             "recommendation": (
-                "VLAN %s is carried on trunk %s. Human prune CLI is "
-                "`switchport trunk allowed vlan remove %s` on that interface "
-                "(candidate only; discovery never applies deletes)."
-                % (vlan_id, iface, vlan_id)
+                "VLAN %s is carried on switch-to-switch trunk %s. "
+                "Prune CLI lives in the prune report, not discovery."
+                % (vlan_id, iface)
             ),
         }
-        for iface in trunk_ports
+        for iface in prune_trunks
     ]
 
-    # Uplinks = trunks carrying the VLAN (Ports column ∩ trunk list), plus exempt peer-links.
-    uplinks = list(trunk_ports) + [
-        iface for iface in exempt_trunk_ports if iface not in trunk_ports
+    # Uplinks = switch-to-switch trunks plus exempt peer-links.
+    uplinks = list(switch_uplink_ports) + [
+        iface for iface in peer_link_ports if iface not in switch_uplink_ports
     ]
+    if not uplinks:
+        uplinks = list(trunk_ports) + [
+            iface for iface in exempt_trunk_ports if iface not in trunk_ports
+        ]
 
     return {
         "vlan_id": vlan_id,
@@ -122,6 +252,11 @@ def extract_vlan_targeted_discovery(vlan, outputs):
         "access_ports": access_ports,
         "trunk_ports": trunk_ports,
         "exempt_trunk_ports": exempt_trunk_ports,
+        "compute_ports": compute_ports,
+        "switch_uplink_ports": switch_uplink_ports,
+        "peer_link_ports": peer_link_ports,
+        "unknown_ports": unknown_ports,
+        "port_attachments": port_attachments,
         "trunk_allowed": trunk_allowed,
         "uplinks": uplinks,
         "all_ports": port_membership.get("all_ports", []),
@@ -129,6 +264,7 @@ def extract_vlan_targeted_discovery(vlan, outputs):
         "mac_learned": mac_learned,
         "arp_learned": arp_learned,
         "mac_entries": mac_entries,
+        "endpoint_mac_entries": endpoint_mac_entries,
         "arp_entries": arp_entries,
         "vlan_id_raw": vlan_output,
         "svi_raw": svi_output,

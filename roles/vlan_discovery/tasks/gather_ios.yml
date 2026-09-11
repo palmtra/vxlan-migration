@@ -30,7 +30,7 @@
 
 - name: IOS - build retain-aware prune plan candidates (VLAN/SVI/trunk)
   ansible.builtin.set_fact:
-    _ios_prune_plan: "{{ inventory_hostname | string | build_device_prune_plan(_pp_vlans, _pp_retain, _pp_statics, _pp_bgp, none) }}"
+    _ios_prune_plan: "{{ inventory_hostname | string | build_device_prune_plan(_pp_vlans, _pp_retain, _pp_statics, _pp_bgp, none, prune_commit_timer | default('00:10:00')) }}"
   vars:
     _pp_vlans: "{{ _ios_per_vlan_results | default([]) }}"
     _pp_retain: "{{ hostvars['localhost']['_prune_retain'] | default(discovery_prune_retain | default({})) }}"

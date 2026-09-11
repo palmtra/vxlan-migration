@@ -1,362 +1,99 @@
-# VLAN {{ report.vlan_name }} (VID {{ report.vlan_id }}) - Discovery Report
+# VLAN {{ report.vlan_name }} (VID {{ report.vlan_id }}) - Discovery
 
 Generated: {{ _report_timestamp_ms }}
 Data center: {{ report.data_center | default('unknown') }}
-Service type: {{ report.service_type | default('unknown') }}
 {% if report.vlan_name_on_box | default('') %}On-box VLAN name: {{ report.vlan_name_on_box }}
 {% endif %}
-> **Read-only discovery.** Share **section 1** with application owners.
-> Operators use **section 2** to decide what to prune (humans apply; discovery never deletes).
-> **Section 3** is L3 context for VXLAN planning (SVI, HSRP/anycast, VRF, BGP). A VRF may be shared.
-> **Section 4** is the SSOT snippet → generate VXLAN config.
+Gateway: {{ report.gateway | default('(none)') }}
+Prefixes: {{ report.prefixes | default([]) | join(', ') if report.prefixes | default([]) else '(none)' }}
 
-## 1. Application owner view — where this VLAN lives
+This report shows **where MACs are learned on compute links** - servers, IBM Z, Nutanix, UCS, or other HCI. Switch-to-switch uplinks are listed for context only.
 
-Use this section to confirm endpoints, owners, and which switches still carry the VLAN.
+Prune CLI is **not** in this file. See `{{ report.vlan_slug }}_prune_{{ _report_timestamp_ms }}.md`.
 
-### Endpoints (MAC table)
-
-{% if report.endpoint_inventory | default([]) | length > 0 %}
-| Switch | MAC | Interface | Port role |
-|--------|-----|-----------|-----------|
-{% for entry in report.endpoint_inventory %}
-| {{ entry.hostname }} | {{ entry.mac }} | {{ entry.interface }} | {{ entry.port_role | default('unknown') }} |
-{% endfor %}
-{% else %}
-*(No dynamic MAC entries parsed for this VLAN.)*
-{% endif %}
-
-### Access / endpoint interfaces
-
-{% if report.access_inventory | default([]) | length > 0 %}
-| Switch | Interface |
-|--------|-----------|
-{% for item in report.access_inventory %}
-| {{ item.hostname }} | {{ item.interface }} |
-{% endfor %}
-{% else %}
-*(No access / endpoint ports in the VLAN Ports column.)*
-{% endif %}
-
-### Trunks carrying this VLAN
-
-EOS MLAG peer (`switchport trunk group mlagpeer`) and NXOS vPC peer-link trunks are **exempt** (not prune candidates).
-
-{% if report.trunk_inventory | default([]) | length > 0 %}
-| Switch | Interface | Prune candidate |
-|--------|-----------|-----------------|
-{% for item in report.trunk_inventory %}
-| {{ item.hostname }} | {{ item.interface }} | {{ 'no (exempt peer-link)' if item.exempt | default(false) else 'yes' }} |
-{% endfor %}
-{% else %}
-*(No trunks carrying this VLAN were found.)*
-{% endif %}
-
-### Switches where this VLAN matters
-
-| Category | Switches |
-|----------|----------|
-| **L2 port attachment** (`show vlan id` Ports column non-empty) | {{ report.switches_found | join(', ') if report.switches_found | length > 0 else '*(none)*' }} |
-| **VLAN defined (no ports listed)** | {{ (report.switches_vlan_defined | default([]) | difference(report.switches_found | default([]))) | join(', ') if (report.switches_vlan_defined | default([]) | difference(report.switches_found | default([]))) | length > 0 else '*(none)*' }} |
-| **Access / endpoint ports** | {{ report.switches_with_access_ports | default([]) | join(', ') if report.switches_with_access_ports | default([]) | length > 0 else '*(none)*' }} |
-| **Trunk / uplink ports** | {{ report.switches_with_trunk_ports | default([]) | join(', ') if report.switches_with_trunk_ports | default([]) | length > 0 else '*(none)*' }} |
-| **Learned MAC addresses** | {{ report.switches_with_mac_learning | join(', ') if report.switches_with_mac_learning | length > 0 else '*(none)*' }} |
-| **SVI (L3) present** | {{ report.switches_with_svi | join(', ') if report.switches_with_svi | length > 0 else '*(none)*' }} |
-| **ARP entries on SVI** | {{ report.switches_with_arp | join(', ') if report.switches_with_arp | length > 0 else '*(none)*' }} |
-| **Already in VLAN DB** | {{ report.target_switches | join(', ') if report.target_switches | length > 0 else '*(not set)*' }} |
-
-### Per-switch summary
-
-| Switch | OS | Ports | Access | Trunk | MAC | SVI | SVI VRF | ARP |
-|--------|----|-------|--------|-------|-----|-----|---------|-----|
+| Switch | Compute MACs | Compute ports | Uplinks | Unknown |
+|--------|--------------|---------------|---------|---------|
 {% for device in report.devices %}
-| {{ device.hostname }} | {{ device.os_family }} | {{ 'yes' if device.has_port_membership else 'no' }} | {{ device.access_ports | default([]) | length }} | {{ device.trunk_ports | default([]) | length }} | {{ device.mac_entries | default([]) | length if device.mac_entries is defined else ('yes' if device.mac_learned else 'no') }} | {{ 'yes' if device.svi_present else 'no' }} | {{ device.svi_vrf | default('-') }} | {{ device.arp_entries | default([]) | length if device.arp_entries is defined else ('yes' if device.arp_learned else 'no') }} |
+| {{ device.hostname }} | {{ device.endpoint_mac_entries | default([]) | length }} | {{ device.compute_ports | default([]) | join(', ') if device.compute_ports | default([]) else '-' }} | {{ device.switch_uplink_ports | default([]) | join(', ') if device.switch_uplink_ports | default([]) else '-' }} | {{ device.unknown_ports | default([]) | join(', ') if device.unknown_ports | default([]) else '-' }} |
 {% endfor %}
-
----
-
-## 2. Where to prune (operators)
-
-Discovery never applies deletes. Automated prune apply is out of scope.
-A human reviews this plan after endpoints have moved.
-
-**Order:** (1) rehome or shut access ports (2) remove VLAN from non-exempt trunks
-(3) `no interface Vlan{{ report.vlan_id }}` (4) `no vlan {{ report.vlan_id }}`.
-
-Static routes, BGP neighbors, and VRF teardown are **not** prune actions. See section 3
-(they often belong to a **shared VRF**).
-
-{% if report.trunk_cleanup_candidates | default([]) | length > 0 %}
-### Trunk prune candidates
-
-| Switch | Trunk interface | Cleanup CLI | Notes |
-|--------|-----------------|-------------|-------|
-{% for item in report.trunk_cleanup_candidates %}
-| {{ item.hostname }} | {{ item.interface }} | `{{ item.cli | default('switchport trunk allowed vlan remove ' ~ report.vlan_id) }}` | {{ item.recommendation }} |
-{% endfor %}
-{% endif %}
-
-{% if report.prune_plans | default([]) | length > 0 %}
-{% for plan in report.prune_plans %}
-### {{ plan.hostname }}
-
-- Status: `{{ plan.status | default('candidate') }}` (destructive={{ plan.destructive | default(false) }}, human_required={{ plan.human_required | default(true) }})
-- SVI VRFs in scope: {{ plan.svi_vrfs | default([]) | join(', ') if plan.svi_vrfs | default([]) else '*(none)*' }}
-{% if plan.endpoint_ports | default([]) | length > 0 %}
-- **Access / endpoint ports still attached:** {{ plan.endpoint_ports | join(', ') }} — do not prune this switch until those ports are rehomed or shut.
-{% endif %}
-
-{% if plan.svi_inventory | default([]) | length > 0 %}
-**SVI / gateway to remove after overlay is live:**
-
-| VLAN | VRF | SVI IPs | Gateway (VR / HSRP) |
-|------|-----|---------|---------------------|
-{% for svi in plan.svi_inventory %}
-| {{ svi.vlan_id }} | {{ svi.vrf }} | {{ svi.ip_addresses | default([]) | join(', ') if svi.ip_addresses | default([]) else '*(none)*' }} | {{ (svi.virtual_router_addresses | default([]) + svi.hsrp_addresses | default([])) | join(', ') if (svi.virtual_router_addresses | default([]) + svi.hsrp_addresses | default([])) else '*(none)*' }} |
-{% endfor %}
-{% endif %}
-
-{% if plan.actions | default([]) | length > 0 %}
-| Op | Details | Confidence |
-|----|---------|------------|
-{% for action in plan.actions %}
-| `{{ action.op }}` | {% if action.cli is defined %}`{{ action.cli | replace('\n', ' / ') }}`{% elif action.interface is defined %}{{ action.interface }} vlans={{ action.vlans | default([]) }}{% elif action.vlan_id is defined %}vlan {{ action.vlan_id }}{% else %}{{ action }}{% endif %} | {{ action.confidence | default('-') }} |
-{% endfor %}
-{% else %}
-*(No trunk / SVI / VLAN prune actions for this switch.)*
-{% endif %}
-
-{% if plan.blocked_by_retain | default([]) | length > 0 %}
-**Blocked by retain:**
-
-| Op | Details | Reason |
-|----|---------|--------|
-{% for action in plan.blocked_by_retain %}
-| `{{ action.op }}` | {% if action.neighbor is defined %}{{ action.vrf }} neighbor {{ action.neighbor }}{% elif action.prefix is defined %}{{ action.vrf }} {{ action.prefix }}{% elif action.name is defined %}{{ action.name }}{% else %}{{ action }}{% endif %} | {{ action.reason | default('retain') }} |
-{% endfor %}
-{% endif %}
-
-{% endfor %}
-{% else %}
-*(No prune plan candidates were generated for this VLAN.)*
-{% endif %}
-
----
-
-## 3. L3 discovery (gateway, VRF, routing)
-
-{% set l3 = report.l3_discovery | default({}) %}
-{% if l3.present | default(false) %}
-{% if l3.shared_vrf | default(false) %}
-> **Shared VRF:** {{ l3.shared_vrf_note }}
-{% endif %}
-
-Discovered VRF(s) for this VLAN: **{{ l3.vrfs | join(', ') if l3.vrfs | default([]) else 'default' }}**
-Gateway (anycast / HSRP VIP): **{{ report.gateway | default('(none)') }}**
-Prefixes: **{{ report.prefixes | default([]) | join(', ') if report.prefixes | default([]) else '(none)' }}**
-
-{% for dev in l3.devices %}
-### {{ dev.hostname }} ({{ dev.os_family }}) — VRF `{{ dev.vrf }}`
-
-- **SVI description:** {{ dev.svi.description | default('(none)') }}
-- **MTU:** {{ dev.svi.mtu | default('n/a') }}
-- **SVI IP addresses:** {{ dev.svi.ip_addresses | default([]) | join(', ') if dev.svi.ip_addresses | default([]) else '*(none)*' }}
-- **Virtual-router (anycast):** {{ dev.svi.virtual_router_addresses | default([]) | join(', ') if dev.svi.virtual_router_addresses | default([]) else '*(none)*' }}
-- **HSRP VIPs:** {{ dev.svi.hsrp_addresses | default([]) | join(', ') if dev.svi.hsrp_addresses | default([]) else '*(none)*' }}
-{% if dev.svi.hsrp_groups | default([]) | length > 0 %}
-- **HSRP groups:** {% for g in dev.svi.hsrp_groups %}group {{ g.group }} ip {{ g.ip }}{% if not loop.last %}; {% endif %}{% endfor %}
-{% endif %}
-- **ARP neighbors on this SVI:** {{ dev.arp_count | default(0) }}
-- **BGP AS:** {{ dev.bgp_as | default('(not parsed)') }}
-
-{% if dev.bgp_vlan | default([]) | length > 0 %}
-**BGP VLAN {{ report.vlan_id }} (EVPN) block:**
-
-| RD | Route targets | Redistribute |
-|----|---------------|--------------|
-{% for block in dev.bgp_vlan %}
-| {{ block.rd | default('-') }} | {{ block.route_targets | default([]) | join(', ') if block.route_targets | default([]) else '-' }} | {{ block.redistribute | default([]) | join(', ') if block.redistribute | default([]) else '-' }} |
-{% endfor %}
-{% endif %}
-
-{% if dev.bgp_vrf | default([]) | length > 0 %}
-**BGP VRF `{{ dev.vrf }}` (may be shared):**
-
-| RD | Route targets |
-|----|---------------|
-{% for vrf in dev.bgp_vrf %}
-| {{ vrf.rd | default('-') }} | {{ vrf.route_targets | default([]) | join(', ') if vrf.route_targets | default([]) else '-' }} |
-{% endfor %}
-{% endif %}
-
-{% if dev.bgp_neighbors | default([]) | length > 0 %}
-**BGP neighbors in VRF `{{ dev.vrf }}` (may be shared):**
-
-| Neighbor | Remote AS | Update source | Description |
-|----------|-----------|---------------|-------------|
-{% for n in dev.bgp_neighbors %}
-| {{ n.neighbor }} | {{ n.remote_as | default('-') }} | {{ n.update_source | default('-') }} | {{ n.description | default('-') }} |
-{% endfor %}
-{% else %}
-*(No BGP neighbors parsed in this VRF.)*
-{% endif %}
-
-{% if dev.static_routes | default([]) | length > 0 %}
-**Static routes in VRF `{{ dev.vrf }}` (may be shared):**
-
-| Prefix | Next hop | Name |
-|--------|----------|------|
-{% for r in dev.static_routes %}
-| {{ r.prefix }} | {{ r.next_hop }} | {{ r.name | default('-') }} |
-{% endfor %}
-{% else %}
-*(No static routes parsed in this VRF.)*
-{% endif %}
-
-{% endfor %}
-{% else %}
-*(No SVI on discovered switches for VLAN {{ report.vlan_id }}. Gateway is likely off-box — confirm via MAC table uplinks.)*
-{% endif %}
-
----
-
-## 4. Next step — SSOT and VXLAN config
-
-A copy-paste YAML snippet was written alongside this report:
-`{{ report.vlan_slug }}_vlan_db_snippet_{{ _report_timestamp_ms }}.yml`
-
-1. Copy the snippet to `vars/vlans/{{ report.data_center | default('<dc>') }}/` (VNI is still **TODO** — discovery cannot infer it).
-2. Confirm `vrf`, `gateway`, `prefixes`, `target_switches`, and `service_type` from sections 1 and 3.
-3. Generate overlay config from that SSOT (no CVP push by default):
-
-```bash
-ansible-playbook -i inventory/hosts.yml playbooks/core/workflow_deploy.yml \
-  -e manual_vlan_id={{ report.vlan_id }} \
-  -e manual_data_center={{ report.data_center | default('lisle') }} \
-  -e cvp_apply_configlets=false \
-  --limit dc_{{ report.data_center | default('lisle') }}
-```
-
-See `docs/examples/generate-config-without-cvp-push.md`.
-
----
-
-## Per-switch CLI appendix
 
 {% for device in report.devices %}
-### [{{ device.hostname }}] VLAN {{ report.vlan_id }} --- {{ report.vlan_name }}
+{% if device.vlan_present or device.has_port_membership or device.mac_entries | default([]) | length > 0 %}
+================================================
+[{{ device.hostname }}] VLAN {{ report.vlan_id }} --- {{ report.vlan_name_on_box | default(report.vlan_name) }}
 
-- **OS:** {{ device.os_family }}
-- **VLAN in database (`show vlan id {{ report.vlan_id }}`):** {{ 'yes' if device.vlan_present else 'no' }}
-- **L2 port attachment (Ports column):** {{ 'yes' if device.has_port_membership else 'no' }}
+**Dynamic Mac Address Table - VLAN {{ report.vlan_id }}** (compute links)
 
-#### Dynamic MAC Address Table - VLAN {{ report.vlan_id }}
-
-{% if device.mac_entries | default([]) | length > 0 %}
-| MAC | Interface | Type | Port role |
-|-----|-----------|------|-----------|
-{% for entry in device.mac_entries %}
-| {{ entry.mac }} | {{ entry.interface }} | {{ entry.entry_type | default('learned') }} | {{ entry.port_role | default('unknown') }} |
+{% if device.endpoint_mac_entries | default([]) | length > 0 %}
+| MAC | Port | Description |
+|-----|------|-------------|
+{% for entry in device.endpoint_mac_entries %}
+| {{ entry.mac }} | {{ entry.interface }} | {{ entry.description | default('') }} |
 {% endfor %}
 {% else %}
-*(No dynamic MAC entries parsed{% if device.mac_learned %} — see raw dump below{% endif %}.)*
+*(No MACs learned on compute / unknown links. Learning on switch-to-switch uplinks is omitted.)*
 {% endif %}
 
-#### Uplinks
+**Uplinks** (switch-to-switch)
 
-Trunks that carry this VLAN (from Ports column ∩ trunk inventory). Exempt MLAG/vPC peer-links are labeled.
-
-{% set _uplinks = device.uplinks | default(device.trunk_ports | default([]) + device.exempt_trunk_ports | default([])) %}
-{% if _uplinks | length > 0 %}
-{% for iface in _uplinks %}
-- VLAN {{ report.vlan_id }} is carried on **{{ iface }}**{% if iface in (device.exempt_trunk_ports | default([])) %} *(exempt peer-link — not a prune candidate)*{% elif iface in (device.trunk_ports | default([])) %} *(prune candidate)*{% endif %}
+{% set ns = namespace(uplink_count=0) %}
+{% for item in device.port_attachments | default([]) %}
+{% if item.role == 'switch_uplink' or item.role == 'peer_link' %}
+{% set ns.uplink_count = ns.uplink_count + 1 %}
+VLAN {{ report.vlan_id }} is allowed on {{ item.interface }}{% if item.role == 'peer_link' %} *(MLAG/vPC peer-link)*{% endif %}{% if item.description %}
+  description {{ item.description }}{% endif %}
+{% endif %}
 {% endfor %}
-{% else %}
-*(No uplink / trunk carriage found on this switch.)*
+{% if ns.uplink_count == 0 %}
+*(No switch-to-switch uplinks carry this VLAN on this switch.)*
 {% endif %}
 
-#### Endpoints
+**Endpoints** (servers / IBM Z / Nutanix / UCS / HCI)
 
-Access / endpoint ports from the VLAN Ports column (not listed as trunks):
+{% set ns = namespace(compute_count=0) %}
+{% for item in device.port_attachments | default([]) %}
+{% if item.role == 'compute' %}
+{% set ns.compute_count = ns.compute_count + 1 %}
+{% if item.raw | default('') %}
+{{ item.raw }}
+{% else %}
+interface {{ item.interface }}
+{% if item.description %}  description {{ item.description }}
+{% endif %}
+{% endif %}
 
-{% if device.access_ports | default([]) | length > 0 %}
-{% for iface in device.access_ports %}
-- **{{ iface }}**
+{% endif %}
 {% endfor %}
-{% else %}
-*(No access / endpoint ports on this switch — MAC learning may still appear on uplinks only.)*
+{% if ns.compute_count == 0 %}
+*(No compute-facing ports on this switch.)*
 {% endif %}
 
-#### Gateway / SVI
+{% set ns = namespace(unknown_count=0) %}
+{% for item in device.port_attachments | default([]) %}
+{% if item.role == 'unknown' %}
+{% if ns.unknown_count == 0 %}
+**Needs review** (could not classify as compute vs switch)
 
+{% endif %}
+{% set ns.unknown_count = ns.unknown_count + 1 %}
+{% if item.raw | default('') %}
+{{ item.raw }}
+{% else %}
+interface {{ item.interface }}
+{% if item.description %}  description {{ item.description }}
+{% endif %}
+{% endif %}
+
+{% endif %}
+{% endfor %}
 {% if device.svi_present %}
-- **SVI present:** yes (`show run interface Vlan{{ report.vlan_id }}`)
-- **VRF:** {{ device.svi_vrf | default('default') }}
-{% if device.svi_details is defined and device.svi_details.present | default(false) %}
-- **Description:** {{ device.svi_details.description | default('(none)') }}
-- **MTU:** {{ device.svi_details.mtu | default('n/a') }}
-- **IP addresses:** {{ device.svi_details.ip_addresses | default([]) | join(', ') if device.svi_details.ip_addresses | default([]) else '*(none)*' }}
-- **Virtual-router addresses:** {{ device.svi_details.virtual_router_addresses | default([]) | join(', ') if device.svi_details.virtual_router_addresses | default([]) else '*(none)*' }}
-- **HSRP VIPs:** {{ device.svi_details.hsrp_addresses | default([]) | join(', ') if device.svi_details.hsrp_addresses | default([]) else '*(none)*' }}
-{% if device.svi_details.hsrp_groups | default([]) | length > 0 %}
-- **HSRP groups:** {% for g in device.svi_details.hsrp_groups %}group {{ g.group }} ip {{ g.ip }}{% if not loop.last %}; {% endif %}{% endfor %}
+**Gateway / SVI:** {{ device.svi_details.ip_addresses | default([]) | join(', ') if device.svi_details.ip_addresses | default([]) else '(present)' }}  VRF {{ device.svi_vrf | default('default') }}  VIP {{ ((device.svi_details.virtual_router_addresses | default([])) + (device.svi_details.hsrp_addresses | default([]))) | join(', ') if ((device.svi_details.virtual_router_addresses | default([])) + (device.svi_details.hsrp_addresses | default([]))) else '(none)' }}
 {% endif %}
+
 {% endif %}
-{% if device.arp_entries | default([]) | length > 0 %}
-
-ARP neighbors (structured):
-
-| IP | MAC | Interface | Age |
-|----|-----|-----------|-----|
-{% for entry in device.arp_entries %}
-| {{ entry.ip }} | {{ entry.mac }} | {{ entry.interface | default('-') }} | {{ entry.age | default('-') }} |
 {% endfor %}
-{% elif device.arp_learned %}
-- ARP learned: yes (see raw dump)
-{% else %}
-- ARP learned: no
-{% endif %}
-{% else %}
-- **No SVI on this switch** for VLAN {{ report.vlan_id }}.
-- Gateway is likely off-box (firewall / another leaf). Confirm via MAC table uplinks and external inventory; discovery does not invent gateway notes.
-{% endif %}
-
-#### Raw CLI appendix
-
-##### `show vlan id {{ report.vlan_id }}`
-
-```
-{{ device.vlan_id_raw | default('No data collected.') }}
-```
-
-##### `show running-config interface Vlan{{ report.vlan_id }}`
-
-```
-{{ device.svi_raw | default('No data collected.') }}
-```
-
-##### Dynamic MAC Address Table (raw)
-
-```
-{{ device.mac_table_raw | default('No data collected.') }}
-```
-
-{% if device.svi_present %}
-##### ARP (VRF {{ device.svi_vrf | default('default') }}) (raw)
-
-```
-{{ device.arp_raw | default('No data collected.') }}
-```
-{% endif %}
-
-{% if device.bgp_raw | default('') | length > 0 %}
-##### BGP (raw)
-
-```
-{{ device.bgp_raw }}
-```
-{% endif %}
 
 ---
 
-{% endfor %}
+SSOT snippet: `{{ report.vlan_id | vlan_db_record_filename(report.vlan_name) }}` (VNI still TODO).
+Prune / session CLI: `{{ report.vlan_slug }}_prune_{{ _report_timestamp_ms }}.md`.

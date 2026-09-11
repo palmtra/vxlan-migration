@@ -33,7 +33,7 @@ Short, runnable task guides in [examples/](examples/):
 
 | Example | Description |
 |---|---|
-| [examples/discover-vlan.md](examples/discover-vlan.md) | Read-only VLAN discovery |
+| [examples/discover-vlan.md](examples/discover-vlan.md) | Read-only VLAN discovery and prune report |
 | [examples/generate-config-without-cvp-push.md](examples/generate-config-without-cvp-push.md) | Generate CVP configlets locally without push |
 | [examples/export-vlan-to-netbox.md](examples/export-vlan-to-netbox.md) | Export local VLAN DB to NetBox |
 

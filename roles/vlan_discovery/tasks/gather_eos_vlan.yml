@@ -51,6 +51,37 @@
   changed_when: false
   failed_when: false
 
+- name: "EOS - parse VLAN ports and MAC table for interface-config fetch"
+  ansible.builtin.set_fact:
+    _eos_member_run_results:
+      results: []
+    _eos_vlan_ports: "{{ _eos_vlan_id_show.stdout | default('') | parse_vlan_id_ports(_disc_vlan.id, 'eos', _trunk_interface_names | default([]), _trunk_exempt_interface_names | default([])) }}"
+    _eos_mac_preview: "{{ _eos_mac_show.stdout | default('') | parse_mac_address_table(_disc_vlan.id) }}"
+  check_mode: false
+
+- name: "EOS - list VLAN member ports missing interface config"
+  ansible.builtin.set_fact:
+    _eos_ports_needing_config: "{{ _eos_vlan_ports.all_ports | default([]) | ports_needing_interface_config(_interface_config_entries | default([]), _eos_mac_preview | default([]), 'eos') }}"
+  check_mode: false
+
+- name: "EOS - fetch running-config for remaining VLAN member ports"
+  ansible.netcommon.cli_command:
+    command: "show running-config interface {{ item }}"
+  register: _eos_member_run_results
+  loop: "{{ _eos_ports_needing_config }}"
+  loop_control:
+    label: "{{ item }}"
+  when: _eos_ports_needing_config | length > 0
+  check_mode: false
+  changed_when: false
+  failed_when: false
+
+- name: "EOS - default empty member interface configs"
+  ansible.builtin.set_fact:
+    _eos_member_run_results:
+      results: []
+  when: _eos_member_run_results is not defined or _eos_member_run_results.results is not defined
+
 - name: "EOS - append discovery record for VLAN {{ _disc_vlan.id }}"
   ansible.builtin.set_fact:
     _eos_per_vlan_results: "{{ _eos_per_vlan_results | default([]) + [_eos_vlan_record] }}"
@@ -64,5 +95,7 @@
       'trunk_interface_names': _trunk_interface_names | default([]),
       'exempt_trunk_interface_names': _trunk_exempt_interface_names | default([]),
       'trunk_summaries': _eos_trunk_summaries | default([]),
+      'interface_configs': (_interface_config_entries | default([])) + (_eos_member_run_results.results | default([]) | interface_config_entries_from_cli_results('eos')),
+      'switch_hostnames': ansible_play_hosts,
       'target_vrf': target_vrf | default('')
     }) }}"

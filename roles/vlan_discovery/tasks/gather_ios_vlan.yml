@@ -51,6 +51,37 @@
   changed_when: false
   failed_when: false
 
+- name: "IOS - parse VLAN ports and MAC table for interface-config fetch"
+  ansible.builtin.set_fact:
+    _ios_member_run_results:
+      results: []
+    _ios_vlan_ports: "{{ _ios_vlan_id_show.stdout | default('') | parse_vlan_id_ports(_disc_vlan.id, 'ios', _trunk_interface_names | default([]), _trunk_exempt_interface_names | default([])) }}"
+    _ios_mac_preview: "{{ _ios_mac_show.stdout | default('') | parse_mac_address_table(_disc_vlan.id) }}"
+  check_mode: false
+
+- name: "IOS - list VLAN member ports missing interface config"
+  ansible.builtin.set_fact:
+    _ios_ports_needing_config: "{{ _ios_vlan_ports.all_ports | default([]) | ports_needing_interface_config(_interface_config_entries | default([]), _ios_mac_preview | default([]), 'ios') }}"
+  check_mode: false
+
+- name: "IOS - fetch running-config for remaining VLAN member ports"
+  ansible.netcommon.cli_command:
+    command: "show running-config interface {{ item }}"
+  register: _ios_member_run_results
+  loop: "{{ _ios_ports_needing_config }}"
+  loop_control:
+    label: "{{ item }}"
+  when: _ios_ports_needing_config | length > 0
+  check_mode: false
+  changed_when: false
+  failed_when: false
+
+- name: "IOS - default empty member interface configs"
+  ansible.builtin.set_fact:
+    _ios_member_run_results:
+      results: []
+  when: _ios_member_run_results is not defined or _ios_member_run_results.results is not defined
+
 - name: "IOS - append discovery record for VLAN {{ _disc_vlan.id }}"
   ansible.builtin.set_fact:
     _ios_per_vlan_results: "{{ _ios_per_vlan_results | default([]) + [_ios_vlan_record] }}"
@@ -64,5 +95,7 @@
       'trunk_interface_names': _trunk_interface_names | default([]),
       'exempt_trunk_interface_names': _trunk_exempt_interface_names | default([]),
       'trunk_summaries': _ios_trunk_summaries | default([]),
+      'interface_configs': (_interface_config_entries | default([])) + (_ios_member_run_results.results | default([]) | interface_config_entries_from_cli_results('ios')),
+      'switch_hostnames': ansible_play_hosts,
       'target_vrf': target_vrf | default('')
     }) }}"

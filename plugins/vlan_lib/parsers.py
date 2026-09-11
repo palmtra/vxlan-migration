@@ -471,6 +471,192 @@ def classify_mac_port_role(interface, access_ports=None, trunk_ports=None, exemp
     return "unknown"
 
 
+# Compute-facing (servers, IBM Z, Nutanix, UCS, HCI). Checked before switch-uplink.
+_COMPUTE_DESC_RE = re.compile(
+    r"(?i)(?:"
+    r"\bz1[3-9]\b|\bz16\b|\bosa\b|\bmainframe\b|"
+    r"\bnutanix\b|\bahv\b|\bacropolis\b|\bucs\b|"
+    r"\bfabric\s+interconnect\b|\bfi-[ab]\b|"
+    r"\besxi\b|\bvmware\b|\bvsphere\b|\bhyper-?v\b|"
+    r"\bhci\b|\bhyperconverged\b|\bvxrail\b|"
+    r"\bblade\b|\bc2[24]0\b|\bc480\b|"
+    r"\bserver\b|\bhypervisor\b|\bkvm\b|\bproxmox\b|"
+    r"\bcompute\b|\bvmnic\b|\bvnic\b"
+    r")"
+)
+
+# Switch-to-switch: uplinks, peer links, and descriptions pointing at other switches.
+_SWITCH_DESC_RE = re.compile(
+    r"(?i)(?:"
+    r"\buplink\b|\bpeer-?link\b|\bmlagpeer\b|"
+    r"\bto\s+\S*(?:sw|leaf|spine|agg|core|oob|router|fw)\S*|"
+    r"[-_](?:sw|leaf|spine|agg|core|oob)\d+|"
+    r"\b(?:spine|leaf|aggacc|aggpe|core|oob)[-_]?\d*\b"
+    r")"
+)
+
+_INTERFACE_LINE_RE = re.compile(r"^interface\s+(\S+)\s*$", re.I | re.M)
+_SWITCHPORT_MODE_RE = re.compile(r"^\s*switchport\s+mode\s+(\S+)", re.I | re.M)
+
+
+def _interface_stanza(text):
+    """Return the first interface stanza from a show-run snippet."""
+    lines = str(text or "").splitlines()
+    start = None
+    for index, line in enumerate(lines):
+        if re.match(r"^interface\s+\S+", line, re.I):
+            start = index
+            break
+    if start is None:
+        return "\n".join(line.rstrip() for line in lines).strip()
+    collected = []
+    for line in lines[start:]:
+        if collected and re.match(r"^interface\s+\S+", line, re.I):
+            break
+        collected.append(line.rstrip())
+    return "\n".join(collected).strip()
+
+
+def parse_l2_interface_config(text, interface_hint="", platform="eos"):
+    """Parse description / mode / raw stanza from ``show run interface``."""
+    raw_text = str(text or "")
+    stanza = _interface_stanza(raw_text)
+    iface_match = _INTERFACE_LINE_RE.search(stanza) or _INTERFACE_LINE_RE.search(raw_text)
+    interface = interface_hint or ""
+    if iface_match:
+        interface = iface_match.group(1)
+    desc_match = _SVI_DESC_RE.search(stanza)
+    mode_match = _SWITCHPORT_MODE_RE.search(stanza)
+    mode = (mode_match.group(1).lower() if mode_match else "")
+    if mode not in ("access", "trunk"):
+        mode = "unknown"
+    return {
+        "interface": interface,
+        "description": desc_match.group(1).strip() if desc_match else "",
+        "mode": mode,
+        "peer_link": trunk_interface_is_maintenance_exempt(stanza, platform),
+        "raw": stanza,
+    }
+
+
+def interface_config_entries_from_cli_results(results, platform="eos"):
+    """Normalize Ansible cli_command loop results into interface config dicts."""
+    entries = []
+    for entry in results or []:
+        if not isinstance(entry, dict):
+            continue
+        stdout = entry.get("stdout") or entry.get("config") or entry.get("raw") or ""
+        item = entry.get("item")
+        if isinstance(item, dict):
+            iface = item.get("interface") or ""
+        elif item not in (None, ""):
+            iface = str(item)
+        else:
+            iface = entry.get("interface") or ""
+        parsed = parse_l2_interface_config(stdout, iface, platform)
+        if parsed.get("interface") or parsed.get("raw"):
+            entries.append(parsed)
+    return entries
+
+
+def ports_needing_interface_config(
+    ports, cached_configs=None, mac_entries=None, platform="eos"
+):
+    """Return VLAN/MAC ports that do not already have a cached interface config."""
+    cached_norm = set()
+    for item in cached_configs or []:
+        if isinstance(item, dict):
+            iface = item.get("interface") or ""
+        else:
+            iface = str(item or "")
+        if iface:
+            cached_norm.add(_normalize_interface_name(iface, platform))
+
+    mac_ifaces = []
+    for entry in mac_entries or []:
+        if isinstance(entry, dict):
+            mac_ifaces.append(entry.get("interface") or "")
+        else:
+            mac_ifaces.append(str(entry or ""))
+
+    needed = []
+    seen = set()
+    for port in list(ports or []) + mac_ifaces:
+        if not port:
+            continue
+        norm = _normalize_interface_name(port, platform)
+        if not norm or norm in cached_norm or norm in seen:
+            continue
+        seen.add(norm)
+        needed.append(port)
+    return needed
+
+
+def classify_attachment_role(
+    interface,
+    parsed=None,
+    access_ports=None,
+    trunk_ports=None,
+    exempt_trunk_ports=None,
+    switch_hostnames=None,
+):
+    """Classify a VLAN member as compute, switch_uplink, peer_link, or unknown.
+
+    Compute means the link faces servers / IBM Z / Nutanix / UCS / HCI - not
+    another switch. Descriptions win over access-vs-trunk: compute trunks
+    (z14 OSA, UCS, Nutanix) are still endpoints.
+    """
+    parsed = parsed or {}
+    description = parsed.get("description") or ""
+    port_role = classify_mac_port_role(
+        interface, access_ports, trunk_ports, exempt_trunk_ports
+    )
+    if parsed.get("peer_link") or port_role == "exempt_trunk":
+        return "peer_link"
+    if description and _COMPUTE_DESC_RE.search(description):
+        return "compute"
+    desc_l = description.lower()
+    for host in switch_hostnames or []:
+        host_l = str(host).strip().lower()
+        if host_l and len(host_l) >= 4 and host_l in desc_l:
+            return "switch_uplink"
+    if description and _SWITCH_DESC_RE.search(description):
+        return "switch_uplink"
+    if port_role == "access":
+        return "compute"
+    if port_role == "trunk":
+        return "switch_uplink"
+    if parsed.get("mode") == "access":
+        return "compute"
+    if parsed.get("mode") == "trunk":
+        return "switch_uplink"
+    return "unknown"
+
+
+def index_interface_configs(interface_configs, platform="eos"):
+    """Map normalized interface name -> parsed L2 config dict."""
+    by_norm = {}
+    for item in interface_configs or []:
+        if not isinstance(item, dict):
+            continue
+        if item.get("raw") or item.get("description") is not None:
+            parsed = dict(item)
+            if not parsed.get("interface") and item.get("config"):
+                parsed = parse_l2_interface_config(
+                    item.get("config"), item.get("interface") or "", platform
+                )
+        else:
+            parsed = parse_l2_interface_config(
+                item.get("config") or "", item.get("interface") or "", platform
+            )
+        iface = parsed.get("interface") or item.get("interface") or ""
+        if not iface:
+            continue
+        parsed["interface"] = iface
+        by_norm[_normalize_interface_name(iface, platform)] = parsed
+    return by_norm
+
+
 def parse_svi_vrf(svi_config, platform="eos"):
     """Extract VRF name bound to an SVI from its running-config snippet."""
     if not svi_config:
