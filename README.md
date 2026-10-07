@@ -18,7 +18,7 @@ Ansible automation to **migrate legacy VLANs to VXLAN/EVPN** on Arista EOS via C
 |---|---|
 | [docs/WORKFLOWS.md](docs/WORKFLOWS.md) | Core vs Advanced architecture (mermaid diagrams) |
 | [docs/OS_SUPPORT.md](docs/OS_SUPPORT.md) | NXOS+EOS on main; IOS archive tag/branch |
-| [docs/VXLAN_SERVICE_TYPES.md](docs/VXLAN_SERVICE_TYPES.md) | L2 vs L3 vs l2_l3 (`service_type`) |
+| [docs/VXLAN_SERVICE_TYPES.md](docs/VXLAN_SERVICE_TYPES.md) | L2 vs L3 (`service_type`) |
 | [docs/USAGE_GUIDE.md](docs/USAGE_GUIDE.md) | Flags, options, and CLI reference |
 | [docs/examples/](docs/examples/) | Short task-focused examples (discover, generate-only CVP, NetBox export) |
 | [docs/ROADMAP.md](docs/ROADMAP.md) | Open features |
@@ -179,7 +179,8 @@ Filename: `{vid:04d}_{slug}.yml` - see `vars/vlans/README.md`.
 id: 100
 name: legacy_web
 action: migrate
-service_type: l3          # l2 | l3 | l2_l3 - see docs/VXLAN_SERVICE_TYPES.md
+service_type: l3          # l2 | l3 - see docs/VXLAN_SERVICE_TYPES.md
+gateway_leafs: []         # L3 only; name the fabric gateway leaves, do not infer them
 vni: 50100
 vrf: default
 gateway: 10.10.100.1     # optional; filled from SVI VR / HSRP by discovery

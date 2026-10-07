@@ -107,6 +107,55 @@ class VlanDbLoaderTests(unittest.TestCase):
                 "bad.yml",
             )
 
+    def test_schema_rejects_deprecated_l2_l3(self):
+        with self.assertRaises(Exception):
+            parse_vlan_record(
+                {"id": 1, "name": "x", "action": "migrate", "service_type": "l2_l3"},
+                "legacy.yml",
+            )
+
+    def test_nested_deployment_model_flattens(self):
+        record = parse_vlan_record(
+            {
+                "site": {
+                    "data_center": "lisle",
+                    "vlan": {"id": 100, "name": "legacy_web"},
+                },
+                "migration": {"type": "L3", "protected_vlan": False},
+                "routing": {
+                    "vrf": "tenant",
+                    "prefixes": ["10.0.0.0/24"],
+                    "gateway_ip": "10.0.0.1",
+                },
+                "evpn": {
+                    "l2": {"vni": 50100, "rt": "65001:100"},
+                    "l3": {"vni": None, "rt_import": "", "rt_export": ""},
+                },
+                "placement": {
+                    "participating_leafs": [
+                        {"hostname": "cma01-blf01"},
+                        {"hostname": "fntc-aggacc-sw05"},
+                    ],
+                    "gateway_leafs": [{"hostname": "cma01-blf01"}],
+                    "prune_eligible_leafs": [{"hostname": "agg01"}],
+                    "source_gateway_devices": [{"hostname": "mls01"}],
+                },
+            },
+            "nested.yml",
+        )
+        self.assertEqual(record["service_type"], "l3")
+        self.assertEqual(record["vni"], 50100)
+        self.assertEqual(record["vrf"], "tenant")
+        self.assertEqual(record["gateway"], "10.0.0.1")
+        self.assertEqual(
+            record["target_switches"], ["cma01-blf01", "fntc-aggacc-sw05"]
+        )
+        self.assertEqual(record["gateway_leafs"], ["cma01-blf01"])
+        self.assertEqual(
+            record["discovery_switches"],
+            ["cma01-blf01", "fntc-aggacc-sw05", "agg01", "mls01"],
+        )
+
 
     def test_coalesce_trimmed(self):
         from vlan_filters import coalesce_trimmed, resolve_data_center

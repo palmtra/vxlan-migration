@@ -9,6 +9,7 @@ from vlan_lib.common import (
     sanitize_report_slug,
     vlan_db_file_prefix,
 )
+from vlan_lib.placement import flatten_deployment_model
 from vlan_lib.schema import validate_against_schema
 
 
@@ -41,6 +42,8 @@ def parse_vlan_record(document, source_name="", validate=True):
                 % (source_name, len(entries))
             )
         document = entries[0]
+
+    document = flatten_deployment_model(document)
 
     if not isinstance(document, dict) or "id" not in document:
         return None

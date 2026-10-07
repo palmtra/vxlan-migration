@@ -1,116 +1,81 @@
 # VXLAN service types (L2 vs L3)
 
-How to choose `service_type` (`l2`, `l3`, or `l2_l3`) when migrating a legacy VLAN to VXLAN/EVPN on Arista EOS.
+How to choose `service_type` (`l2` or `l3`) when migrating a legacy VLAN to VXLAN/EVPN on Arista EOS.
 
-This field is required in every VLAN record under `vars/vlans/<dc>/`. It documents migration intent, drives discovery scope, and helps operators plan cutover work.
+This field is required on every VLAN record under `vars/vlans/<dc>/`. It says where the **gateway** will live after migration. It does not describe how many leaves learn endpoints.
+
+`l2_l3` is deprecated. Endpoint VLAN presence on additional leaves is normal EVPN placement (`participating_leafs`), not a separate stretch type.
 
 ---
 
 ## Summary
 
-| `service_type` | What you are migrating | SVI on fabric? | Typical legacy signals |
-|---|---|---|---|
-| `l2` | A **broadcast domain** (subnet stretched as L2) | No (gateway elsewhere) | VLAN + ports + MACs; no SVI on leaf |
-| `l3` | A **routed network** (subnet + gateway on fabric) | Yes | SVI (`interface VlanX`), ARP on SVI, VRF |
-| `l2_l3` | Both L2 extension **and** local L3 gateway | Yes | Ports/MACs **and** SVI/ARP |
+| `service_type` | Gateway after migration | What the fabric does |
+|---|---|---|
+| `l2` | Stays **outside** the VXLAN fabric | Layer-2 transport only |
+| `l3` | Hosted **inside** the VXLAN fabric, on `gateway_leafs` | L2 VNI plus the gateway (centralized or distributed) |
+
+`gateway_leafs` are named by the engineer. Discovery never copies a legacy SVI into that list. A discovered SVI is a **source gateway** (today's MLS or aggPE) and stays until the gateway move is finished.
+
+A border-leaf pair plus the leaves that host endpoints is a normal L3 migration. Example: gateway on `cma01-blf01` and `cma01-blf02`, endpoints on `fntc-aggacc-sw05` and `fntc-aggacc-sw06`. The type is `l3`. Participating leaves are the border leaves plus the two endpoint switches. Gateway leaves are the border leaves only.
 
 ---
 
 ## L2 (`service_type: l2`)
 
-**Goal:** Carry VLAN **X** as VNI **Y** so hosts stay in the same L2 segment across the VXLAN fabric.
+The gateway remains outside the fabric (firewall, router, or another device you are not moving into VXLAN). The fabric extends the broadcast domain.
 
-- MAC addresses are learned and advertised via EVPN (Type-2).
-- Hosts typically keep the same IP subnet; the **default gateway is not** on the migrating leaf SVI (it may live on a firewall, router, or another device).
-- Config focus: `vlan X`, `interface Vxlan1`, `vxlan vlan X vni Y`, multicast/BUM as designed.
-
-**Choose L2 when discovery shows:**
-
-- VLAN present on access/trunk ports
-- Learned MACs on the segment
-- **No** SVI for that VLAN on the switches you are migrating
-
-**Cutover note:** L2 migration moves *where the segment lives*, not necessarily *where routing happens*. Confirm gateway and IP planning with the network design team before CVP push.
+- `participating_leafs` are the VTEPs that need the L2 VNI because they attach local endpoints.
+- `gateway_leafs` stays empty.
+- Do not create an L3 VNI for this VLAN.
 
 ---
 
 ## L3 (`service_type: l3`)
 
-**Goal:** Migrate a **routed VLAN** into a VRF on the VXLAN fabric: L2 VNI **plus** L3 gateway behavior on the leaf (or border).
-
-- Same VNI mapping as L2 for the broadcast domain.
-- An **SVI** (`interface VlanX`) in a **VRF** provides the subnet gateway.
-- EVPN carries host routes and, where enabled, IP prefix/VRF routes (Type-2 / Type-5 depending on design).
-- Border leaves may need VRF/VNI import when the VRF is not `default`.
-
-**Choose L3 when discovery shows:**
-
-- SVI present (`show run interface Vlan<id>`)
-- ARP entries on that SVI (active L3 use)
-- VRF binding on the SVI
-
-**Example:** VLAN 810 (`iner_dmz`) with SVI and ARP on agg/border devices is an **L3** migration.
-
-**Cutover note:** Coordinate VRF name, VNI, RD/RT, and any border-leaf import with the fabric design. Set `vrf` in the VLAN DB to the **target** VRF on the VXLAN side.
-
----
-
-## L2 + L3 (`service_type: l2_l3`)
-
-**Goal:** The VLAN has **both** stretched L2 attachment (servers, trunks, MAC learning) **and** an SVI that acts as (or participates in) the gateway for that subnet.
-
-Use when discovery reports:
-
-- Non-empty **Ports** / MAC learning **and**
-- SVI + ARP on the same VLAN
-
-This is common for “server VLAN with gateway on the leaf pair” designs. Planning and config scope combine L2 VNI work with L3 VRF/SVI work.
-
----
-
-## How this repo uses `service_type`
-
-### VLAN database
-
-Every migrate record must set `service_type` to one of: `l2`, `l3`, `l2_l3` (see `roles/vlan_db/defaults/main.yml`).
+The gateway moves into the fabric. It may be centralized on a border-leaf pair or distributed across leaves. Placement is `gateway_leafs`, and those leaves are also participating leaves.
 
 ```yaml
-# vars/vlans/lisle/0810_iner_dmz.yml
-id: 810
-name: iner_dmz
-action: migrate
-service_type: l3    # l2 | l3 | l2_l3
-vni: 10024
-vrf: default
-target_switches:
-  - chi01-blf01
-  - chi01-blf02
+service_type: l3
+gateway_leafs:
+  - cma01-blf01
+  - cma01-blf02
 ```
 
-### Discovery
+Set `vrf` to the target VRF. Assign `vni` (L2) before deploy. An L3 VNI, when the design uses one, belongs on `evpn.l3.vni` in the discovery model.
 
-Discovery is **read-only**. `service_type` documents migration intent. SVI and ARP are collected whenever an SVI exists (including if SSOT still says `l2`). BGP, statics, and VRF context are collected on L3-capable devices and scoped to the SVI VRF in the report — even when that VRF is shared.
+---
 
-| Check | Runs for |
+## Where the VLAN must exist
+
+| List | Meaning |
 |---|---|
-| `show vlan id` / ports / trunks | All types |
-| MAC table | All types |
-| `show run interface Vlan<id>` (SVI) | Whenever collected (always queried; parsed if present) |
-| ARP in SVI VRF | When an SVI exists |
-| BGP / statics / VRF RD-RT | When `discovery_collect_prune_context=true` (default); shown if an SVI is present |
+| `participating_leafs` | Deploy the VNI here. Gateway leaves, plus any switch with local endpoint attachment. |
+| `gateway_leafs` | Subset of participating leaves that will host the gateway. Explicit only. |
+| `prune_eligible_leafs` | VLAN exists today, no local endpoints, not a gateway, not protected. Safe to review for trunk prune and VLAN removal. |
+| `source_gateway_devices` | Current SVI owners. Do not prune until gateway migration completes. |
 
-Probe mode (`discovery_allow_probe=true`) defaults new records to `l3`; override with `-e discovery_probe_service_type=l2` when you know the VLAN is L2-only.
+A switch is participating only when endpoint-facing interfaces are found locally (server, mainframe OSA, storage, hypervisor, or appliance ports; or MAC/ARP tied to those ports), or when it is listed in `gateway_leafs`.
 
-### Deploy (configlets)
+These do **not** qualify:
 
-Generated configlets (Jinja or AVD) today focus on:
+- MAC addresses learned only on an uplink
+- The VLAN allowed on a trunk
+- The VLAN present in the VLAN database
+- Transit aggregation
+- Fabric interconnects
 
-- VLAN + VNI mapping on `Vxlan1`
-- Multicast group (or fabric default)
-- Optional EVPN BGP VLAN section when `evpn_enabled=true`
-- Optional border-leaf VRF/VNI import when `avd_build_borderleaf_config` / `cvp_build_borderleaf_config` is enabled and `vrf` is not `default`
+---
 
-`service_type` does **not** switch playbooks; it documents intent and aligns discovery with what you expect on the network. If you migrate an L3 VLAN, ensure discovery confirmed SVI/VRF and that `vrf` / `vni` match the target design before CVP push.
+## Discovery outputs
+
+| File | Use |
+|---|---|
+| `*_discovery_*.md` | Short operator report |
+| `*_discovery_*.yml` | Deployable model. Paste into `vars/vlans/<dc>/` after assigning VNIs and gateway leaves |
+| `*_discovery_*.json` | Analysis payload for an LLM (model, evidence, raw discovery facts) |
+
+The YAML model is what you deploy. The JSON file is not a config source.
 
 ---
 
@@ -118,11 +83,12 @@ Generated configlets (Jinja or AVD) today focus on:
 
 ```mermaid
 flowchart TD
-    Start([Legacy VLAN to migrate]) --> SVI{SVI for this VLAN<br/>on legacy switches?}
-    SVI -- No --> L2[service_type: l2]
-    SVI -- Yes --> MACs{Access/trunk ports<br/>with host MACs?}
-    MACs -- Yes --> L2L3[service_type: l2_l3]
-    MACs -- No --> L3[service_type: l3]
+    Start([Legacy VLAN to migrate]) --> GW{Will the gateway live on fabric leaves?}
+    GW -- Yes --> Name[Name those leaves in gateway_leafs]
+    Name --> L3[service_type: l3]
+    GW -- No --> L2[service_type: l2]
+    L3 --> Place[participating_leafs = gateway_leafs + endpoint leaves]
+    L2 --> Place2[participating_leafs = endpoint leaves only]
 ```
 
 ---
@@ -132,12 +98,3 @@ flowchart TD
 - [WORKFLOWS.md](WORKFLOWS.md) - VLAN DB schema and Core workflow
 - [vars/vlans/README.md](../vars/vlans/README.md) - per-DC file layout
 - [examples/discover-vlan.md](examples/discover-vlan.md) - discovery commands and report fields
-- [examples/generate-config-without-cvp-push.md](examples/generate-config-without-cvp-push.md) - review configlets before CVP
-
----
-
-## Out of scope (this repo)
-
-- Greenfield VXLAN VLAN creation (separate tooling)
-- Automatic SVI creation or full EVPN policy design (configlets are migration snippets; fabric baseline is assumed)
-- Trunk prune / legacy cleanup (reported in discovery for a human; apply is parked)

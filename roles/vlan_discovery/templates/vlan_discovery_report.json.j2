@@ -1,2 +1,7 @@
-{{ report.discovery_export | default(report) | combine({'generated_at': _report_timestamp_ms}) | to_nice_json }}
-
+{{ {
+  'purpose': 'LLM migration analysis. Deploy from the YAML model, not from this file.',
+  'generated_at': _report_timestamp_ms,
+  'model': report.deployment_model,
+  'analysis': report.placement_analysis,
+  'discovery': report.discovery_export | default(report)
+} | to_nice_json }}

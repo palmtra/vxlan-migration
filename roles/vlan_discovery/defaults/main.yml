@@ -10,6 +10,7 @@ discovery_write_vlan_reports: true
 discovery_write_csv: true
 discovery_write_markdown: true
 discovery_write_json: true
+# YAML is the deployable model. JSON is the LLM analysis payload. Markdown is the short report.
 discovery_write_yaml: true
 discovery_write_vlan_db_snippet: true
 

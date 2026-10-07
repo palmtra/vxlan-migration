@@ -212,7 +212,10 @@ It is listed in `.gitignore`, so it will not appear in `git status` even when pr
 ## Report location
 
 ```text
-reports/<dc>/<vlan_name>/<vlan_name>_discovery_<timestamp>.{md,csv,json,yml}
+reports/<dc>/<vlan_name>/<vlan_name>_discovery_<timestamp>.md    # short report
+reports/<dc>/<vlan_name>/<vlan_name>_discovery_<timestamp>.yml   # deployable model
+reports/<dc>/<vlan_name>/<vlan_name>_discovery_<timestamp>.json  # LLM analysis payload
+reports/<dc>/<vlan_name>/<vlan_name>_discovery_<timestamp>.csv
 reports/<dc>/<vlan_name>/<vlan_name>_prune_<timestamp>.{md,json}
 ```
 

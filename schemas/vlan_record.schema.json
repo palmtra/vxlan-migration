@@ -21,7 +21,14 @@
     },
     "service_type": {
       "type": "string",
-      "enum": ["l2", "l3", "l2_l3"]
+      "enum": ["l2", "l3"],
+      "description": "l3 when the gateway is inside the VXLAN fabric; l2 when it stays outside."
+    },
+    "protected_vlan": { "type": "boolean" },
+    "gateway_leafs": {
+      "type": "array",
+      "description": "Engineer-supplied fabric leaves that will host the gateway. Never inferred from discovery.",
+      "items": { "type": "string", "minLength": 1 }
     },
     "vlan_name": { "type": "string" },
     "vni": {

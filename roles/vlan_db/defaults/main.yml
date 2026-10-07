@@ -6,11 +6,12 @@
 # See vars/vlans/README.md and vars/vlans/<dc>/_example.yml.
 vlan_db_dir: "{{ project_root | default(playbook_dir | regex_replace('/playbooks(/core|/advanced)?$', '')) }}/vars/vlans"
 
-# Allowed service_type values for migration VLAN records.
+# Allowed service_type values. l2_l3 is deprecated.
+# l3: gateway is hosted inside the VXLAN fabric (gateway_leafs).
+# l2: gateway stays outside; the fabric provides Layer-2 transport.
 vlan_db_valid_service_types:
   - l2
   - l3
-  - l2_l3
 
 # When true, every target_switches entry must exist in the Ansible inventory.
 vlan_db_validate_target_switches: true

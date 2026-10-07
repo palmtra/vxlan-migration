@@ -22,6 +22,8 @@ Open features and planned work. Completed items are kept for context.
 - [x] Split `vlan_filters` into `plugins/vlan_lib/` + thin `plugins/filter/vlan_filters.py`
 - [x] JSON Schema validation for VLAN/service SSOT (`schemas/*.schema.json`)
 - [x] Molecule localhost scenarios for `vlan_db` and `service_db`
+- [x] Placement model: participating leaves vs prune-eligible leaves; migration type is only `l2` or `l3`
+- [x] Discovery outputs: Markdown report, YAML deploy model, JSON analysis payload
 
 ---
 

@@ -22,7 +22,8 @@
 # ---------------------------
 # id, name, action, service_type, vni, vrf, target_switches
 #
-# service_type: l2 | l3 | l2_l3  (see docs/VXLAN_SERVICE_TYPES.md)
+# service_type: l2 | l3  (see docs/VXLAN_SERVICE_TYPES.md)
+# gateway_leafs: fabric leaves that will host the gateway (L3 only; never inferred)
 # action: migrate (future: decommission)
 # =============================================================================
 

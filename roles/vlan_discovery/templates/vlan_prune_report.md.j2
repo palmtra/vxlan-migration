@@ -6,6 +6,8 @@ Data center: {{ report.data_center | default('unknown') }}
 This file is **human-review only**. Discovery never applies deletes.
 Use it after compute endpoints have moved to VXLAN-EVPN. The CLI is shaped so it can later feed an apply role (not enabled).
 
+Prune only **prune-eligible** switches: the VLAN is present, no local endpoints were found, and the switch is not a participating leaf, a gateway leaf, or a source gateway. Leave source gateways until the gateway move is finished. Participating leaves are where the VNI stays.
+
 ## How to run (Arista EOS)
 
 1. Confirm the discovery report has **no remaining compute MACs** on this VLAN.

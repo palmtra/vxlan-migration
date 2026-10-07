@@ -25,7 +25,7 @@
           "id": { "type": "integer", "minimum": 1, "maximum": 4094 },
           "role": { "type": "string" },
           "vni": { "type": ["integer", "null"] },
-          "service_type": { "type": "string", "enum": ["l2", "l3", "l2_l3"] },
+          "service_type": { "type": "string", "enum": ["l2", "l3"] },
           "vlan_name": { "type": "string" },
           "vrf": { "type": "string" },
           "target_switches": {

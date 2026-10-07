@@ -109,6 +109,15 @@ class AttachmentClassificationTests(unittest.TestCase):
             "switch_uplink",
         )
 
+    def test_fabric_interconnect_is_transit(self):
+        parsed = parse_l2_interface_config(
+            "interface Ethernet10\n   description UCS fabric interconnect A\n   switchport mode trunk\n"
+        )
+        self.assertEqual(
+            classify_attachment_role("Ethernet10", parsed, [], ["Ethernet10"], []),
+            "transit",
+        )
+
 
 class ComputeMacDiscoveryTests(unittest.TestCase):
     def test_discovery_keeps_compute_macs_drops_uplink_macs(self):

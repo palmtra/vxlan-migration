@@ -10,7 +10,7 @@ docs/
 ├── AGENTS.md              # This file
 ├── WORKFLOWS.md           # Architecture (Core vs Advanced, mermaid)
 ├── OS_SUPPORT.md          # NXOS+EOS on main; IOS archive policy
-├── VXLAN_SERVICE_TYPES.md # L2 vs L3 vs l2_l3 service_type guide
+├── VXLAN_SERVICE_TYPES.md # L2 vs L3 service_type guide
 ├── USAGE_GUIDE.md         # Full operator reference (flags, variables, AAP)
 ├── ROADMAP.md             # Planned and completed work
 ├── OPERATING_GUIDE.md     # Redirect only — do not duplicate content here

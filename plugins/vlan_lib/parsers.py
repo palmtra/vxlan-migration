@@ -471,12 +471,18 @@ def classify_mac_port_role(interface, access_ports=None, trunk_ports=None, exemp
     return "unknown"
 
 
-# Compute-facing (servers, IBM Z, Nutanix, UCS, HCI). Checked before switch-uplink.
+# Fabric interconnects are transit. They do not make a switch a participating leaf.
+_TRANSIT_DESC_RE = re.compile(
+    r"(?i)(?:\bfabric\s+interconnects?\b|\bfi-[ab]\b)"
+)
+
+# Endpoint-facing: servers, mainframe OSA, storage, hypervisors, appliances.
+# Checked before switch-uplink. Fabric interconnects are excluded above.
 _COMPUTE_DESC_RE = re.compile(
     r"(?i)(?:"
     r"\bz1[3-9]\b|\bz16\b|\bosa\b|\bmainframe\b|"
     r"\bnutanix\b|\bahv\b|\bacropolis\b|\bucs\b|"
-    r"\bfabric\s+interconnect\b|\bfi-[ab]\b|"
+    r"\bstorage\b|\bappliance\b|"
     r"\besxi\b|\bvmware\b|\bvsphere\b|\bhyper-?v\b|"
     r"\bhci\b|\bhyperconverged\b|\bvxrail\b|"
     r"\bblade\b|\bc2[24]0\b|\bc480\b|"
@@ -613,6 +619,8 @@ def classify_attachment_role(
     )
     if parsed.get("peer_link") or port_role == "exempt_trunk":
         return "peer_link"
+    if description and _TRANSIT_DESC_RE.search(description):
+        return "transit"
     if description and _COMPUTE_DESC_RE.search(description):
         return "compute"
     desc_l = description.lower()

@@ -143,12 +143,15 @@ Per switch, per VLAN (read-only):
 
 Discovery reports MACs learned on compute / unknown links only. Prune CLI is a **separate** report: EOS `configure session` + `commit timer` + `configure confirm`; NXOS checkpoint + rollback. Nothing is applied.
 
-**Human prune plan:** actions are trunk remove on switch-to-switch uplinks, `no interface VlanX`, and `no vlan X` only. Compute or unknown ports **block** prune (`blocked_by_compute_endpoints`) until they are rehomed. SVI IPs / anycast / HSRP are listed so a human can remove the gateway. Default-VRF statics and BGP, and objects in a **shared VRF**, are L3 review only — never prune candidates.
+**Human prune plan:** only prune-eligible switches (VLAN present, no local endpoints, not protected) get trunk / SVI / VLAN CLI. Participating leaves, gateway leaves, and source gateways are withheld. Source gateways stay until the gateway move finishes. Default-VRF statics and BGP, and objects in a **shared VRF**, are L3 review only — never prune candidates.
 
 Reports land under:
 
 ```text
-reports/<dc>/<vlan_slug>/<vlan_slug>_discovery_<timestamp>.{md,csv,json,yml}
+reports/<dc>/<vlan_slug>/<vlan_slug>_discovery_<timestamp>.md    # short operator report
+reports/<dc>/<vlan_slug>/<vlan_slug>_discovery_<timestamp>.yml   # deployable VLAN model
+reports/<dc>/<vlan_slug>/<vlan_slug>_discovery_<timestamp>.json  # LLM analysis payload
+reports/<dc>/<vlan_slug>/<vlan_slug>_discovery_<timestamp>.csv
 reports/<dc>/<vlan_slug>/<vlan_slug>_prune_<timestamp>.{md,json}
 reports/<dc>/_prune_plans/<hostname>_prune_plan_<timestamp>.json
 ```
@@ -169,7 +172,9 @@ Pass `-e manual_service_id=<id>` on discovery to seed VLAN IDs and apply `prune.
 | `id` | yes | 802.1Q VLAN ID |
 | `name` | yes | Human label; used in report filenames |
 | `action` | yes | `migrate` |
-| `service_type` | yes | `l2`, `l3`, or `l2_l3` - see [VXLAN_SERVICE_TYPES.md](VXLAN_SERVICE_TYPES.md) |
+| `service_type` | yes | `l2` or `l3` - see [VXLAN_SERVICE_TYPES.md](VXLAN_SERVICE_TYPES.md) |
+| `gateway_leafs` | L3 | Fabric leaves that host the gateway. Engineer-supplied; discovery does not infer them |
+| `protected_vlan` | no | When true, no switch is prune-eligible |
 | `vni` | yes for migrate | VXLAN network identifier (not inferred by discovery) |
 | `vrf` | yes | Target VRF (discovery fills from SVI when present) |
 | `target_switches` | yes | Inventory hostnames for CVP config push |

@@ -1,2 +1,3 @@
-{{ report.discovery_export | default(report) | combine({'generated_at': _report_timestamp_ms}) | to_nice_yaml }}
-
+# Deployable VLAN model. Assign EVPN VNIs, then use this file to build the new environment.
+# gateway_leafs are engineer-supplied. The JSON report is the analysis payload, not this file.
+{{ report.deployment_model | to_nice_yaml }}

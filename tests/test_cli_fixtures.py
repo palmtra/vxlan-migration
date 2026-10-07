@@ -294,19 +294,42 @@ class DiscoveryReportSsotTests(unittest.TestCase):
         report = reports[0]
         self.assertEqual(report["gateway"], "10.10.100.1")
         self.assertIn("10.10.100.0/24", report["prefixes"])
-        self.assertEqual(report["inferred_service_type"], "l2_l3")
+        self.assertEqual(report["inferred_service_type"], "l3")
+        self.assertEqual(report["migration_type"], "l3")
         self.assertEqual(report["vlan_name_on_box"], "WEB_VXLAN")
         self.assertIn("eos-leaf-lis-01", report["snippet_target_switches"])
-        action_ops = {action["op"] for plan in report["prune_plans"] for action in plan["actions"]}
-        self.assertIn("trunk_remove_vlans", action_ops)
-        self.assertIn("no_interface_vlan", action_ops)
-        self.assertIn("no_vlan", action_ops)
+        self.assertNotIn("nxos-spine-lis-01", report["snippet_target_switches"])
+        model = report["deployment_model"]
+        self.assertEqual(model["migration"]["type"], "l3")
+        self.assertEqual(model["placement"]["gateway_leafs"], [])
+        participating = [
+            item["hostname"] for item in model["placement"]["participating_leafs"]
+        ]
+        self.assertEqual(participating, ["eos-leaf-lis-01"])
+        sources = [
+            item["hostname"] for item in model["placement"]["source_gateway_devices"]
+        ]
+        self.assertIn("eos-leaf-lis-01", sources)
+        self.assertIn("nxos-spine-lis-01", sources)
+        prune_hosts = [
+            item["hostname"] for item in model["placement"]["prune_eligible_leafs"]
+        ]
+        self.assertNotIn("eos-leaf-lis-01", prune_hosts)
+        self.assertNotIn("nxos-spine-lis-01", prune_hosts)
+        self.assertEqual(model["routing"]["gateway_ip"], "10.10.100.1")
+        action_ops = {
+            action["op"] for plan in report["prune_plans"] for action in plan["actions"]
+        }
+        self.assertNotIn("trunk_remove_vlans", action_ops)
+        self.assertNotIn("no_interface_vlan", action_ops)
+        self.assertNotIn("no_vlan", action_ops)
         self.assertNotIn("no_ip_route", action_ops)
         self.assertNotIn("no_bgp_neighbor", action_ops)
         eos_plan_row = next(
             plan for plan in report["prune_plans"] if plan["hostname"] == "eos-leaf-lis-01"
         )
-        self.assertEqual(eos_plan_row["status"], "blocked_by_compute_endpoints")
+        self.assertEqual(eos_plan_row["status"], "retained_participating")
+        self.assertEqual(eos_plan_row["actions"], [])
         self.assertTrue(eos_plan_row["human_required"])
         self.assertFalse(eos_plan_row["apply_automated"])
         l3_ops = {item["op"] for item in eos_plan_row.get("l3_review") or []}

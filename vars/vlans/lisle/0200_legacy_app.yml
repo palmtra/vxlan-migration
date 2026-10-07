@@ -2,7 +2,9 @@
 id: 200
 name: legacy_app
 action: migrate
-service_type: l2_l3
+service_type: l3
+# Name the fabric leaves that will host the gateway. Discovery will not infer this.
+gateway_leafs: []
 vlan_name: APP_VXLAN
 vni: 50200
 vrf: default

@@ -5,6 +5,7 @@ from ansible.errors import AnsibleFilterError
 
 from vlan_lib.common import _str_equal, sanitize_report_slug
 from vlan_lib.parsers import network_prefix
+from vlan_lib.placement import PRUNE_STATUS_BY_ROLE, build_vlan_placement
 from vlan_lib.prune import build_device_prune_plan, build_prune_execution
 
 _SHARED_VRF_NOTE = (
@@ -288,6 +289,11 @@ def build_vlan_discovery_reports(vlans, play_hosts, hostvars):
             if device.get("arp_learned")
         ]
 
+        # Classify before prune. Participating leaves and source gateways are
+        # withheld; only prune-eligible switches keep trunk/SVI/VLAN actions.
+        placement = build_vlan_placement(vlan, devices)
+        by_placement = placement["by_hostname"]
+
         # VLAN-scoped prune plans (routing objects stay in l3_review, never actions).
         prune_plans = []
         for device in devices:
@@ -371,6 +377,23 @@ def build_vlan_discovery_reports(vlans, play_hosts, hostvars):
                         os_family, [vlan_id], vlan_actions
                     ),
                 }
+            decision = by_placement.get(device.get("hostname")) or {}
+            role = decision.get("role") or "absent"
+            device["placement_role"] = role
+            if role != "prune_eligible":
+                device_plan = dict(device_plan)
+                device_plan["actions"] = []
+                device_plan["status"] = PRUNE_STATUS_BY_ROLE.get(
+                    role, "not_prune_eligible"
+                )
+                device_plan["placement_role"] = role
+                device_plan["execution"] = build_prune_execution(
+                    device_plan.get("os_family") or device.get("os_family"),
+                    [vlan_id],
+                    [],
+                )
+            else:
+                device_plan["placement_role"] = "prune_eligible"
             if (
                 device_plan.get("actions")
                 or device_plan.get("l3_review")
@@ -381,6 +404,22 @@ def build_vlan_discovery_reports(vlans, play_hosts, hostvars):
                 prune_plans.append(device_plan)
 
         ssot = _ssot_from_discovery(vlan, devices)
+        ssot["inferred_service_type"] = placement["migration_type"]
+        ssot["target_switches"] = [
+            leaf["hostname"]
+            for leaf in placement["deployment_model"]["placement"]["participating_leafs"]
+        ]
+        routing = placement["deployment_model"]["routing"]
+        record_routing = vlan.get("routing") if isinstance(vlan.get("routing"), dict) else {}
+        if not (vlan.get("gateway") or record_routing.get("gateway_ip")):
+            routing["gateway_ip"] = ssot.get("gateway") or ""
+        if not (vlan.get("prefixes") or record_routing.get("prefixes")):
+            routing["prefixes"] = list(ssot.get("prefixes") or [])
+        if not vlan.get("vrf") and not record_routing.get("vrf") and ssot.get("discovered_vrf"):
+            routing["vrf"] = ssot["discovered_vrf"]
+        site_vlan = placement["deployment_model"]["site"]["vlan"]
+        if not site_vlan.get("name"):
+            site_vlan["name"] = ssot.get("name") or vlan.get("name") or ""
         (
             endpoints,
             access_inventory,
@@ -398,8 +437,7 @@ def build_vlan_discovery_reports(vlans, play_hosts, hostvars):
                 ssot.get("name") or vlan.get("name")
             ),
             "vlan_name_on_box": ssot.get("vlan_name_on_box", ""),
-            "service_type": vlan.get("service_type")
-            or ssot.get("inferred_service_type", ""),
+            "service_type": placement["migration_type"],
             "inferred_service_type": ssot.get("inferred_service_type", ""),
             "target_switches": vlan.get("target_switches")
             or ssot.get("target_switches", []),
@@ -431,7 +469,16 @@ def build_vlan_discovery_reports(vlans, play_hosts, hostvars):
             "l3_discovery": l3_discovery,
             "data_center": vlan.get("data_center", ""),
             "devices": devices,
+            "migration_type": placement["migration_type"],
+            "migration_reason": placement["migration_reason"],
+            "deployment_model": placement["deployment_model"],
+            "placement_analysis": placement["analysis"],
         }
+        report["deployment_model"]["site"]["data_center"] = (
+            report["deployment_model"]["site"].get("data_center")
+            or vlan.get("data_center")
+            or ""
+        )
         report["discovery_export"] = _discovery_export(report)
         report["prune_export"] = _prune_export(report)
         reports.append(report)
@@ -444,6 +491,8 @@ _DISCOVERY_OMIT = frozenset(
         "trunk_cleanup_candidates",
         "discovery_export",
         "prune_export",
+        "deployment_model",
+        "placement_analysis",
     }
 )
 _DEVICE_DISCOVERY_OMIT = frozenset(
@@ -483,15 +532,23 @@ def _prune_export(report):
         "l3_discovery": report.get("l3_discovery"),
         "trunk_cleanup_candidates": report.get("trunk_cleanup_candidates"),
         "prune_plans": report.get("prune_plans"),
+        "placement": (report.get("deployment_model") or {}).get("placement") or {},
+        "withheld": [
+            {
+                "hostname": item.get("hostname"),
+                "role": item.get("role"),
+                "reason": item.get("role"),
+            }
+            for item in ((report.get("placement_analysis") or {}).get("switches") or [])
+            if item.get("role") != "prune_eligible"
+        ],
         "apply_automated": False,
         "human_required": True,
     }
 
 
 def _ssot_from_discovery(vlan, devices):
-    """Derive a paste-ready VLAN SSOT snippet from discovery facts."""
-    has_svi = False
-    has_access = False
+    """Derive paste-ready VLAN facts from discovery. Migration type is set by placement."""
     prefixes = []
     prefix_seen = set()
     gateways = []
@@ -506,15 +563,12 @@ def _ssot_from_discovery(vlan, devices):
         hostname = device.get("hostname")
         if device.get("vlan_present") and hostname:
             discovery_switches.append(hostname)
-        if device.get("access_ports") or device.get("compute_ports"):
-            has_access = True
         box_name = device.get("vlan_name_on_box") or ""
         if box_name:
             names_on_box.append(box_name)
         details = device.get("svi_details") or {}
         if not device.get("svi_present"):
             continue
-        has_svi = True
         vrf = device.get("svi_vrf") or details.get("vrf") or "default"
         if vrf and vrf not in vrfs:
             vrfs.append(vrf)
@@ -556,11 +610,8 @@ def _ssot_from_discovery(vlan, devices):
                 if hostname not in target_switches:
                     target_switches.append(hostname)
 
+    # Placement finalizes L2 vs L3. Endpoint attachment is not an l2_l3 type.
     inferred = "l2"
-    if has_svi and has_access:
-        inferred = "l2_l3"
-    elif has_svi:
-        inferred = "l3"
 
     vlan_name_on_box = names_on_box[0] if names_on_box else ""
     name = vlan.get("name") or ""

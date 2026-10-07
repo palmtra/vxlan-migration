@@ -1,99 +1,83 @@
-# VLAN {{ report.vlan_name }} (VID {{ report.vlan_id }}) - Discovery
+# VLAN {{ report.vlan_name }} ({{ report.vlan_id }})
 
 Generated: {{ _report_timestamp_ms }}
 Data center: {{ report.data_center | default('unknown') }}
-{% if report.vlan_name_on_box | default('') %}On-box VLAN name: {{ report.vlan_name_on_box }}
-{% endif %}
+Migration type: **{{ report.migration_type | default(report.service_type) | upper }}**
+{{ report.migration_reason | default('') }}
+
 Gateway: {{ report.gateway | default('(none)') }}
 Prefixes: {{ report.prefixes | default([]) | join(', ') if report.prefixes | default([]) else '(none)' }}
+VRF: {{ report.vrf | default('default') }}
+Protected VLAN: {{ 'yes' if report.deployment_model.migration.protected_vlan | default(false) else 'no' }}
 
-This report shows **where MACs are learned on compute links** - servers, IBM Z, Nutanix, UCS, or other HCI. Switch-to-switch uplinks are listed for context only.
+Participating leaves are where the VNI is deployed. Prune-eligible leaves still carry the VLAN and have no local endpoints. Gateway leaves are named by the engineer; a discovered SVI is a source gateway, not a fabric gateway.
 
-Prune CLI is **not** in this file. See `{{ report.vlan_slug }}_prune_{{ _report_timestamp_ms }}.md`.
+## Participating leaves
 
-| Switch | Compute MACs | Compute ports | Uplinks | Unknown |
-|--------|--------------|---------------|---------|---------|
-{% for device in report.devices %}
-| {{ device.hostname }} | {{ device.endpoint_mac_entries | default([]) | length }} | {{ device.compute_ports | default([]) | join(', ') if device.compute_ports | default([]) else '-' }} | {{ device.switch_uplink_ports | default([]) | join(', ') if device.switch_uplink_ports | default([]) else '-' }} | {{ device.unknown_ports | default([]) | join(', ') if device.unknown_ports | default([]) else '-' }} |
-{% endfor %}
-
-{% for device in report.devices %}
-{% if device.vlan_present or device.has_port_membership or device.mac_entries | default([]) | length > 0 %}
-================================================
-[{{ device.hostname }}] VLAN {{ report.vlan_id }} --- {{ report.vlan_name_on_box | default(report.vlan_name) }}
-
-**Dynamic Mac Address Table - VLAN {{ report.vlan_id }}** (compute links)
-
-{% if device.endpoint_mac_entries | default([]) | length > 0 %}
-| MAC | Port | Description |
-|-----|------|-------------|
-{% for entry in device.endpoint_mac_entries %}
-| {{ entry.mac }} | {{ entry.interface }} | {{ entry.description | default('') }} |
-{% endfor %}
+{% set participating = report.deployment_model.placement.participating_leafs | default([]) %}
+{% if participating | length == 0 %}
+None.
 {% else %}
-*(No MACs learned on compute / unknown links. Learning on switch-to-switch uplinks is omitted.)*
-{% endif %}
-
-**Uplinks** (switch-to-switch)
-
-{% set ns = namespace(uplink_count=0) %}
-{% for item in device.port_attachments | default([]) %}
-{% if item.role == 'switch_uplink' or item.role == 'peer_link' %}
-{% set ns.uplink_count = ns.uplink_count + 1 %}
-VLAN {{ report.vlan_id }} is allowed on {{ item.interface }}{% if item.role == 'peer_link' %} *(MLAG/vPC peer-link)*{% endif %}{% if item.description %}
-  description {{ item.description }}{% endif %}
-{% endif %}
+| Hostname | Why |
+|----------|-----|
+{% for leaf in participating %}
+{% set decision = report.placement_analysis.switches | selectattr('hostname', 'equalto', leaf.hostname) | list %}
+| {{ leaf.hostname }} | {{ decision[0].evidence | join('; ') if decision and decision[0].evidence else 'participating' }} |
 {% endfor %}
-{% if ns.uplink_count == 0 %}
-*(No switch-to-switch uplinks carry this VLAN on this switch.)*
 {% endif %}
 
-**Endpoints** (servers / IBM Z / Nutanix / UCS / HCI)
+## Prune-eligible leaves
 
-{% set ns = namespace(compute_count=0) %}
-{% for item in device.port_attachments | default([]) %}
-{% if item.role == 'compute' %}
-{% set ns.compute_count = ns.compute_count + 1 %}
-{% if item.raw | default('') %}
-{{ item.raw }}
+{% set prune = report.deployment_model.placement.prune_eligible_leafs | default([]) %}
+{% if prune | length == 0 %}
+None.
 {% else %}
-interface {{ item.interface }}
-{% if item.description %}  description {{ item.description }}
-{% endif %}
-{% endif %}
-
-{% endif %}
+| Hostname | Why |
+|----------|-----|
+{% for leaf in prune %}
+{% set decision = report.placement_analysis.switches | selectattr('hostname', 'equalto', leaf.hostname) | list %}
+| {{ leaf.hostname }} | {{ decision[0].nonqualifying | join('; ') if decision and decision[0].nonqualifying else 'VLAN present, no local endpoints' }} |
 {% endfor %}
-{% if ns.compute_count == 0 %}
-*(No compute-facing ports on this switch.)*
 {% endif %}
 
-{% set ns = namespace(unknown_count=0) %}
-{% for item in device.port_attachments | default([]) %}
-{% if item.role == 'unknown' %}
-{% if ns.unknown_count == 0 %}
-**Needs review** (could not classify as compute vs switch)
+{% set review = report.placement_analysis.switches | selectattr('role', 'equalto', 'review') | list %}
+{% if review | length > 0 %}
+## Needs review
 
+These switches carry the VLAN on ports that could not be classified. They are not participating and they are not prune-eligible.
+
+{% for item in review %}
+- {{ item.hostname }}: {{ item.nonqualifying | join('; ') }}
+{% endfor %}
 {% endif %}
-{% set ns.unknown_count = ns.unknown_count + 1 %}
-{% if item.raw | default('') %}
-{{ item.raw }}
+
+## Gateway leaves
+
+{% set gateways = report.deployment_model.placement.gateway_leafs | default([]) %}
+{% if gateways | length == 0 %}
+None. For an L3 migration, add `gateway_leafs` on the VLAN record. Discovery will not fill this from the legacy SVI.
 {% else %}
-interface {{ item.interface }}
-{% if item.description %}  description {{ item.description }}
-{% endif %}
-{% endif %}
-
-{% endif %}
+{% for leaf in gateways %}
+- {{ leaf.hostname }}
 {% endfor %}
-{% if device.svi_present %}
-**Gateway / SVI:** {{ device.svi_details.ip_addresses | default([]) | join(', ') if device.svi_details.ip_addresses | default([]) else '(present)' }}  VRF {{ device.svi_vrf | default('default') }}  VIP {{ ((device.svi_details.virtual_router_addresses | default([])) + (device.svi_details.hsrp_addresses | default([]))) | join(', ') if ((device.svi_details.virtual_router_addresses | default([])) + (device.svi_details.hsrp_addresses | default([]))) else '(none)' }}
 {% endif %}
 
-{% endif %}
+## Source gateways
+
+Existing MLS or aggPE owners. Leave them in place until the gateway move is finished.
+
+{% set sources = report.deployment_model.placement.source_gateway_devices | default([]) %}
+{% if sources | length == 0 %}
+None.
+{% else %}
+| Hostname | VRF | Gateway |
+|----------|-----|---------|
+{% for leaf in sources %}
+{% set svi = report.svi_inventory | selectattr('hostname', 'equalto', leaf.hostname) | list %}
+| {{ leaf.hostname }} | {{ svi[0].vrf if svi else '' }} | {{ ((svi[0].virtual_router_addresses | default([])) + (svi[0].hsrp_addresses | default([]))) | join(', ') if svi else '' }} |
 {% endfor %}
+{% endif %}
 
----
-
-SSOT snippet: `{{ report.vlan_id | vlan_db_record_filename(report.vlan_name) }}` (VNI still TODO).
-Prune / session CLI: `{{ report.vlan_slug }}_prune_{{ _report_timestamp_ms }}.md`.
+Deployment model: `{{ report.vlan_slug }}_discovery_{{ _report_timestamp_ms }}.yml`
+Analysis payload: `{{ report.vlan_slug }}_discovery_{{ _report_timestamp_ms }}.json`
+Prune plan: `{{ report.vlan_slug }}_prune_{{ _report_timestamp_ms }}.md`

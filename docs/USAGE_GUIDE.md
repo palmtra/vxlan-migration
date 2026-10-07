@@ -33,17 +33,16 @@ Always pass `--limit dc_<name>` (or a host list) to control blast radius.
 
 ---
 
-## VLAN service types (`l2`, `l3`, `l2_l3`)
+## VLAN service types (`l2`, `l3`)
 
-Each VLAN record requires `service_type`. It describes whether you are migrating a pure L2 segment, a routed L3 VLAN (SVI/VRF), or both.
+Each VLAN record requires `service_type`. The type says where the gateway will live after migration. `l2_l3` is no longer a type. Extra leaves that host endpoints are participating leaves, not a stretch type.
 
 | Value | Use when |
 |---|---|
-| `l2` | VLAN + MACs; **no** SVI on the legacy switches |
-| `l3` | SVI + ARP present; gateway on the fabric |
-| `l2_l3` | Both host L2 attachment and SVI/gateway |
+| `l3` | The gateway moves into the VXLAN fabric. Name those leaves in `gateway_leafs`. |
+| `l2` | The gateway stays outside the fabric. The fabric provides Layer-2 transport only. |
 
-Discovery always queries SVI; ARP runs when an SVI is present. Probe mode defaults to `l3`; pass `-e discovery_probe_service_type=l2` for L2-only probes.
+Discovery always queries SVI; ARP runs when an SVI is present. A discovered SVI is recorded as a source gateway. It is not copied into `gateway_leafs`. Probe mode defaults to `l3`; pass `-e discovery_probe_service_type=l2` for an L2 probe.
 
 Full guide: **[VXLAN_SERVICE_TYPES.md](VXLAN_SERVICE_TYPES.md)**.
 
@@ -80,7 +79,7 @@ Collects VLAN, MAC, SVI, ARP, trunks, and (on L3-capable devices) VRF/HSRP/BGP/s
 | `discovery_write_markdown` | `true` | Write `.md` report |
 | `discovery_write_csv` | `true` | Write `.csv` report |
 | `discovery_write_json` | `true` | Write `.json` report |
-| `discovery_write_yaml` | `true` | Write `.yml` structured report (same data as JSON) |
+| `discovery_write_yaml` | `true` | Write the deployable YAML model |
 | `discovery_write_vlan_db_snippet` | `true` | Write YAML snippet for pasting into VLAN DB |
 
 ### Examples
@@ -115,25 +114,25 @@ ansible-playbook -i inventory/hosts.yml playbooks/core/discover_vlan.yml \
 
 | File | Contents |
 |---|---|
-| `<vlan>_discovery_<ts>.md` | Compute-facing MAC/endpoint view (no prune CLI) |
-| `<vlan>_discovery_<ts>.csv` | One row per switch (compute ports / MACs / uplinks) |
-| `<vlan>_discovery_<ts>.json` | Discovery JSON (`discovery_export`; prune fields omitted) |
-| `<vlan>_discovery_<ts>.yml` | Same data as discovery JSON |
+| `<vlan>_discovery_<ts>.md` | Short report: migration type, participating leaves, prune-eligible leaves, gateway leaves, source gateways |
+| `<vlan>_discovery_<ts>.csv` | One row per switch, including `placement` |
+| `<vlan>_discovery_<ts>.yml` | Deployable VLAN model (routing, EVPN, placement) |
+| `<vlan>_discovery_<ts>.json` | LLM analysis payload: the model, placement evidence, and discovery facts |
 | `<vlan>_prune_<ts>.md` | Human prune report: EOS session + commit timer, NXOS checkpoint |
 | `<vlan>_prune_<ts>.json` | Execution-shaped prune payload (`apply_automated: false`) |
-| `0100_legacy_web.yml` | Starter per-VLAN record for `vars/vlans/<dc>/` (VRF, gateway, prefixes, switches filled from discovery; VNI still TODO) |
+| `0100_legacy_web.yml` | Starter deploy model for `vars/vlans/<dc>/` (VNI and `gateway_leafs` still need an engineer) |
 
 Key **discovery** fields:
 
 - `endpoint_inventory` / `compute_inventory` — MACs and ports on compute links (servers, IBM Z, Nutanix, UCS, HCI). Switch-to-switch MAC learning is omitted.
-- `uplink_inventory` — trunks toward other switches (context only)
-- `unknown_inventory` — ports that could not be classified; treated as endpoints until reviewed
-- Per device: `endpoint_mac_entries[]`, `port_attachments[]` (role + description + raw `show run`), `svi_details`
+- `uplink_inventory` — trunks toward other switches (context only; does not make a leaf participating)
+- `unknown_inventory` — ports that could not be classified. Those switches are `review`, not participating and not prune-eligible
+- `deployment_model.placement` — `participating_leafs`, `gateway_leafs`, `prune_eligible_leafs`, `source_gateway_devices`
 
 Key **prune** fields (separate files):
 
 - `prune_plans[].execution` — EOS `configure session` / `commit timer` / `configure confirm` / abort; NXOS checkpoint + rollback
-- Compute or unknown ports set `status: blocked_by_compute_endpoints`
+- Participating leaves are `retained_participating`. Source gateways are `held_until_gateway_migration`. Only prune-eligible switches keep trunk / VLAN CLI
 - Static routes, BGP, and shared-VRF objects stay in `l3_review`, never actions
 - Device JSON: `reports/<dc>/_prune_plans/<host>_prune_plan_<ts>.json`
 - `prune_commit_timer` default `00:10:00` (report text only; nothing is applied)

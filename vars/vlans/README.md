@@ -38,7 +38,8 @@ Each file is a **single VLAN record** at the top level:
 id: 100
 name: legacy_web
 action: migrate
-service_type: l3          # l2 | l3 | l2_l3 - see docs/VXLAN_SERVICE_TYPES.md
+service_type: l3          # l2 | l3 - see docs/VXLAN_SERVICE_TYPES.md
+gateway_leafs: []         # L3: fabric leaves that will host the gateway (never inferred)
 vni: 50100
 vrf: default
 gateway: 10.10.100.1      # optional; discovery fills from VR / HSRP
@@ -51,16 +52,17 @@ discovery_switches:
   - nxos-spine-lis-01
 ```
 
-Records are validated against [`schemas/vlan_record.schema.json`](../../schemas/vlan_record.schema.json) on load (`jsonschema` required). Discovery writes a paste-ready snippet with VRF, gateway (anycast/HSRP), prefixes, `service_type`, and switch lists filled in; **VNI must still be assigned** before migrate. L3 objects in a shared VRF are shown on the discovery report but are not unique to this VLAN.
+Records are validated against [`schemas/vlan_record.schema.json`](../../schemas/vlan_record.schema.json) on load (`jsonschema` required). Discovery writes a deployable model (routing, EVPN, participating leaves, prune-eligible leaves). **VNI must still be assigned** before migrate, and **gateway_leafs must be named** for an L3 cutover. A discovered SVI is a source gateway, not a fabric gateway leaf. L3 objects in a shared VRF are in the JSON analysis payload but are not unique to this VLAN.
 
 | Field | Required | Notes |
 |---|---|---|
 | `vrf` | yes | Target VRF (discovery fills from SVI) |
 | `gateway` | no | Anycast / HSRP / virtual-router address |
 | `prefixes` | no | Subnets from SVI CIDRs |
-| `target_switches` | yes (migrate) | EOS hosts for CVP |
+| `gateway_leafs` | L3 | Fabric gateway leaves. Engineer-supplied |
+| `target_switches` | yes (migrate) | EOS hosts for CVP. A nested discovery model uses participating leaves |
 
-Choosing `l2` vs `l3` vs `l2_l3`: [docs/VXLAN_SERVICE_TYPES.md](../docs/VXLAN_SERVICE_TYPES.md).
+Choosing `l2` vs `l3`: [docs/VXLAN_SERVICE_TYPES.md](../docs/VXLAN_SERVICE_TYPES.md). A nested discovery model (`site` / `placement`) loads as this flat record.
 
 ## Targeting VLANs in playbooks
 
