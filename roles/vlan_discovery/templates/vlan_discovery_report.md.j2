@@ -10,7 +10,7 @@ Prefixes: {{ report.prefixes | default([]) | join(', ') if report.prefixes | def
 VRF: {{ report.vrf | default('default') }}
 Protected VLAN: {{ 'yes' if report.deployment_model.migration.protected_vlan | default(false) else 'no' }}
 
-Participating leaves are where the VNI is deployed. Prune-eligible leaves still carry the VLAN and have no local endpoints. Gateway leaves are named by the engineer; a discovered SVI is a source gateway, not a fabric gateway.
+Participating leaves are where the VNI is deployed. Prune-eligible leaves still carry the VLAN and have no local endpoints. A discovered SVI is a source gateway, not a fabric gateway, and that source gateway is prune-eligible unless it also has local endpoints.
 
 ## Participating leaves
 
@@ -64,7 +64,7 @@ None. For an L3 migration, add `gateway_leafs` on the VLAN record. Discovery wil
 
 ## Source gateways
 
-Existing MLS or aggPE owners. Leave them in place until the gateway move is finished.
+These devices own the legacy SVI. They are the root of the legacy L2 and are listed first under prune-eligible, unless they also have local endpoints or the engineer named them in gateway_leafs.
 
 {% set sources = report.deployment_model.placement.source_gateway_devices | default([]) %}
 {% if sources | length == 0 %}

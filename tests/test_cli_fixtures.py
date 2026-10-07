@@ -315,16 +315,8 @@ class DiscoveryReportSsotTests(unittest.TestCase):
             item["hostname"] for item in model["placement"]["prune_eligible_leafs"]
         ]
         self.assertNotIn("eos-leaf-lis-01", prune_hosts)
-        self.assertNotIn("nxos-spine-lis-01", prune_hosts)
+        self.assertEqual(prune_hosts, ["nxos-spine-lis-01"])
         self.assertEqual(model["routing"]["gateway_ip"], "10.10.100.1")
-        action_ops = {
-            action["op"] for plan in report["prune_plans"] for action in plan["actions"]
-        }
-        self.assertNotIn("trunk_remove_vlans", action_ops)
-        self.assertNotIn("no_interface_vlan", action_ops)
-        self.assertNotIn("no_vlan", action_ops)
-        self.assertNotIn("no_ip_route", action_ops)
-        self.assertNotIn("no_bgp_neighbor", action_ops)
         eos_plan_row = next(
             plan for plan in report["prune_plans"] if plan["hostname"] == "eos-leaf-lis-01"
         )
@@ -334,6 +326,16 @@ class DiscoveryReportSsotTests(unittest.TestCase):
         self.assertFalse(eos_plan_row["apply_automated"])
         l3_ops = {item["op"] for item in eos_plan_row.get("l3_review") or []}
         self.assertIn("no_ip_route", l3_ops)
+        nxos_plan_row = next(
+            plan for plan in report["prune_plans"] if plan["hostname"] == "nxos-spine-lis-01"
+        )
+        self.assertEqual(nxos_plan_row["placement_role"], "prune_eligible")
+        self.assertTrue(nxos_plan_row["source_gateway"])
+        nxos_ops = {action["op"] for action in nxos_plan_row["actions"]}
+        self.assertIn("no_interface_vlan", nxos_ops)
+        self.assertIn("no_vlan", nxos_ops)
+        self.assertNotIn("no_ip_route", nxos_ops)
+        self.assertNotIn("no_bgp_neighbor", nxos_ops)
 
         self.assertTrue(report["l3_discovery"]["present"])
         self.assertTrue(report["l3_discovery"]["shared_vrf"])

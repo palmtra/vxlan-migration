@@ -15,7 +15,7 @@ This field is required on every VLAN record under `vars/vlans/<dc>/`. It says wh
 | `l2` | Stays **outside** the VXLAN fabric | Layer-2 transport only |
 | `l3` | Hosted **inside** the VXLAN fabric, on `gateway_leafs` | L2 VNI plus the gateway (centralized or distributed) |
 
-`gateway_leafs` are named by the engineer. Discovery never copies a legacy SVI into that list. A discovered SVI is a **source gateway** (today's MLS or aggPE) and stays until the gateway move is finished.
+`gateway_leafs` are named by the engineer. Discovery never copies a legacy SVI into that list. A discovered SVI is a **source gateway** (today's MLS or aggPE). That device is the root of the legacy L2, so it is prune-eligible unless it also has local endpoints or the engineer named it in `gateway_leafs`.
 
 A border-leaf pair plus the leaves that host endpoints is a normal L3 migration. Example: gateway on `cma01-blf01` and `cma01-blf02`, endpoints on `fntc-aggacc-sw05` and `fntc-aggacc-sw06`. The type is `l3`. Participating leaves are the border leaves plus the two endpoint switches. Gateway leaves are the border leaves only.
 
@@ -52,8 +52,8 @@ Set `vrf` to the target VRF. Assign `vni` (L2) before deploy. An L3 VNI, when th
 |---|---|
 | `participating_leafs` | Deploy the VNI here. Gateway leaves, plus any switch with local endpoint attachment. |
 | `gateway_leafs` | Subset of participating leaves that will host the gateway. Explicit only. |
-| `prune_eligible_leafs` | VLAN exists today, no local endpoints, not a gateway, not protected. Safe to review for trunk prune and VLAN removal. |
-| `source_gateway_devices` | Current SVI owners. Do not prune until gateway migration completes. |
+| `prune_eligible_leafs` | VLAN exists today and there are no local endpoints. Source gateways are included and listed first. |
+| `source_gateway_devices` | Current SVI owners. The same host is also prune-eligible when it has no local endpoints. |
 
 A switch is participating only when endpoint-facing interfaces are found locally (server, mainframe OSA, storage, hypervisor, or appliance ports; or MAC/ARP tied to those ports), or when it is listed in `gateway_leafs`.
 

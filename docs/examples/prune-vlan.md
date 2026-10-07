@@ -1,6 +1,6 @@
 # Prune eligible switches
 
-Remove a VLAN from switches that carry it and have no local endpoints. Participating leaves, gateway leaves, and source gateways are not touched.
+Remove a VLAN from switches that carry it and have no local endpoints. Source gateways are included and come first: they are the root of the legacy L2. Participating leaves and engineer-named gateway leaves are not touched. A source gateway that still has local endpoints stays with the participating leaves.
 
 The playbook discovers first, then prunes from that classification. It does not read an old report file.
 

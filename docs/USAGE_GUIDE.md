@@ -128,14 +128,14 @@ Key **discovery** fields:
 
 - `endpoint_inventory` / `compute_inventory` — MACs and ports on compute links (servers, IBM Z, Nutanix, UCS, HCI). Switch-to-switch MAC learning is omitted.
 - `uplink_inventory` — trunks toward other switches (context only; does not make a leaf participating)
-- `unknown_inventory` — ports that could not be classified. Those switches are `review`, not participating and not prune-eligible
+- `unknown_inventory` — ports that could not be classified. A non-gateway switch with those ports is `review`. A source gateway stays prune-eligible; the unclassified ports are called out on the dry-run
 - `deployment_model.placement` — `participating_leafs`, `gateway_leafs`, `prune_eligible_leafs`, `source_gateway_devices`
 - `routing.associated` — statics whose next hop is in the VLAN prefix, BGP networks or aggregates of that prefix, `redistribute connected`/`static` on the source gateway, and BGP peers that sit on the VLAN. Review items, not prune actions
 
 Key **prune** fields (separate files):
 
 - `prune_plans[].execution` — EOS `configure session` / `commit timer` / `configure confirm` / abort; NXOS checkpoint + rollback
-- Participating leaves are `retained_participating`. Source gateways are `held_until_gateway_migration`. Only prune-eligible switches keep trunk / VLAN CLI
+- Participating leaves are `retained_participating`. Source gateways with no local endpoints are prune-eligible and listed first. Only that set keeps trunk / SVI / VLAN CLI
 - Static routes, BGP, and shared-VRF objects stay in `l3_review`, never actions
 - Device JSON: `reports/<dc>/_prune_plans/<host>_prune_plan_<ts>.json`
 - `prune_commit_timer` default `00:10:00` (report text only; nothing is applied)

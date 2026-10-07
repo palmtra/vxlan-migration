@@ -6,7 +6,7 @@ Data center: {{ report.data_center | default('unknown') }}
 This file is **human-review only**. Discovery never applies deletes.
 Use it after compute endpoints have moved to VXLAN-EVPN. The CLI is shaped so it can later feed an apply role (not enabled).
 
-Prune only **prune-eligible** switches: the VLAN is present, no local endpoints were found, and the switch is not a participating leaf, a gateway leaf, or a source gateway. Leave source gateways until the gateway move is finished. Participating leaves are where the VNI stays.
+Prune **prune-eligible** switches: the VLAN is present and no local endpoints were found. Source gateways are included and come first, because they are the root of the legacy L2. Participating leaves and engineer-named gateway leaves stay. A source gateway that still has local endpoints stays with the participating leaves.
 
 ## How to run (Arista EOS)
 

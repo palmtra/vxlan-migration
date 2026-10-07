@@ -9,6 +9,8 @@ Migration type is only ``l2`` or ``l3``:
 
 ``gateway_leafs`` are engineer-supplied. An SVI found in discovery is a
 ``source_gateway`` (legacy MLS / aggPE) and is not a fabric gateway leaf.
+A source gateway with no local endpoints is prune-eligible, and it is
+listed first, because it is the root of the legacy L2.
 """
 
 from ansible.errors import AnsibleFilterError
@@ -24,9 +26,10 @@ _PLACEMENT_RULES = [
     "participating_leafs are where the VLAN/VNI must exist after migration.",
     "A switch is participating when it has local endpoint attachment, or when the engineer listed it in gateway_leafs.",
     "VLAN database presence, trunk allowance, uplink-only MAC learning, transit aggregation, and fabric interconnects do not qualify.",
-    "prune_eligible_leafs carry the VLAN today, have no local endpoints, and are not gateway, participating, source-gateway, or protected.",
+    "prune_eligible_leafs carry the VLAN today and have no local endpoints. Source gateways are included and listed first: they are the root of the legacy L2.",
+    "A source gateway that also has local endpoints, or that the engineer named in gateway_leafs, stays participating and is not pruned.",
     "gateway_leafs are explicit. Discovery never infers fabric gateway ownership from an SVI.",
-    "source_gateway_devices are existing MLS or aggPE gateway owners. Do not prune them until gateway migration completes.",
+    "source_gateway_devices names the current SVI owners. An SVI with no local endpoints is prune-eligible.",
     "Endpoint VLAN presence on additional leaves is normal EVPN placement, not an L2-stretch type.",
 ]
 
@@ -667,7 +670,8 @@ def build_vlan_placement(vlan, devices):
 
     by_hostname = {}
     participating_order = []
-    prune_order = []
+    source_prune_order = []
+    other_prune_order = []
     source_gateway_order = []
     analysis_switches = []
 
@@ -704,10 +708,16 @@ def build_vlan_placement(vlan, devices):
         if is_gateway or has_endpoints:
             role = "participating"
             _add_participating(hostname)
-        elif is_source_gateway:
-            role = "source_gateway"
         elif is_protected and vlan_present:
             role = "protected"
+        elif is_source_gateway and vlan_present:
+            # The legacy SVI is the root of the L2 domain, so it is pruned first.
+            role = "prune_eligible"
+            source_prune_order.append(hostname)
+            if unknown_ports:
+                nonqualifying.append(
+                    "unclassified ports need review: %s" % ", ".join(unknown_ports)
+                )
         elif vlan_present and unknown_ports:
             role = "review"
             nonqualifying.append(
@@ -715,9 +725,12 @@ def build_vlan_placement(vlan, devices):
             )
         elif vlan_present and not has_endpoints:
             role = "prune_eligible"
-            prune_order.append(hostname)
+            other_prune_order.append(hostname)
         else:
             role = "absent"
+
+        if role == "prune_eligible" and is_source_gateway:
+            nonqualifying.insert(0, "source gateway, legacy L2 root")
 
         if is_source_gateway and hostname not in source_gateway_order:
             source_gateway_order.append(hostname)
@@ -764,7 +777,7 @@ def build_vlan_placement(vlan, devices):
         "gateway_declared": gateway_declared,
         "gateway_order": list(gateway_declared.keys()),
         "participating_order": participating_order,
-        "prune_order": prune_order,
+        "prune_order": source_prune_order + other_prune_order,
         "source_gateway_order": source_gateway_order,
         "by_hostname": by_hostname,
     }
@@ -865,7 +878,6 @@ def flatten_deployment_model(document):
 
 PRUNE_STATUS_BY_ROLE = {
     "participating": "retained_participating",
-    "source_gateway": "held_until_gateway_migration",
     "protected": "protected",
     "review": "needs_review",
     "absent": "none",

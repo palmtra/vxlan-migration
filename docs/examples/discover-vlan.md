@@ -184,7 +184,7 @@ that far without failing on earlier hosts.
 Two reports:
 
 1. **Discovery** — MACs learned on compute links (servers, IBM Z, Nutanix, UCS, HCI), plus those endpoint configs. Switch-to-switch uplinks are listed for context. No prune CLI.
-2. **Prune** — review `*_prune_*.md`, then apply with [prune-vlan.md](prune-vlan.md) if the switch is prune-eligible. Dry-run is the default. Compute endpoints, gateway leaves, and source gateways are not pruned.
+2. **Prune** — review `*_prune_*.md`, then apply with [prune-vlan.md](prune-vlan.md). Dry-run is the default. Source gateways are prune-eligible and come first. Compute endpoints and engineer-named gateway leaves are not pruned.
 
 SSOT snippet → fill VNI → generate VXLAN config (`workflow_deploy.yml`, `cvp_apply_configlets=false` by default).
 

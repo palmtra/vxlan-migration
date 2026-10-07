@@ -109,8 +109,41 @@ class PlacementTests(unittest.TestCase):
         self.assertEqual(placement["gateway_order"], [])
         self.assertEqual(placement["source_gateway_order"], ["mls01"])
         self.assertEqual(placement["participating_order"], [])
+        self.assertEqual(placement["prune_order"], ["mls01"])
+        self.assertEqual(placement["by_hostname"]["mls01"]["role"], "prune_eligible")
+        self.assertTrue(placement["by_hostname"]["mls01"]["source_gateway"])
+
+    def test_source_gateway_is_pruned_before_other_leaves(self):
+        placement = build_vlan_placement(
+            {"id": 10, "name": "app", "service_type": "l2"},
+            [
+                _device(
+                    "agg02",
+                    switch_uplink_ports=["Po1"],
+                    trunk_ports=["Po1"],
+                ),
+                _device(
+                    "mls01",
+                    svi_present=True,
+                    switch_uplink_ports=["Po10"],
+                    trunk_ports=["Po10"],
+                ),
+                _device("leaf01", access_ports=["Ethernet1"], svi_present=True),
+            ],
+        )
+        self.assertEqual(placement["prune_order"], ["mls01", "agg02"])
+        self.assertEqual(placement["participating_order"], ["leaf01"])
+        self.assertTrue(placement["by_hostname"]["leaf01"]["source_gateway"])
+        self.assertFalse(placement["by_hostname"]["leaf01"]["prune_eligible"])
+
+    def test_protected_source_gateway_is_not_pruned(self):
+        placement = build_vlan_placement(
+            {"id": 1, "name": "keep", "protected_vlan": True},
+            [_device("mls01", svi_present=True)],
+        )
         self.assertEqual(placement["prune_order"], [])
-        self.assertEqual(placement["by_hostname"]["mls01"]["role"], "source_gateway")
+        self.assertEqual(placement["by_hostname"]["mls01"]["role"], "protected")
+        self.assertEqual(placement["source_gateway_order"], ["mls01"])
 
     def test_deprecated_l2_l3_without_gateway_leafs_is_l2(self):
         placement = build_vlan_placement(

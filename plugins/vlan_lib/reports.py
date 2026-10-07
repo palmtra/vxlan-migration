@@ -293,8 +293,9 @@ def build_vlan_discovery_reports(vlans, play_hosts, hostvars):
             if device.get("arp_learned")
         ]
 
-        # Classify before prune. Participating leaves and source gateways are
-        # withheld; only prune-eligible switches keep trunk/SVI/VLAN actions.
+        # Classify before prune. Participating leaves and named gateway leaves
+        # are withheld. Source gateways with no local endpoints stay
+        # prune-eligible and are ordered first.
         placement = build_vlan_placement(vlan, devices)
         by_placement = placement["by_hostname"]
 
@@ -398,6 +399,7 @@ def build_vlan_discovery_reports(vlans, play_hosts, hostvars):
                 )
             else:
                 device_plan["placement_role"] = "prune_eligible"
+                device_plan["source_gateway"] = bool(decision.get("source_gateway"))
             if (
                 device_plan.get("actions")
                 or device_plan.get("l3_review")
@@ -406,6 +408,14 @@ def build_vlan_discovery_reports(vlans, play_hosts, hostvars):
                 or device_plan.get("svi_inventory")
             ):
                 prune_plans.append(device_plan)
+
+        prune_rank = {
+            hostname: index
+            for index, hostname in enumerate(placement["prune_order"])
+        }
+        prune_plans.sort(
+            key=lambda plan: prune_rank.get(plan.get("hostname"), len(prune_rank))
+        )
 
         ssot = _ssot_from_discovery(vlan, devices)
         ssot["inferred_service_type"] = placement["migration_type"]

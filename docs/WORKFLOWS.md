@@ -143,7 +143,7 @@ Per switch, per VLAN (read-only):
 
 Discovery reports MACs learned on compute / unknown links only. Prune CLI is a **separate** report: EOS `configure session` + `commit timer` + `configure confirm`; NXOS checkpoint + rollback. Nothing is applied.
 
-**Human prune plan:** only prune-eligible switches (VLAN present, no local endpoints, not protected) get trunk / SVI / VLAN CLI. Participating leaves, gateway leaves, and source gateways are withheld. Source gateways stay until the gateway move finishes. Default-VRF statics and BGP, and objects in a **shared VRF**, are L3 review only — never prune candidates. Applying that CLI is `playbooks/core/prune_vlan.yml`: dry-run unless `-e prune_apply=true -e prune_approval=approve`. See [examples/prune-vlan.md](examples/prune-vlan.md).
+**Human prune plan:** prune-eligible switches get trunk / SVI / VLAN CLI. That set is switches where the VLAN is present, there are no local endpoints, and the VLAN is not protected. Source gateways are in that set, and they are listed first, because they are the root of the legacy L2. Participating leaves and engineer-named gateway leaves are withheld. A source gateway that still has local endpoints stays participating. Default-VRF statics and BGP, and objects in a **shared VRF**, are L3 review only — never prune candidates. Applying that CLI is `playbooks/core/prune_vlan.yml`: dry-run unless `-e prune_apply=true -e prune_approval=approve`. See [examples/prune-vlan.md](examples/prune-vlan.md).
 
 Reports land under:
 
