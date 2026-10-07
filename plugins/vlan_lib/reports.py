@@ -5,7 +5,11 @@ from ansible.errors import AnsibleFilterError
 
 from vlan_lib.common import _str_equal, sanitize_report_slug
 from vlan_lib.parsers import network_prefix
-from vlan_lib.placement import PRUNE_STATUS_BY_ROLE, build_vlan_placement
+from vlan_lib.placement import (
+    PRUNE_STATUS_BY_ROLE,
+    attach_associated_routes,
+    build_vlan_placement,
+)
 from vlan_lib.prune import build_device_prune_plan, build_prune_execution
 
 _SHARED_VRF_NOTE = (
@@ -420,6 +424,7 @@ def build_vlan_discovery_reports(vlans, play_hosts, hostvars):
         site_vlan = placement["deployment_model"]["site"]["vlan"]
         if not site_vlan.get("name"):
             site_vlan["name"] = ssot.get("name") or vlan.get("name") or ""
+        attach_associated_routes(placement["deployment_model"], vlan_id, devices)
         (
             endpoints,
             access_inventory,

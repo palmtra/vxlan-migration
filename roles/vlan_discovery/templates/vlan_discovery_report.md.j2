@@ -78,6 +78,25 @@ None.
 {% endfor %}
 {% endif %}
 
+## Associated routes
+
+Statics and BGP tied to this VLAN. Review these before migration. They are not prune actions.
+
+{% set associated = report.deployment_model.routing.associated | default({}) %}
+{% if (associated.static_routes | default([])) | length == 0 and (associated.bgp_networks | default([])) | length == 0 and (associated.bgp_neighbors | default([])) | length == 0 %}
+None.
+{% else %}
+{% for route in associated.static_routes | default([]) %}
+- static {{ route.hostname }}: {{ route.prefix }} via {{ route.next_hop }}{% if route.name %} ({{ route.name }}){% endif %} - {{ route.reason }}
+{% endfor %}
+{% for item in associated.bgp_networks | default([]) %}
+- bgp {{ item.kind }} {{ item.hostname }}: {{ item.prefix if item.prefix else item.method }} - {{ item.reason }}
+{% endfor %}
+{% for peer in associated.bgp_neighbors | default([]) %}
+- bgp peer {{ peer.hostname }}: {{ peer.neighbor }}{% if peer.description %} ({{ peer.description }}){% endif %} - {{ peer.reason }}
+{% endfor %}
+{% endif %}
+
 Deployment model: `{{ report.vlan_slug }}_discovery_{{ _report_timestamp_ms }}.yml`
 Analysis payload: `{{ report.vlan_slug }}_discovery_{{ _report_timestamp_ms }}.json`
 Prune plan: `{{ report.vlan_slug }}_prune_{{ _report_timestamp_ms }}.md`

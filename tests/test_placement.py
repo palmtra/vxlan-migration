@@ -225,5 +225,117 @@ class PlacementTests(unittest.TestCase):
         self.assertNotIn("deployment_model", report["discovery_export"])
 
 
+class AssociatedRouteTests(unittest.TestCase):
+    def test_bgp_network_and_aggregate_are_parsed(self):
+        from vlan_lib.parsers import parse_bgp_context
+
+        context = parse_bgp_context(
+            """
+router bgp 65001
+   vrf TENANT1
+      rd 10.1.0.17:1
+      network 10.10.100.0/24
+      aggregate-address 10.10.0.0/16 summary-only
+      redistribute connected
+      neighbor 10.10.100.5 remote-as 65099
+      neighbor 10.10.100.5 description firewall
+   network 10.9.0.0 255.255.255.0
+"""
+        )
+        tenant = next(item for item in context["vrfs"] if item["name"] == "TENANT1")
+        self.assertEqual(tenant["networks"], ["10.10.100.0/24"])
+        self.assertEqual(tenant["aggregates"], ["10.10.0.0/16"])
+        self.assertIn("connected", tenant["redistribute"])
+        default = next(item for item in context["vrfs"] if item["name"] == "default")
+        self.assertEqual(default["networks"], ["10.9.0.0/24"])
+
+    def test_vlan_associated_routes_skip_fabric_default(self):
+        per_vlan = {
+            "vlan_id": 100,
+            "os_family": "nxos",
+            "vlan_present": True,
+            "svi_present": True,
+            "svi_vrf": "TENANT1",
+            "svi_details": {
+                "ip_addresses": ["10.10.100.2/24"],
+                "virtual_router_addresses": ["10.10.100.1"],
+                "hsrp_addresses": [],
+            },
+            "compute_ports": [],
+            "access_ports": [],
+            "unknown_ports": [],
+            "switch_uplink_ports": [],
+            "trunk_ports": [],
+            "endpoint_mac_entries": [],
+            "mac_entries": [],
+            "port_attachments": [],
+        }
+        hostvars = {
+            "mls01": {
+                "_vlan_discovery": {
+                    "hostname": "mls01",
+                    "os_family": "nxos",
+                    "per_vlan": [per_vlan],
+                    "static_routes": [
+                        {
+                            "vrf": "TENANT1",
+                            "prefix": "192.0.2.0/24",
+                            "next_hop": "10.10.100.5",
+                            "name": "firewall",
+                        },
+                        {
+                            "vrf": "default",
+                            "prefix": "0.0.0.0/0",
+                            "next_hop": "10.1.0.1",
+                            "name": "fabric_default",
+                        },
+                    ],
+                    "bgp_neighbors": [
+                        {
+                            "vrf": "TENANT1",
+                            "neighbor": "10.10.100.5",
+                            "remote_as": "65099",
+                            "update_source": "Vlan100",
+                            "description": "firewall",
+                        },
+                        {
+                            "vrf": "default",
+                            "neighbor": "10.1.0.21",
+                            "remote_as": "65001",
+                            "update_source": "Loopback0",
+                            "description": "spine",
+                        },
+                    ],
+                    "bgp_vrfs": [
+                        {
+                            "name": "TENANT1",
+                            "networks": ["10.10.100.0/24"],
+                            "aggregates": ["10.10.0.0/16"],
+                            "redistribute": ["connected"],
+                        }
+                    ],
+                    "prune_plan": {},
+                }
+            }
+        }
+        report = build_vlan_discovery_reports(
+            [{"id": 100, "name": "legacy_web", "service_type": "l3", "vrf": "TENANT1"}],
+            ["mls01"],
+            hostvars,
+        )[0]
+        associated = report["deployment_model"]["routing"]["associated"]
+        statics = associated["static_routes"]
+        self.assertEqual(len(statics), 1)
+        self.assertEqual(statics[0]["next_hop"], "10.10.100.5")
+        self.assertEqual(statics[0]["name"], "firewall")
+        kinds = {(item["kind"], item["prefix"] or item["method"]) for item in associated["bgp_networks"]}
+        self.assertIn(("network", "10.10.100.0/24"), kinds)
+        self.assertIn(("aggregate", "10.10.0.0/16"), kinds)
+        self.assertIn(("redistribute", "connected"), kinds)
+        peers = [item["neighbor"] for item in associated["bgp_neighbors"]]
+        self.assertEqual(peers, ["10.10.100.5"])
+        self.assertNotIn("no_ip_route", {action["op"] for plan in report["prune_plans"] for action in plan["actions"]})
+
+
 if __name__ == "__main__":
     unittest.main()

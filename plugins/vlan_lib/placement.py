@@ -13,7 +13,7 @@ Migration type is only ``l2`` or ``l3``:
 
 from ansible.errors import AnsibleFilterError
 
-from vlan_lib.parsers import normalize_mac_address
+from vlan_lib.parsers import network_prefix, normalize_mac_address
 
 _ENDPOINT_MAC_ROLES = frozenset({"compute", "unknown", "access"})
 _UPLINK_MAC_ROLES = frozenset(
@@ -236,6 +236,318 @@ def _host_only(hostname):
     return {"hostname": hostname}
 
 
+def empty_associated_routes():
+    """Stable shape for VLAN-scoped statics and BGP. Never a prune list."""
+    return {
+        "static_routes": [],
+        "bgp_networks": [],
+        "bgp_neighbors": [],
+    }
+
+
+def _ipv4_value(ip_text):
+    parts = str(ip_text or "").strip().split(".")
+    if len(parts) != 4:
+        return None
+    try:
+        octets = [int(part) for part in parts]
+    except ValueError:
+        return None
+    if any(part < 0 or part > 255 for part in octets):
+        return None
+    return (octets[0] << 24) + (octets[1] << 16) + (octets[2] << 8) + octets[3]
+
+
+def _prefix_tuple(text):
+    """Return ``(network, prefix_len)`` for an IPv4 prefix, or None."""
+    raw = str(text or "").strip()
+    if "/" not in raw:
+        return None
+    normalized = network_prefix(raw)
+    if "/" not in normalized:
+        return None
+    ip_text, plen_text = normalized.split("/", 1)
+    try:
+        plen = int(plen_text)
+    except ValueError:
+        return None
+    value = _ipv4_value(ip_text)
+    if value is None or plen < 0 or plen > 32:
+        return None
+    mask = (0xFFFFFFFF << (32 - plen)) & 0xFFFFFFFF if plen else 0
+    return value & mask, plen
+
+
+def _prefix_contains(outer, inner):
+    if plen_wider(outer, inner):
+        net_o, plen_o = outer
+        net_i, _plen_i = inner
+        mask = (0xFFFFFFFF << (32 - plen_o)) & 0xFFFFFFFF if plen_o else 0
+        return (net_i & mask) == (net_o & mask)
+    return False
+
+
+def plen_wider(outer, inner):
+    return outer[1] <= inner[1]
+
+
+def _ip_in_prefixes(ip_text, prefixes):
+    value = _ipv4_value(str(ip_text or "").split()[0])
+    if value is None:
+        return ""
+    for prefix in prefixes:
+        parsed = _prefix_tuple(prefix)
+        if not parsed:
+            continue
+        network, plen = parsed
+        mask = (0xFFFFFFFF << (32 - plen)) & 0xFFFFFFFF if plen else 0
+        if (value & mask) == network:
+            return prefix
+    return ""
+
+
+def _prefix_relation(candidate, vlan_prefixes):
+    """How *candidate* relates to the VLAN prefixes.
+
+    ``equal`` and ``more_specific`` are VLAN routes. ``covers`` means an
+    aggregate contains the VLAN prefix. Default route is never ``covers``.
+    """
+    parsed = _prefix_tuple(candidate)
+    if not parsed:
+        return "", ""
+    if parsed == (0, 0):
+        return "", ""
+    for prefix in vlan_prefixes:
+        vlan = _prefix_tuple(prefix)
+        if not vlan:
+            continue
+        if parsed == vlan:
+            return "equal", prefix
+        if _prefix_contains(vlan, parsed):
+            return "more_specific", prefix
+        if _prefix_contains(parsed, vlan):
+            return "covers", prefix
+    return "", ""
+
+
+def _norm_vrf_name(vrf):
+    return str(vrf or "default")
+
+
+def _vlan_vrfs(devices, model_vrf):
+    found = set()
+    if model_vrf:
+        found.add(_norm_vrf_name(model_vrf))
+    for device in devices or []:
+        if not isinstance(device, dict) or not device.get("svi_present"):
+            continue
+        details = device.get("svi_details") or {}
+        found.add(_norm_vrf_name(device.get("svi_vrf") or details.get("vrf") or "default"))
+    return found
+
+
+def _prefixes_from_svis(devices):
+    prefixes = []
+    seen = set()
+    for device in devices or []:
+        if not isinstance(device, dict):
+            continue
+        details = device.get("svi_details") or {}
+        for cidr in details.get("ip_addresses") or []:
+            prefix = network_prefix(cidr)
+            if prefix and prefix not in seen:
+                seen.add(prefix)
+                prefixes.append(prefix)
+    return prefixes
+
+
+def _update_source_is_vlan(update_source, vlan_id):
+    if vlan_id in (None, ""):
+        return False
+    text = re_sub_interface(update_source)
+    return text in ("vlan%s" % int(vlan_id), "vl%s" % int(vlan_id))
+
+
+def re_sub_interface(update_source):
+    return str(update_source or "").lower().replace(" ", "")
+
+
+def attach_associated_routes(model, vlan_id, devices):
+    """Attach statics and BGP objects that belong to this VLAN.
+
+    A shared-VRF dump is not enough. A static counts when its next hop is
+    inside a VLAN prefix, or when the static itself is that prefix. A BGP
+    network or aggregate counts when it is, contains, or is contained by a
+    VLAN prefix. ``redistribute connected`` or ``static`` on a device that
+    owns the SVI is recorded because that is how the prefix is often advertised.
+    Peers count when they sit on the VLAN or use its SVI as update-source.
+
+    These objects are for review and for rebuilding the gateway. They are
+    not prune actions.
+    """
+    if not isinstance(model, dict):
+        return empty_associated_routes()
+    routing = model.get("routing")
+    if not isinstance(routing, dict):
+        routing = {}
+        model["routing"] = routing
+    prefixes = []
+    seen = set()
+    source = list(routing.get("prefixes") or []) or _prefixes_from_svis(devices)
+    for item in source:
+        prefix = network_prefix(item)
+        if prefix and prefix not in seen:
+            seen.add(prefix)
+            prefixes.append(prefix)
+    vrfs = _vlan_vrfs(devices, routing.get("vrf"))
+    statics = []
+    networks = []
+    neighbors = []
+    static_seen = set()
+    network_seen = set()
+    neighbor_seen = set()
+
+    for device in devices or []:
+        if not isinstance(device, dict):
+            continue
+        hostname = device.get("hostname") or ""
+        owns_svi = bool(device.get("svi_present"))
+        for route in device.get("static_routes") or []:
+            if not isinstance(route, dict):
+                continue
+            if _norm_vrf_name(route.get("vrf")) not in vrfs:
+                continue
+            prefix = route.get("prefix") or ""
+            next_hop = route.get("next_hop") or ""
+            hit = _ip_in_prefixes(next_hop, prefixes)
+            relation, related = _prefix_relation(prefix, prefixes)
+            if hit:
+                reason = "next_hop %s is inside %s" % (next_hop, hit)
+            elif relation in ("equal", "more_specific"):
+                reason = "prefix %s is inside %s" % (prefix, related)
+            else:
+                continue
+            key = (hostname, _norm_vrf_name(route.get("vrf")), prefix, next_hop)
+            if key in static_seen:
+                continue
+            static_seen.add(key)
+            statics.append(
+                {
+                    "hostname": hostname,
+                    "vrf": _norm_vrf_name(route.get("vrf")),
+                    "prefix": prefix,
+                    "next_hop": next_hop,
+                    "name": route.get("name") or "",
+                    "reason": reason,
+                }
+            )
+
+        for block in device.get("bgp_vrfs") or []:
+            if not isinstance(block, dict):
+                continue
+            vrf_name = _norm_vrf_name(block.get("name") or block.get("vrf"))
+            if vrf_name not in vrfs:
+                continue
+            for kind, values in (
+                ("network", block.get("networks") or []),
+                ("aggregate", block.get("aggregates") or []),
+            ):
+                for candidate in values:
+                    relation, related = _prefix_relation(candidate, prefixes)
+                    if kind == "network" and relation not in ("equal", "more_specific", "covers"):
+                        continue
+                    if kind == "aggregate" and relation not in ("equal", "covers"):
+                        continue
+                    if relation == "equal":
+                        reason = "%s statement advertises %s" % (kind, related)
+                    elif relation == "more_specific":
+                        reason = "%s %s is a more specific of %s" % (kind, candidate, related)
+                    else:
+                        reason = "%s %s covers VLAN prefix %s" % (kind, candidate, related)
+                    key = (hostname, vrf_name, kind, candidate)
+                    if key in network_seen:
+                        continue
+                    network_seen.add(key)
+                    networks.append(
+                        {
+                            "hostname": hostname,
+                            "vrf": vrf_name,
+                            "kind": kind,
+                            "prefix": candidate,
+                            "method": "",
+                            "reason": reason,
+                        }
+                    )
+            if owns_svi:
+                for method in block.get("redistribute") or []:
+                    first = str(method).split()[0].lower()
+                    if first not in ("connected", "static"):
+                        continue
+                    key = (hostname, vrf_name, "redistribute", first)
+                    if key in network_seen:
+                        continue
+                    network_seen.add(key)
+                    networks.append(
+                        {
+                            "hostname": hostname,
+                            "vrf": vrf_name,
+                            "kind": "redistribute",
+                            "prefix": "",
+                            "method": method,
+                            "reason": (
+                                "SVI is connected in this VRF and BGP redistributes %s. "
+                                "The VLAN prefix may be advertised. The VRF can be shared; confirm before migration."
+                                % first
+                            ),
+                        }
+                    )
+
+        for peer in device.get("bgp_neighbors") or []:
+            if not isinstance(peer, dict):
+                continue
+            if _norm_vrf_name(peer.get("vrf")) not in vrfs:
+                continue
+            neighbor = peer.get("neighbor") or ""
+            update_source = peer.get("update_source") or ""
+            hit = _ip_in_prefixes(neighbor, prefixes)
+            on_svi = _update_source_is_vlan(update_source, vlan_id)
+            if not hit and not on_svi:
+                continue
+            if on_svi and hit:
+                reason = "peer %s is inside %s and update-source is %s" % (
+                    neighbor,
+                    hit,
+                    update_source,
+                )
+            elif on_svi:
+                reason = "update-source is %s" % update_source
+            else:
+                reason = "peer %s is inside %s" % (neighbor, hit)
+            key = (hostname, _norm_vrf_name(peer.get("vrf")), neighbor)
+            if key in neighbor_seen:
+                continue
+            neighbor_seen.add(key)
+            neighbors.append(
+                {
+                    "hostname": hostname,
+                    "vrf": _norm_vrf_name(peer.get("vrf")),
+                    "neighbor": neighbor,
+                    "remote_as": str(peer.get("remote_as") or ""),
+                    "update_source": update_source,
+                    "description": peer.get("description") or "",
+                    "reason": reason,
+                }
+            )
+
+    associated = {
+        "static_routes": statics,
+        "bgp_networks": networks,
+        "bgp_neighbors": neighbors,
+    }
+    routing["associated"] = associated
+    return associated
+
+
 def _blank_evpn_vni(value):
     if value in (None, "", 0, "0"):
         return None
@@ -285,7 +597,7 @@ def build_deployment_model(vlan, devices, placement):
     if isinstance(site.get("vlan"), dict):
         site_vlan = site["vlan"]
 
-    return {
+    model = {
         "site": {
             "data_center": vlan.get("data_center") or site.get("data_center") or "",
             "vlan": {
@@ -301,6 +613,7 @@ def build_deployment_model(vlan, devices, placement):
             "vrf": vrf,
             "prefixes": prefixes,
             "gateway_ip": gateway_ip,
+            "associated": empty_associated_routes(),
         },
         "migration": {
             "type": migration_type,
@@ -324,6 +637,8 @@ def build_deployment_model(vlan, devices, placement):
             "source_gateway_devices": source_gateways,
         },
     }
+    attach_associated_routes(model, vlan.get("id"), devices)
+    return model
 
 
 def build_vlan_placement(vlan, devices):
@@ -529,6 +844,8 @@ def flatten_deployment_model(document):
         "tenant": ownership.get("tenant") or "",
         "owner": ownership.get("owner") or "",
     }
+    if isinstance(routing.get("associated"), dict):
+        record["associated"] = routing["associated"]
     l3_vni = _blank_evpn_vni(l3_evpn.get("vni"))
     if l3_vni is not None:
         record["l3_vni"] = l3_vni

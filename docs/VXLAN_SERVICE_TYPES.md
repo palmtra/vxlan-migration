@@ -77,6 +77,19 @@ These do **not** qualify:
 
 The YAML model is what you deploy. The JSON file is not a config source.
 
+### Routes that belong to the VLAN
+
+Discovery keeps a static or a BGP object only when it is tied to this VLAN's prefix:
+
+| Object | Included when |
+|---|---|
+| Static route | The next hop is an address inside the VLAN prefix (a firewall in the subnet), or the static prefix is the VLAN prefix |
+| BGP `network` / `aggregate-address` | The statement advertises the VLAN prefix, a more-specific, or an aggregate that covers it |
+| BGP `redistribute connected` or `static` | The device owns the SVI, so the prefix may be advertised. The VRF may be shared; confirm it |
+| BGP neighbor | The peer address is inside the VLAN prefix, or `update-source` is the VLAN SVI |
+
+Fabric default routes and spine iBGP are left out. These objects are written under `routing.associated` for review and so the gateway move can recreate them. Prune does not delete them.
+
 ---
 
 ## Decision flow

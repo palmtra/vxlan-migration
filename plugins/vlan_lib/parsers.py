@@ -6,7 +6,9 @@ import re
 from ansible.errors import AnsibleFilterError
 
 from vlan_lib.common import (
+    _BGP_AGGREGATE_RE,
     _BGP_INDENTED_ATTR_RE,
+    _BGP_NETWORK_RE,
     _BGP_NEIGHBOR_ATTR_RE,
     _BGP_NEIGHBOR_STANZA_RE,
     _BGP_RD_RE,
@@ -938,10 +940,34 @@ def parse_bgp_context(bgp_config):
         )
 
     def ensure_vrf(name):
-        return vrf_blocks.setdefault(
+        entry = vrf_blocks.setdefault(
             name,
-            {"name": name, "rd": "", "route_targets": []},
+            {
+                "name": name,
+                "rd": "",
+                "route_targets": [],
+                "networks": [],
+                "aggregates": [],
+                "redistribute": [],
+            },
         )
+        entry.setdefault("networks", [])
+        entry.setdefault("aggregates", [])
+        entry.setdefault("redistribute", [])
+        return entry
+
+    def remember_prefix(bucket, address, plen, mask):
+        if plen:
+            prefix = network_prefix("%s/%s" % (address, int(plen)))
+        elif mask:
+            length = _dotted_mask_to_prefix_len(mask)
+            if length is None:
+                return
+            prefix = network_prefix("%s/%s" % (address, length))
+        else:
+            return
+        if prefix and prefix not in bucket:
+            bucket.append(prefix)
 
     for raw_line in str(bgp_config).splitlines():
         line = raw_line.rstrip()
@@ -1002,6 +1028,35 @@ def parse_bgp_context(bgp_config):
                 block["redistribute"].append(redist_match.group(1).strip())
                 continue
             continue
+
+        if current_neighbor is None and current_vlan is None:
+            network_match = _BGP_NETWORK_RE.match(line)
+            if network_match:
+                block = ensure_vrf(current_vrf)
+                remember_prefix(
+                    block["networks"],
+                    network_match.group(1),
+                    network_match.group(2),
+                    network_match.group(3),
+                )
+                continue
+            aggregate_match = _BGP_AGGREGATE_RE.match(line)
+            if aggregate_match:
+                block = ensure_vrf(current_vrf)
+                remember_prefix(
+                    block["aggregates"],
+                    aggregate_match.group(1),
+                    aggregate_match.group(2),
+                    aggregate_match.group(3),
+                )
+                continue
+            redist_match = _BGP_REDIST_RE.match(line)
+            if redist_match:
+                block = ensure_vrf(current_vrf)
+                method = redist_match.group(1).strip()
+                if method and method not in block["redistribute"]:
+                    block["redistribute"].append(method)
+                continue
 
         vrf_match = _BGP_VRF_RE.match(line)
         if vrf_match and not re.match(r"^\s*neighbor\b", line, re.I):

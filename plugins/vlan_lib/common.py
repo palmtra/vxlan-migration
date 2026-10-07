@@ -116,6 +116,16 @@ _BGP_RT_RE = re.compile(r"^\s*route-target\s+(.+?)\s*$", re.I)
 
 _BGP_REDIST_RE = re.compile(r"^\s*redistribute\s+(.+?)\s*$", re.I)
 
+_BGP_NETWORK_RE = re.compile(
+    r"^\s*network\s+(\d+\.\d+\.\d+\.\d+)(?:/(\d+)|\s+(\d+\.\d+\.\d+\.\d+))?(?:\s+\S.*)?\s*$",
+    re.I,
+)
+
+_BGP_AGGREGATE_RE = re.compile(
+    r"^\s*aggregate-address\s+(\d+\.\d+\.\d+\.\d+)(?:/(\d+)|\s+(\d+\.\d+\.\d+\.\d+))?(?:\s+\S.*)?\s*$",
+    re.I,
+)
+
 _BGP_NEIGHBOR_STANZA_RE = re.compile(r"^\s*neighbor\s+(\S+)\s*$", re.I)
 
 _BGP_INDENTED_ATTR_RE = re.compile(
@@ -157,7 +167,7 @@ def _str_equal(a, b):
 
 
 def _vlan_present(vlan_id, output):
-    """Legacy helper — prefer vlan_id_command_indicates_present for discovery."""
+    """Legacy helper - prefer vlan_id_command_indicates_present for discovery."""
     return vlan_id_command_indicates_present(output, vlan_id)
 
 
