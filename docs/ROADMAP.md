@@ -24,6 +24,7 @@ Open features and planned work. Completed items are kept for context.
 - [x] Molecule localhost scenarios for `vlan_db` and `service_db`
 - [x] Placement model: participating leaves vs prune-eligible leaves; migration type is only `l2` or `l3`
 - [x] Discovery outputs: Markdown report, YAML deploy model, JSON analysis payload
+- [x] Prune apply playbook: dry-run by default, explicit approval, prune-eligible switches only
 
 ---
 

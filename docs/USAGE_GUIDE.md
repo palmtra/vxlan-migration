@@ -73,7 +73,9 @@ Collects VLAN, MAC, SVI, ARP, trunks, and (on L3-capable devices) VRF/HSRP/BGP/s
 | `vlan_discovery_backup_enabled` | `false` | Capture config backup before discovery |
 | `discovery_collect_prune_context` | `true` | Collect static routes + BGP (EOS and NXOS) as **L3 discovery** (not prune actions) |
 | `discovery_write_prune_plan` | `true` | Write the separate prune report (trunk/SVI/VLAN + EOS session text; never applies deletes) |
-| `prune_commit_timer` | `00:10:00` | EOS `commit timer` value printed in the prune report |
+| `prune_commit_timer` | `00:10:00` | EOS `commit timer` value printed in the prune report and used when prune apply is approved |
+| `prune_apply` | `false` | `playbooks/core/prune_vlan.yml` only. `true` sends CLI to prune-eligible switches |
+| `prune_approval` | empty | Must be `approve` together with `prune_apply=true`. See [examples/prune-vlan.md](examples/prune-vlan.md) |
 | `discovery_write_device_prune_plans` | `true` | Write `reports/<dc>/_prune_plans/*.json` |
 | `discovery_enable_ios` | `false` | Parked IOS discovery; set `true` to run `gather_ios*` (see [OS_SUPPORT.md](OS_SUPPORT.md)) |
 | `discovery_write_markdown` | `true` | Write `.md` report |
@@ -337,6 +339,7 @@ Artifact: `reports/netbox_export/netbox_export_<dc>_vlan<id>_<timestamp>.json`
 | `--check` | Supported on discovery and deploy (CVP push skipped in check mode when role respects it) |
 | `--diff` | Show template diffs |
 | `cvp_apply_configlets=false` | Default safe mode — files only |
+| `prune_apply=false` | Prune playbook dry-run. Apply needs `prune_apply=true` and `prune_approval=approve` |
 | `cvp_change_control_state=set` | Never auto-execute CVP changes |
 | `network_backup_enabled` | Per-host backup before workflow deploy (default `true` in group_vars) |
 
@@ -347,6 +350,7 @@ Artifact: `reports/netbox_export/netbox_export_<dc>_vlan<id>_<timestamp>.json`
 | Job Template | Playbook | Survey fields |
 |---|---|---|
 | VLAN Discovery | `playbooks/core/discover_vlan.yml` | `manual_data_center`, `manual_vlan_id`, `discovery_allow_probe` |
+| VLAN Prune | `playbooks/core/prune_vlan.yml` | `manual_data_center`, `manual_vlan_id`, `prune_apply`, `prune_approval` |
 | Core Deploy | `playbooks/core/workflow_deploy.yml` | `manual_vlan_id`, `manual_data_center`, `manual_target_vrf`, `use_avd`, `cvp_apply_configlets` |
 | Core Verify | `playbooks/core/workflow_verify.yml` | `resume_vlan_id` |
 | Advanced Deploy | `playbooks/advanced/workflow_deploy.yml` | SNOW fields + deploy vars |

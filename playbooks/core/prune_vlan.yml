@@ -1,0 +1,65 @@
+---
+# -----------------------------------------------------------------------------
+# Core workflow - prune eligible switches
+# -----------------------------------------------------------------------------
+# Separate from discovery and from CVP deploy. Discovery classifies switches.
+# This playbook prunes only prune-eligible ones.
+#
+# Dry-run (default). Prints the EOS session / NXOS checkpoint and writes
+# reports/<dc>/_prune/prune_dry_run_<timestamp>.md. No device is changed.
+#
+#   ansible-playbook -i inventory/hosts.yml playbooks/core/prune_vlan.yml \
+#     -e manual_data_center=lisle \
+#     -e manual_vlan_id=100 \
+#     --limit dc_lisle
+#
+# Apply. Both extra vars are required. EOS stops at `commit timer` and does
+# not run `configure confirm`. NXOS checkpoints first and does not save
+# startup-config.
+#
+#   ansible-playbook -i inventory/hosts.yml playbooks/core/prune_vlan.yml \
+#     -e manual_data_center=lisle \
+#     -e manual_vlan_id=100 \
+#     -e prune_apply=true \
+#     -e prune_approval=approve \
+#     --limit dc_lisle
+# -----------------------------------------------------------------------------
+
+- name: Discover, then prune only eligible switches
+  hosts: network_devices
+  gather_facts: false
+
+  vars:
+    target_vrf: "{{ hostvars['localhost']['target_vrf'] | default('default') }}"
+    _effective_vlans: "{{ hostvars['localhost']['_effective_vlans'] | default([]) }}"
+    _discovery_hosts: "{{ hostvars['localhost']['_workflow_discovery_hosts'] | default([]) }}"
+    discovery_scan_all_switches: "{{ hostvars['localhost']['_discovery_scan_all_switches'] | default(false) | bool }}"
+
+  pre_tasks:
+    - name: Load optional service bundle and per-DC VLAN database on control node
+      block:
+        - name: Include service_db role
+          ansible.builtin.include_role:
+            name: service_db
+        - name: Include vlan_db role
+          ansible.builtin.include_role:
+            name: vlan_db
+          vars:
+            discovery_allow_probe: "{{ discovery_allow_probe | default(true) | bool }}"
+      delegate_to: localhost
+      delegate_facts: true
+      run_once: true
+
+    - name: Limit the run to switches declared in the VLAN DB
+      ansible.builtin.meta: end_host
+      when:
+        - not discovery_scan_all_switches
+        - _discovery_hosts | length > 0
+        - inventory_hostname not in _discovery_hosts
+
+  roles:
+    - role: network_common
+      vars:
+        network_backup_enabled: "{{ vlan_discovery_backup_enabled | default(false) }}"
+    - vlan_discovery
+    - vlan_prune

@@ -1,0 +1,81 @@
+---
+- name: Load prune-eligible plans from this discovery run
+  ansible.builtin.set_fact:
+    _prune_eligible_plans: "{{ _reports | map(attribute='prune_plans') | flatten | selectattr('placement_role', 'defined') | selectattr('placement_role', 'equalto', 'prune_eligible') | selectattr('actions') | list }}"
+  vars:
+    _reports: "{{ hostvars[ansible_play_hosts[0]]['_vlan_discovery_reports'] | default(_vlan_discovery_reports | default([])) }}"
+  delegate_to: localhost
+  delegate_facts: true
+  run_once: true
+  become: false
+
+- name: Publish prune-eligible plans to each host
+  ansible.builtin.set_fact:
+    _prune_eligible_plans: "{{ hostvars['localhost']['_prune_eligible_plans'] | default([]) }}"
+    _prune_eligible_hosts: "{{ hostvars['localhost']['_prune_eligible_plans'] | default([]) | map(attribute='hostname') | unique | list }}"
+
+- name: Refuse to change devices without the approval phrase
+  ansible.builtin.fail:
+    msg: >-
+      Refusing to prune. Dry-run is the default.
+      To apply, re-run with -e prune_apply=true -e prune_approval=approve.
+  run_once: true
+  when:
+    - prune_apply | bool
+    - (prune_approval | default('')) != 'approve'
+
+- name: Show prune-eligible switches
+  ansible.builtin.debug:
+    msg: >-
+      Prune-eligible: {{ _prune_eligible_hosts | default([]) | join(', ') if _prune_eligible_hosts | default([]) else 'none' }}.
+      Mode: {{ 'apply' if (prune_apply | bool and (prune_approval | default('')) == 'approve') else 'dry-run' }}.
+  run_once: true
+
+- name: Ensure prune dry-run directory exists
+  ansible.builtin.file:
+    path: "{{ prune_reports_dir }}/{{ _report_data_center }}/_prune"
+    state: directory
+    mode: "0755"
+  vars:
+    _report_data_center: "{{ [hostvars['localhost']['_vlan_db_data_center'] | default(''), hostvars['localhost']['target_data_center'] | default(''), data_center | default(''), 'unknown'] | coalesce_trimmed }}"
+  delegate_to: localhost
+  become: false
+  run_once: true
+
+- name: Write the prune dry-run
+  ansible.builtin.template:
+    src: prune_dry_run.md.j2
+    dest: "{{ prune_reports_dir }}/{{ _report_data_center }}/_prune/prune_dry_run_{{ _report_timestamp_ms | default('manual') }}.md"
+    mode: "0644"
+  vars:
+    plans: "{{ _prune_eligible_plans | default([]) }}"
+    _report_data_center: "{{ [hostvars['localhost']['_vlan_db_data_center'] | default(''), hostvars['localhost']['target_data_center'] | default(''), data_center | default(''), 'unknown'] | coalesce_trimmed }}"
+  delegate_to: localhost
+  become: false
+  run_once: true
+
+- name: Skip switches that are not prune-eligible
+  ansible.builtin.meta: end_host
+  when: inventory_hostname not in (_prune_eligible_hosts | default([]))
+
+- name: Select this switch's prune plans
+  ansible.builtin.set_fact:
+    _my_prune_plans: "{{ _prune_eligible_plans | selectattr('hostname', 'equalto', inventory_hostname) | list }}"
+
+- name: Show the dry-run CLI for this switch
+  ansible.builtin.debug:
+    msg: "{{ item.execution.full_cli | default('') }}"
+  loop: "{{ _my_prune_plans }}"
+  loop_control:
+    label: "{{ item.hostname | default(inventory_hostname) }} vlan {{ item.vlan_ids | default([]) | join(',') }}"
+
+- name: Apply one prune plan
+  ansible.builtin.include_tasks: apply_plan.yml
+  loop: "{{ _my_prune_plans }}"
+  loop_control:
+    loop_var: prune_plan
+    label: "{{ inventory_hostname }} vlan {{ prune_plan.vlan_ids | default([]) | join(',') }}"
+  when:
+    - prune_apply | bool
+    - (prune_approval | default('')) == 'approve'
+    - not ansible_check_mode | bool

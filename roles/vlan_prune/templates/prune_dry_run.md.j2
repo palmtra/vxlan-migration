@@ -1,0 +1,32 @@
+# Prune dry-run
+
+Generated: {{ _report_timestamp_ms | default('') }}
+Apply requested: {{ prune_apply | default(false) }}
+Approval: {{ 'yes' if (prune_approval | default('')) == 'approve' else 'no' }}
+
+Nothing is sent to a switch unless the playbook was started with
+`-e prune_apply=true -e prune_approval=approve`.
+
+EOS: the approved run enters a configure session and stops at `commit timer`.
+Confirm on the switch with `configure confirm`, or wait for the timer to roll back.
+NXOS: a checkpoint is created, then the change is made. Startup-config is not saved.
+Roll back with the checkpoint command printed under each switch.
+
+{% for plan in plans | default([]) %}
+## {{ plan.hostname }} ({{ plan.os_family | default('') }})
+
+Status: {{ plan.status | default('') }}
+Placement: {{ plan.placement_role | default('') }}
+
+```
+{{ plan.execution.full_cli | default('') | trim }}
+```
+
+{% if plan.execution.platform | default('') == 'eos' %}
+After the timer: `{{ plan.execution.confirm | default('configure confirm') }}`
+Abort: `{{ plan.execution.abort | default('') }}`
+{% elif plan.execution.platform | default('') == 'nxos' %}
+Rollback: `{{ plan.execution.rollback | default('') }}`
+{% endif %}
+
+{% endfor %}

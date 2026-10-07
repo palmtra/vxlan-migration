@@ -107,6 +107,44 @@ def _actions_config_body(actions):
     return "\n".join(lines)
 
 
+def prune_apply_commands(execution):
+    """Commands an approved prune sends. EOS stops at ``commit timer``.
+
+    ``configure confirm`` is not included. The operator confirms on the switch
+    or lets the timer roll the session back. NXOS is checkpointed and not saved.
+    IOS returns no commands.
+    """
+    if not isinstance(execution, dict):
+        raise AnsibleFilterError(
+            "prune_apply_commands expects an execution dict, got %s" % type(execution)
+        )
+    platform = str(execution.get("platform") or "")
+    body = []
+    for line in str(execution.get("config_body") or "").splitlines():
+        stripped = line.strip()
+        if stripped and stripped != "!":
+            body.append(line)
+    if not body:
+        return []
+    if platform == "eos":
+        commands = [
+            execution.get("enter") or "",
+            *body,
+            execution.get("show_diffs") or "show session-config diffs",
+            execution.get("commit_timer_cmd") or "",
+        ]
+        return [command for command in commands if command]
+    if platform == "nxos":
+        commands = [
+            execution.get("enter") or "",
+            "configure terminal",
+            *body,
+            "end",
+        ]
+        return [command for command in commands if command]
+    return []
+
+
 def build_prune_execution(
     os_family, vlan_ids, actions, commit_timer=None, hostname=""
 ):

@@ -1,0 +1,55 @@
+---
+- name: Build the command list for this plan
+  ansible.builtin.set_fact:
+    _prune_commands: "{{ prune_plan.execution | prune_apply_commands }}"
+
+- name: Skip IOS and any plan with nothing to send
+  ansible.builtin.debug:
+    msg: >-
+      {{ inventory_hostname }} has no apply commands
+      (platform {{ prune_plan.execution.platform | default(network_os_family) }}).
+      IOS prune stays manual.
+  when: _prune_commands | length == 0
+
+- name: Apply the prune session
+  when: _prune_commands | length > 0
+  block:
+    - name: Send prune commands on the persistent CLI session
+      ansible.netcommon.cli_command:
+        command: "{{ item }}"
+      loop: "{{ _prune_commands }}"
+      loop_control:
+        label: "{{ item }}"
+      register: _prune_cmd_result
+      changed_when: item is match('^(commit timer|end)')
+
+    - name: EOS still needs an on-box confirm
+      ansible.builtin.debug:
+        msg: >-
+          {{ inventory_hostname }}: commit timer {{ prune_plan.execution.commit_timer | default('') }} is running.
+          Confirm with `{{ prune_plan.execution.confirm }}` or wait for rollback.
+          Abort with `{{ prune_plan.execution.abort }}`.
+      when: prune_plan.execution.platform | default('') == 'eos'
+
+    - name: NXOS checkpoint is the rollback
+      ansible.builtin.debug:
+        msg: >-
+          {{ inventory_hostname }}: running-config was changed and startup-config was not saved.
+          Rollback: `{{ prune_plan.execution.rollback }}`.
+      when: prune_plan.execution.platform | default('') == 'nxos'
+  rescue:
+    - name: Abort the EOS configure session
+      ansible.netcommon.cli_command:
+        command: "{{ prune_plan.execution.abort }}"
+      when: prune_plan.execution.platform | default('') == 'eos'
+      failed_when: false
+
+    - name: Report the failed prune
+      ansible.builtin.fail:
+        msg: >-
+          Prune failed on {{ inventory_hostname }}.
+          {% if prune_plan.execution.platform | default('') == 'eos' %}
+          The configure session abort was attempted.
+          {% elif prune_plan.execution.platform | default('') == 'nxos' %}
+          Roll back with `{{ prune_plan.execution.rollback | default('') }}`.
+          {% endif %}

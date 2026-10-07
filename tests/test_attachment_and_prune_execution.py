@@ -27,6 +27,7 @@ from vlan_filters import (  # noqa: E402
     classify_attachment_role,
     extract_vlan_targeted_discovery,
     parse_l2_interface_config,
+    prune_apply_commands,
 )
 
 
@@ -200,6 +201,10 @@ class PruneExecutionTests(unittest.TestCase):
         self.assertIn("switchport trunk allowed vlan remove 1107", cli)
         self.assertIn("show session-config diffs", cli)
         self.assertIn("commit timer", cli)
+        commands = prune_apply_commands(plan["execution"])
+        self.assertTrue(commands[0].startswith("configure session"))
+        self.assertIn("commit timer 00:10:00", commands)
+        self.assertNotIn("configure confirm", commands)
 
     def test_nxos_checkpoint_wraps_config(self):
         plan = build_device_prune_plan(
@@ -219,6 +224,10 @@ class PruneExecutionTests(unittest.TestCase):
         self.assertEqual(plan["execution"]["platform"], "nxos")
         self.assertIn("checkpoint prune_v100", plan["execution"]["full_cli"])
         self.assertIn("rollback running-config checkpoint", plan["execution"]["rollback"])
+        commands = prune_apply_commands(plan["execution"])
+        self.assertEqual(commands[0], "checkpoint prune_v100")
+        self.assertEqual(commands[-1], "end")
+        self.assertNotIn("copy running-config startup-config", commands)
 
 
 if __name__ == "__main__":

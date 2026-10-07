@@ -1,0 +1,15 @@
+---
+# -----------------------------------------------------------------------------
+# vlan_prune
+# -----------------------------------------------------------------------------
+# Applies trunk/VLAN removal only on switches discovery classified as
+# prune-eligible. Dry-run unless both of these are set:
+#   -e prune_apply=true -e prune_approval=approve
+# EOS is committed with a rollback timer and is not confirmed here.
+# NXOS is checkpointed first and startup-config is not saved.
+# -----------------------------------------------------------------------------
+
+prune_apply: false
+prune_approval: ""
+
+prune_reports_dir: "{{ reports_dir | default(playbook_dir | regex_replace('/playbooks(/core|/advanced)?$', '') ~ '/reports') }}"
