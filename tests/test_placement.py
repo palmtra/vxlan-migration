@@ -369,6 +369,89 @@ router bgp 65001
         self.assertEqual(peers, ["10.10.100.5"])
         self.assertNotIn("no_ip_route", {action["op"] for plan in report["prune_plans"] for action in plan["actions"]})
 
+    def test_static_route_name_tag_matches_case_insensitively(self):
+        per_vlan = {
+            "vlan_id": 100,
+            "os_family": "eos",
+            "vlan_present": True,
+            "svi_present": True,
+            "svi_vrf": "TENANT1",
+            "svi_details": {"ip_addresses": ["10.10.100.2/24"]},
+            "compute_ports": [],
+            "access_ports": [],
+            "unknown_ports": [],
+            "switch_uplink_ports": [],
+            "trunk_ports": [],
+            "endpoint_mac_entries": [],
+            "mac_entries": [],
+            "port_attachments": [],
+        }
+        hostvars = {
+            "mls01": {
+                "_vlan_discovery": {
+                    "hostname": "mls01",
+                    "os_family": "eos",
+                    "per_vlan": [per_vlan],
+                    "static_routes": [
+                        {
+                            "vrf": "default",
+                            "prefix": "1.1.1.0/24",
+                            "next_hop": "2.2.2.2",
+                            "name": "cust_a",
+                        },
+                        {
+                            "vrf": "default",
+                            "prefix": "9.9.9.0/24",
+                            "next_hop": "3.3.3.3",
+                            "name": "other_customer",
+                        },
+                        {
+                            "vrf": "default",
+                            "prefix": "8.8.8.0/24",
+                            "next_hop": "4.4.4.4",
+                            "name": "cust_a_extra",
+                        },
+                        {
+                            "vrf": "default",
+                            "prefix": "0.0.0.0/0",
+                            "next_hop": "10.1.0.1",
+                            "name": "fabric_default",
+                        },
+                    ],
+                    "prune_plan": {},
+                }
+            }
+        }
+        vlan = {
+            "id": 100,
+            "name": "legacy_web",
+            "service_type": "l3",
+            "vrf": "TENANT1",
+            "static_route_tags": ["CUST_A"],
+        }
+        report = build_vlan_discovery_reports([vlan], ["mls01"], hostvars)[0]
+        statics = report["deployment_model"]["routing"]["associated"]["static_routes"]
+        by_name = {item["name"]: item for item in statics}
+        self.assertIn("cust_a", by_name)
+        self.assertNotIn("other_customer", by_name)
+        self.assertNotIn("cust_a_extra", by_name)
+        self.assertNotIn("fabric_default", by_name)
+        self.assertIn("CUST_A", by_name["cust_a"]["reason"])
+        self.assertEqual(
+            report["deployment_model"]["routing"]["static_route_tags"],
+            ["CUST_A"],
+        )
+
+        untagged = dict(vlan)
+        untagged.pop("static_route_tags")
+        missed = build_vlan_discovery_reports([untagged], ["mls01"], hostvars)[0]
+        missed_names = [
+            item["name"]
+            for item in missed["deployment_model"]["routing"]["associated"]["static_routes"]
+        ]
+        self.assertNotIn("cust_a", missed_names)
+        self.assertNotIn("static_route_tags", missed["deployment_model"]["routing"])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -35,6 +35,10 @@
           "discovery_switches": {
             "type": "array",
             "items": { "type": "string" }
+          },
+          "static_route_tags": {
+            "type": "array",
+            "items": { "type": "string", "minLength": 1 }
           }
         },
         "additionalProperties": true

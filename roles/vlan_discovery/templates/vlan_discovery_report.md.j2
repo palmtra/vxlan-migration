@@ -80,7 +80,12 @@ None.
 
 ## Associated routes
 
-Statics and BGP tied to this VLAN. Review these before migration. They are not prune actions.
+Statics and BGP tied to this VLAN. A static is also included when an engineer tag equals its name. Review these before migration. They are not prune actions.
+
+{% set route_tags = report.deployment_model.routing.static_route_tags | default([]) %}
+{% if route_tags | length > 0 %}
+Static route name tags: {{ route_tags | join(', ') }}
+{% endif %}
 
 {% set associated = report.deployment_model.routing.associated | default({}) %}
 {% if (associated.static_routes | default([])) | length == 0 and (associated.bgp_networks | default([])) | length == 0 and (associated.bgp_neighbors | default([])) | length == 0 %}

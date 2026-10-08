@@ -45,6 +45,7 @@ vrf: default
 gateway: 10.10.100.1      # optional; discovery fills from VR / HSRP
 prefixes:                 # optional; derived from SVI CIDRs
   - 10.10.100.0/24
+static_route_tags: []     # optional; case-insensitive match against `ip route ... name`
 target_switches:
   - eos-leaf-lis-01
 discovery_switches:
@@ -59,6 +60,7 @@ Records are validated against [`schemas/vlan_record.schema.json`](../../schemas/
 | `vrf` | yes | Target VRF (discovery fills from SVI) |
 | `gateway` | no | Anycast / HSRP / virtual-router address |
 | `prefixes` | no | Subnets from SVI CIDRs |
+| `static_route_tags` | no | Name tags. A static is associated when a tag equals `ip route ... name`, ignoring case |
 | `gateway_leafs` | L3 | Fabric gateway leaves. Engineer-supplied |
 | `target_switches` | yes (migrate) | EOS hosts for CVP. A nested discovery model uses participating leaves |
 

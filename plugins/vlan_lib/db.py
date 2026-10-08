@@ -211,6 +211,7 @@ def service_probe_vlan_records(service_record, existing_vlans=None):
                 "discovery_switches": entry.get("discovery_switches")
                 or entry.get("target_switches")
                 or [],
+                "static_route_tags": entry.get("static_route_tags") or [],
                 "_from_service": service_record.get("id", ""),
             }
         )

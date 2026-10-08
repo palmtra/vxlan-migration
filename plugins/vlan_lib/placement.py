@@ -239,6 +239,31 @@ def _host_only(hostname):
     return {"hostname": hostname}
 
 
+def normalize_static_route_tags(items):
+    """Engineer tags used to match ``ip route ... name``. Case-insensitive, optional."""
+    tags = []
+    seen = set()
+    for item in items or []:
+        text = str(item or "").strip()
+        key = text.lower()
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        tags.append(text)
+    return tags
+
+
+def _matching_route_tag(name, tags):
+    """Return the engineer tag that equals the route name, ignoring case."""
+    text = str(name or "").strip().lower()
+    if not text:
+        return ""
+    for tag in tags or []:
+        if str(tag).strip().lower() == text:
+            return tag
+    return ""
+
+
 def empty_associated_routes():
     """Stable shape for VLAN-scoped statics and BGP. Never a prune list."""
     return {
@@ -379,7 +404,8 @@ def attach_associated_routes(model, vlan_id, devices):
     """Attach statics and BGP objects that belong to this VLAN.
 
     A shared-VRF dump is not enough. A static counts when its next hop is
-    inside a VLAN prefix, or when the static itself is that prefix. A BGP
+    inside a VLAN prefix, when the static itself is that prefix, or when an
+    engineer tag matches the route name (case-insensitive). A BGP
     network or aggregate counts when it is, contains, or is contained by a
     VLAN prefix. ``redistribute connected`` or ``static`` on a device that
     owns the SVI is recorded because that is how the prefix is often advertised.
@@ -403,6 +429,7 @@ def attach_associated_routes(model, vlan_id, devices):
             seen.add(prefix)
             prefixes.append(prefix)
     vrfs = _vlan_vrfs(devices, routing.get("vrf"))
+    tags = normalize_static_route_tags(routing.get("static_route_tags"))
     statics = []
     networks = []
     neighbors = []
@@ -418,16 +445,23 @@ def attach_associated_routes(model, vlan_id, devices):
         for route in device.get("static_routes") or []:
             if not isinstance(route, dict):
                 continue
-            if _norm_vrf_name(route.get("vrf")) not in vrfs:
+            name_tag = _matching_route_tag(route.get("name"), tags)
+            vrf_ok = _norm_vrf_name(route.get("vrf")) in vrfs
+            if not vrf_ok and not name_tag:
                 continue
             prefix = route.get("prefix") or ""
             next_hop = route.get("next_hop") or ""
-            hit = _ip_in_prefixes(next_hop, prefixes)
-            relation, related = _prefix_relation(prefix, prefixes)
+            hit = _ip_in_prefixes(next_hop, prefixes) if vrf_ok else ""
+            relation, related = _prefix_relation(prefix, prefixes) if vrf_ok else ("", "")
             if hit:
                 reason = "next_hop %s is inside %s" % (next_hop, hit)
             elif relation in ("equal", "more_specific"):
                 reason = "prefix %s is inside %s" % (prefix, related)
+            elif name_tag:
+                reason = "route name %s matches tag %s" % (
+                    route.get("name") or "",
+                    name_tag,
+                )
             else:
                 continue
             key = (hostname, _norm_vrf_name(route.get("vrf")), prefix, next_hop)
@@ -595,6 +629,10 @@ def build_deployment_model(vlan, devices, placement):
     prefixes = list(routing.get("prefixes") or vlan.get("prefixes") or [])
     gateway_ip = routing.get("gateway_ip") or vlan.get("gateway") or ""
     vrf = routing.get("vrf") or vlan.get("vrf") or "default"
+    static_route_tags = normalize_static_route_tags(
+        list(vlan.get("static_route_tags") or [])
+        + list(routing.get("static_route_tags") or [])
+    )
     site_vlan = {}
     site = vlan.get("site") if isinstance(vlan.get("site"), dict) else {}
     if isinstance(site.get("vlan"), dict):
@@ -616,6 +654,7 @@ def build_deployment_model(vlan, devices, placement):
             "vrf": vrf,
             "prefixes": prefixes,
             "gateway_ip": gateway_ip,
+            "static_route_tags": static_route_tags,
             "associated": empty_associated_routes(),
         },
         "migration": {
@@ -640,6 +679,8 @@ def build_deployment_model(vlan, devices, placement):
             "source_gateway_devices": source_gateways,
         },
     }
+    if not static_route_tags:
+        model["routing"].pop("static_route_tags", None)
     attach_associated_routes(model, vlan.get("id"), devices)
     return model
 
@@ -859,6 +900,9 @@ def flatten_deployment_model(document):
     }
     if isinstance(routing.get("associated"), dict):
         record["associated"] = routing["associated"]
+    static_route_tags = normalize_static_route_tags(routing.get("static_route_tags"))
+    if static_route_tags:
+        record["static_route_tags"] = static_route_tags
     l3_vni = _blank_evpn_vni(l3_evpn.get("vni"))
     if l3_vni is not None:
         record["l3_vni"] = l3_vni

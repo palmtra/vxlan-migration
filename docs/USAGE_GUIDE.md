@@ -130,7 +130,7 @@ Key **discovery** fields:
 - `uplink_inventory` — trunks toward other switches (context only; does not make a leaf participating)
 - `unknown_inventory` — ports that could not be classified. A non-gateway switch with those ports is `review`. A source gateway stays prune-eligible; the unclassified ports are called out on the dry-run
 - `deployment_model.placement` — `participating_leafs`, `gateway_leafs`, `prune_eligible_leafs`, `source_gateway_devices`
-- `routing.associated` — statics whose next hop is in the VLAN prefix, BGP networks or aggregates of that prefix, `redistribute connected`/`static` on the source gateway, and BGP peers that sit on the VLAN. Review items, not prune actions
+- `routing.associated` — statics whose next hop is in the VLAN prefix, whose prefix is the VLAN prefix, or whose `name` equals an optional `static_route_tags` entry (case-insensitive). Also BGP networks or aggregates of that prefix, `redistribute connected`/`static` on the source gateway, and BGP peers that sit on the VLAN. Review items, not prune actions
 
 Key **prune** fields (separate files):
 

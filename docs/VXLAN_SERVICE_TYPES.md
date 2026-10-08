@@ -83,12 +83,12 @@ Discovery keeps a static or a BGP object only when it is tied to this VLAN's pre
 
 | Object | Included when |
 |---|---|
-| Static route | The next hop is an address inside the VLAN prefix (a firewall in the subnet), or the static prefix is the VLAN prefix |
+| Static route | The next hop is an address inside the VLAN prefix (a firewall in the subnet), the static prefix is the VLAN prefix, or an optional `static_route_tags` entry equals the route `name` (case-insensitive) |
 | BGP `network` / `aggregate-address` | The statement advertises the VLAN prefix, a more-specific, or an aggregate that covers it |
 | BGP `redistribute connected` or `static` | The device owns the SVI, so the prefix may be advertised. The VRF may be shared; confirm it |
 | BGP neighbor | The peer address is inside the VLAN prefix, or `update-source` is the VLAN SVI |
 
-Fabric default routes and spine iBGP are left out. These objects are written under `routing.associated` for review and so the gateway move can recreate them. Prune does not delete them.
+Fabric default routes and spine iBGP are left out unless a tag equals that route's name. Tags are optional and the engineer enters them on the VLAN record (`static_route_tags`). These objects are written under `routing.associated` for review and so the gateway move can recreate them. Prune does not delete them.
 
 ---
 
