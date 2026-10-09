@@ -42,7 +42,7 @@ gateway_leafs:
   - cma01-blf02
 ```
 
-Set `vrf` to the target VRF. Assign `evpn.l2.vni` before deploy. Keep `evpn.l3.vni` and its route-targets: each VTEP gets `router bgp / vlan <id>` with `rd <router-id>:<vlan>` and `route-target both <l3 vni>:<vlan>`. The VRF itself is not created (`cvp_build_borderleaf_config` defaults to `false`). BUM is head-end replication, already on the VTEPs. Do not set `mcast_group`.
+Set `vrf` to the target VRF. The VLAN VNI is `evpn.l2.vni`, or `evpn.l3.vni` when the L2 VNI is empty. Each VTEP gets the VLAN name, `vxlan vlan <id> vni`, and `router bgp / vlan <id>` with `rd <router-id>:<vlan>` and `route-target both <l3 vni>:<vlan>`. `gateway_leafs` also get the SVI (`ip address virtual`, VRF, jumbo MTU) and `router bgp / vrf / network` for the VLAN prefix. The VRF itself is not created (`cvp_build_borderleaf_config` defaults to `false`). BUM is head-end replication, already on the VTEPs. Do not set `mcast_group`.
 
 ---
 

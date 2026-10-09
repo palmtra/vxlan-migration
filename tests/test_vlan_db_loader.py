@@ -116,6 +116,28 @@ class VlanDbLoaderTests(unittest.TestCase):
         self.assertEqual(record["vni"], 13000)
         self.assertIsInstance(record["vni"], int)
 
+    def test_vlan_vni_uses_l3_vni_when_l2_vni_is_empty(self):
+        record = parse_vlan_record(
+            {
+                "site": {"data_center": "omaha", "vlan": {"id": 2903, "name": "FNTS-LAB-EXTERNAL"}},
+                "migration": {"type": "l3"},
+                "routing": {
+                    "vrf": "v0000001a",
+                    "gateway_ip": "66.180.1.1",
+                    "prefixes": ["66.180.1.0/27"],
+                },
+                "evpn": {
+                    "l2": {"vni": None},
+                    "l3": {"vni": 10003, "rt_import": "10003:2903", "rt_export": "10003:2903"},
+                },
+                "placement": {"participating_leafs": [], "gateway_leafs": [{"hostname": "oma01-blf01"}]},
+            },
+            "2903.yml",
+        )
+        self.assertEqual(record["vni"], 10003)
+        self.assertEqual(record["name"], "FNTS-LAB-EXTERNAL")
+        self.assertEqual(record["gateway_leafs"], ["oma01-blf01"])
+
     def test_schema_rejects_invalid_service_type(self):
         with self.assertRaises(Exception):
             parse_vlan_record(

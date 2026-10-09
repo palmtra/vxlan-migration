@@ -22,6 +22,9 @@ netbox_ssot_required: false
 # When true, every change playbook will save a local backup per host.
 network_backup_enabled: true
 
+# Gateway SVI on the border leaves uses this jumbo MTU.
+eos_svi_mtu: 9214
+
 # VXLAN fabric defaults used by the migration role
 vtep_loopback_id: 0
 vtep_source_interface: "Loopback{{ vtep_loopback_id }}"

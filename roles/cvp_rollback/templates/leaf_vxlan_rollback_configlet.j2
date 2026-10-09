@@ -1,8 +1,16 @@
 {# Rollback of the Arista leaf VXLAN migration configlet #}
 {# Applied to: {{ _device_hostname }} #}
+{% set _vni = _vlan_to_migrate.vni | default(_vlan_to_migrate.l3_vni, true) %}
+{% set _vrf = (_vlan_to_migrate.vrf | default('default') | string) %}
+{% set _is_gateway = (_device_hostname in (_vlan_to_migrate.gateway_leafs | default([]))) and ((_vlan_to_migrate.service_type | default('')) == 'l3') %}
+{% set _prefixes = _vlan_to_migrate.prefixes | default([]) %}
 !
+{% if _is_gateway %}
+no interface Vlan{{ target_vlan_id }}
+!
+{% endif %}
 interface {{ eos_vxlan_interface | default('Vxlan1') }}
- no vxlan vlan {{ target_vlan_id }} vni {{ _vlan_to_migrate.vni }}
+ no vxlan vlan {{ target_vlan_id }} vni {{ _vni }}
 !
 {% if cvp_rollback_allow_destructive_no_vlan | default(false) | bool %}
 no vlan {{ target_vlan_id }}
@@ -14,6 +22,14 @@ no vlan {{ target_vlan_id }}
 {% set _bgp = _vlan_to_migrate | bgp_vlan_evpn(_device_hostname, _device_bgp_asn | default('', true), _device_loopback_ip | default('', true)) %}
 {% if _bgp and (_bgp.missing | default([]) | length == 0) %}
 router bgp {{ _bgp.asn }}
+{% if _is_gateway and (_prefixes | length > 0) %}
+{% if _vrf not in ['', 'default'] %}
+ vrf {{ _vrf }}
+{% endif %}
+{% for _prefix in _prefixes %}
+  no network {{ _prefix }}
+{% endfor %}
+{% endif %}
  no vlan {{ target_vlan_id }}
 !
 {% endif %}

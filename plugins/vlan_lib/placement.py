@@ -350,6 +350,36 @@ def host_vtep_bgp(host):
     return {"asn": asn, "router_id": router_id}
 
 
+def virtual_gateway_address(gateway, prefixes=None):
+    """Anycast ``ip address virtual`` from the gateway and its VLAN prefix.
+
+    ``66.180.1.1`` plus ``66.180.1.0/27`` becomes ``66.180.1.1/27``.
+    """
+    import ipaddress
+
+    text = str(gateway or "").strip()
+    if not text or "/" in text:
+        return text
+    try:
+        host = ipaddress.ip_address(text)
+    except ValueError:
+        return text
+    chosen = None
+    for prefix in prefixes or []:
+        try:
+            network = ipaddress.ip_network(str(prefix).strip(), strict=False)
+        except ValueError:
+            continue
+        if host in network:
+            chosen = network
+            break
+        if chosen is None:
+            chosen = network
+    if chosen is None:
+        return text
+    return "%s/%s" % (host, chosen.prefixlen)
+
+
 def bgp_vlan_evpn(record, hostname, host_asn="", host_router_id=""):
     """EOS ``router bgp / vlan`` values for one VTEP.
 
@@ -1042,6 +1072,8 @@ def flatten_deployment_model(document):
                 discovery.append(hostname)
 
     vni = _blank_evpn_vni(l2_evpn.get("vni"))
+    if vni is None:
+        vni = _blank_evpn_vni(l3_evpn.get("vni"))
     record = {
         "id": _coerce_int(vlan.get("id")),
         "name": vlan.get("name") or "",

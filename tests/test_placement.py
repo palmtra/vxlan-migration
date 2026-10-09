@@ -545,6 +545,14 @@ router bgp 65001
         self.assertEqual(mapped["asn"], "30452")
         self.assertEqual(mapped["router_id"], "66.180.0.4")
 
+    def test_virtual_gateway_uses_prefix_length(self):
+        from vlan_lib.placement import virtual_gateway_address
+
+        self.assertEqual(
+            virtual_gateway_address("66.180.1.1", ["66.180.1.0/27"]),
+            "66.180.1.1/27",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

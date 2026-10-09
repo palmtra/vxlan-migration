@@ -3,9 +3,13 @@
 # Device: {{ _target_device }}
 
 {% set _vxlan_intf = eos_vxlan_interface | default('Vxlan1') %}
-{% set _vlan_name = _avd_vlan.vlan_name | default(_avd_vlan.name | default('VLAN' ~ target_vlan_id)) %}
+{% set _vlan_name = _avd_vlan.vlan_name | default(_avd_vlan.name, true) | default('VLAN' ~ target_vlan_id, true) %}
 {% set _mcast = _avd_vlan.mcast_group | default(vxlan_default_mcast_group | default(''), true) %}
-{% set _vni = _avd_vlan.vni | int %}
+{% set _vni = _avd_vlan.vni | default(_avd_vlan.l3_vni, true) %}
+{% set _vrf = (_avd_vlan.vrf | default(target_vrf | default('default')) | string) %}
+{% set _is_gateway = (_target_device in (_avd_vlan.gateway_leafs | default([]))) and ((_avd_vlan.service_type | default('')) == 'l3') %}
+{% set _virtual = (_avd_vlan.gateway | default('', true) | string) | virtual_gateway_address(_avd_vlan.prefixes | default([])) %}
+{% set _prefixes = _avd_vlan.prefixes | default([]) %}
 {% set _vtep_bgp = hostvars[_target_device] | host_vtep_bgp %}
 {% set _bgp_as = _vtep_bgp.asn | default(avd_default_bgp_as | default(''), true) %}
 {% set _router_id = _vtep_bgp.router_id %}
@@ -22,6 +26,18 @@ eos_cli: |
   vlan {{ target_vlan_id }}
    name {{ _vlan_name }}
   !
+{% if _is_gateway %}
+  interface Vlan{{ target_vlan_id }}
+   description {{ _vlan_name }}
+   mtu {{ eos_svi_mtu | default(9214) }}
+{% if _vrf not in ['', 'default'] %}
+   vrf {{ _vrf }}
+{% endif %}
+{% if _virtual | length > 0 %}
+   ip address virtual {{ _virtual }}
+{% endif %}
+  !
+{% endif %}
   interface {{ _vxlan_intf }}
    vxlan vlan {{ target_vlan_id }} vni {{ _vni }}
 {% if _mcast | length > 0 %}
@@ -40,6 +56,14 @@ eos_cli: |
     route-target export {{ _bgp.rt_export }}
 {% endif %}
     redistribute learned
+{% if _is_gateway and (_prefixes | length > 0) %}
+{% if _vrf not in ['', 'default'] %}
+   vrf {{ _vrf }}
+{% endif %}
+{% for _prefix in _prefixes %}
+    network {{ _prefix }}
+{% endfor %}
+{% endif %}
   !
 {% endif %}
 {% if _is_borderleaf | bool and avd_build_borderleaf_config | bool and target_vrf | default('default') != 'default' and _router_id | length > 0 %}
