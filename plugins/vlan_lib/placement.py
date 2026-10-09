@@ -701,8 +701,22 @@ def attach_associated_routes(model, vlan_id, devices):
 
 
 def _blank_evpn_vni(value):
+    if isinstance(value, str) and value.strip().isdigit():
+        value = int(value.strip())
     if value in (None, "", 0, "0"):
         return None
+    return value
+
+
+def _coerce_int(value):
+    """YAML and Ansible facts often store a VLAN id as text."""
+    if isinstance(value, bool) or value in (None, ""):
+        return value
+    if isinstance(value, int):
+        return value
+    text = str(value).strip()
+    if text.isdigit():
+        return int(text)
     return value
 
 
@@ -760,7 +774,7 @@ def build_deployment_model(vlan, devices, placement):
         "site": {
             "data_center": vlan.get("data_center") or site.get("data_center") or "",
             "vlan": {
-                "id": site_vlan.get("id", vlan.get("id")),
+                "id": _coerce_int(site_vlan.get("id", vlan.get("id"))),
                 "name": site_vlan.get("name") or vlan.get("name") or "",
             },
         },
@@ -1001,7 +1015,7 @@ def flatten_deployment_model(document):
 
     vni = _blank_evpn_vni(l2_evpn.get("vni"))
     record = {
-        "id": vlan.get("id"),
+        "id": _coerce_int(vlan.get("id")),
         "name": vlan.get("name") or "",
         "action": document.get("action") or "migrate",
         "service_type": service_type,

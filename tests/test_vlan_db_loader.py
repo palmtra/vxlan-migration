@@ -100,6 +100,22 @@ class VlanDbLoaderTests(unittest.TestCase):
         )
         self.assertEqual(record["id"], 10)
 
+    def test_quoted_vlan_id_is_an_integer(self):
+        record = parse_vlan_record(
+            {
+                "id": "3000",
+                "name": "vlan_3000",
+                "action": "migrate",
+                "service_type": "l3",
+                "vni": "13000",
+            },
+            "3000_vlan_3000.yml",
+        )
+        self.assertEqual(record["id"], 3000)
+        self.assertIsInstance(record["id"], int)
+        self.assertEqual(record["vni"], 13000)
+        self.assertIsInstance(record["vni"], int)
+
     def test_schema_rejects_invalid_service_type(self):
         with self.assertRaises(Exception):
             parse_vlan_record(

@@ -13,6 +13,18 @@ from vlan_lib.placement import flatten_deployment_model
 from vlan_lib.schema import validate_against_schema
 
 
+def _coerce_record_int(value):
+    """Accept a VLAN or VNI written as text, such as id: '3000'."""
+    if isinstance(value, bool) or value in (None, ""):
+        return value
+    if isinstance(value, int):
+        return value
+    text = str(value).strip()
+    if text.isdigit():
+        return int(text)
+    return value
+
+
 def _vlan_db_skip_filename(filename):
     lower = str(filename).lower()
     if lower in _VLAN_DB_SKIP_FILENAMES:
@@ -44,6 +56,10 @@ def parse_vlan_record(document, source_name="", validate=True):
         document = entries[0]
 
     document = flatten_deployment_model(document)
+    if isinstance(document, dict):
+        for key in ("id", "vni", "l3_vni"):
+            if key in document:
+                document[key] = _coerce_record_int(document.get(key))
 
     if not isinstance(document, dict) or "id" not in document:
         return None
