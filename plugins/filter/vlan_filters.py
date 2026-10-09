@@ -17,7 +17,7 @@ _PLUGINS_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 if _PLUGINS_DIR not in sys.path:
     sys.path.insert(0, _PLUGINS_DIR)
 
-from vlan_lib.placement import bgp_vlan_evpn  # noqa: E402
+from vlan_lib.placement import bgp_vlan_evpn, host_vtep_bgp  # noqa: E402
 from vlan_lib import (  # noqa: E402,F401
     analyze_trunk_vlan_carriage,
     arp_discovery_command,
@@ -118,5 +118,6 @@ class FilterModule(object):
             "resolve_run_data_center": resolve_run_data_center,
             "load_vlan_db_from_directory": load_vlan_db_from_directory,
             "bgp_vlan_evpn": bgp_vlan_evpn,
+            "host_vtep_bgp": host_vtep_bgp,
             "union_vlan_discovery_hosts": union_vlan_discovery_hosts,
         }

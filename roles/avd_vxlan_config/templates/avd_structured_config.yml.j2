@@ -6,8 +6,9 @@
 {% set _vlan_name = _avd_vlan.vlan_name | default(_avd_vlan.name | default('VLAN' ~ target_vlan_id)) %}
 {% set _mcast = _avd_vlan.mcast_group | default(vxlan_default_mcast_group | default(''), true) %}
 {% set _vni = _avd_vlan.vni | int %}
-{% set _bgp_as = hostvars[_target_device].bgp_as | default(avd_default_bgp_as | default('')) %}
-{% set _router_id = hostvars[_target_device].router_id | default(hostvars[_target_device].ansible_host | default('')) %}
+{% set _vtep_bgp = hostvars[_target_device] | host_vtep_bgp %}
+{% set _bgp_as = _vtep_bgp.asn | default(avd_default_bgp_as | default(''), true) %}
+{% set _router_id = _vtep_bgp.router_id %}
 
 # VLAN object for AVD schema validation.
 vlans:

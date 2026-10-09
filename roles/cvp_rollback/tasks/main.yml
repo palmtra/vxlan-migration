@@ -67,8 +67,9 @@
   check_mode: false
   vars:
     _device_hostname: "{{ item }}"
-    _device_bgp_asn: "{{ hostvars[item].bgp_as | default(avd_default_bgp_as | default(''), true) }}"
-    _device_loopback_ip: "{{ hostvars[item].router_id | default(hostvars[item].ansible_host | default(''), true) }}"
+    _vtep_bgp: "{{ hostvars[item] | host_vtep_bgp }}"
+    _device_bgp_asn: "{{ _vtep_bgp.asn | default(avd_default_bgp_as | default('', true), true) }}"
+    _device_loopback_ip: "{{ _vtep_bgp.router_id }}"
 
 - name: Render border-leaf import rollback configlet
   ansible.builtin.template:
@@ -81,7 +82,8 @@
   check_mode: false
   when: cvp_build_borderleaf_config | bool
   vars:
-    _device_bgp_asn: "{{ hostvars[_cvp_target_devices | first].bgp_as | default(avd_default_bgp_as | default(''), true) }}"
+    _vtep_bgp: "{{ hostvars[_cvp_target_devices | first] | host_vtep_bgp }}"
+    _device_bgp_asn: "{{ _vtep_bgp.asn | default(avd_default_bgp_as | default('', true), true) }}"
 
 - name: Load generated leaf rollback configlets
   ansible.builtin.set_fact:

@@ -322,6 +322,28 @@ def _vlan_route_target(record):
     return {}
 
 
+def host_vtep_bgp(host):
+    """ASN and router-id learned for one inventory host.
+
+    Discovery facts from this run win. Inventory ``bgp_as`` and ``router_id``
+    are the fallback. ``ansible_host`` is the management address and is not a
+    route distinguisher.
+    """
+    if not isinstance(host, dict):
+        host = {}
+    discovery = host.get("_vlan_discovery")
+    if not isinstance(discovery, dict):
+        discovery = {}
+    asn = str(discovery.get("bgp_as") or host.get("bgp_as") or "").strip()
+    router_id = str(
+        discovery.get("router_id")
+        or discovery.get("loopback0")
+        or host.get("router_id")
+        or ""
+    ).strip()
+    return {"asn": asn, "router_id": router_id}
+
+
 def bgp_vlan_evpn(record, hostname, host_asn="", host_router_id=""):
     """EOS ``router bgp / vlan`` values for one VTEP.
 

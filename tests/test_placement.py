@@ -486,6 +486,37 @@ router bgp 65001
         self.assertEqual(leaves["oma-ce-sw01"]["rd"], "66.180.0.46:2903")
         self.assertEqual(leaves["oma-ce-sw01"]["vtep"], "172.16.0.15")
 
+    def test_host_vtep_bgp_uses_discovery_not_management_address(self):
+        from vlan_lib.placement import host_vtep_bgp
+
+        learned = host_vtep_bgp(
+            {
+                "ansible_host": "10.9.9.9",
+                "bgp_as": "1",
+                "router_id": "1.1.1.1",
+                "_vlan_discovery": {
+                    "bgp_as": "30452",
+                    "router_id": "66.180.0.3",
+                    "loopback0": "66.180.0.3",
+                    "loopback1": "172.16.0.3",
+                },
+            }
+        )
+        self.assertEqual(learned["asn"], "30452")
+        self.assertEqual(learned["router_id"], "66.180.0.3")
+
+        fallback = host_vtep_bgp(
+            {
+                "ansible_host": "10.9.9.9",
+                "bgp_as": "4200000106",
+                "router_id": "66.180.0.46",
+                "_vlan_discovery": {"bgp_as": "", "router_id": ""},
+            }
+        )
+        self.assertEqual(fallback["asn"], "4200000106")
+        self.assertEqual(fallback["router_id"], "66.180.0.46")
+        self.assertNotIn("10.9.9.9", fallback.values())
+
 
 if __name__ == "__main__":
     unittest.main()

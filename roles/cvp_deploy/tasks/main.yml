@@ -71,11 +71,12 @@
   ansible.builtin.fail:
     msg: >-
       VLAN {{ target_vlan_id }} on {{ item }} needs {{ _bgp.missing | join(' and ') }}
-      to publish the EVPN VLAN. Set them on the leaf in the VLAN record,
-      or as host bgp_as and router_id.
+      to publish the EVPN VLAN. Discovery did not find that on the switch,
+      and the VLAN record has no value for it.
   loop: "{{ _cvp_target_devices }}"
   vars:
-    _bgp: "{{ _vlan_to_migrate | bgp_vlan_evpn(item, hostvars[item].bgp_as | default(avd_default_bgp_as | default(''), true), hostvars[item].router_id | default(hostvars[item].ansible_host | default(''), true)) }}"
+    _vtep_bgp: "{{ hostvars[item] | host_vtep_bgp }}"
+    _bgp: "{{ _vlan_to_migrate | bgp_vlan_evpn(item, _vtep_bgp.asn | default(avd_default_bgp_as | default('', true), true), _vtep_bgp.router_id) }}"
   when: _bgp.missing | default([]) | length > 0
   delegate_to: localhost
   become: false
@@ -93,8 +94,9 @@
   check_mode: false
   vars:
     _device_hostname: "{{ item }}"
-    _device_bgp_asn: "{{ hostvars[item].bgp_as | default(avd_default_bgp_as | default(''), true) }}"
-    _device_loopback_ip: "{{ hostvars[item].router_id | default(hostvars[item].ansible_host | default(''), true) }}"
+    _vtep_bgp: "{{ hostvars[item] | host_vtep_bgp }}"
+    _device_bgp_asn: "{{ _vtep_bgp.asn | default(avd_default_bgp_as | default('', true), true) }}"
+    _device_loopback_ip: "{{ _vtep_bgp.router_id }}"
 
 - name: Render border-leaf import configlet
   ansible.builtin.template:
@@ -108,8 +110,9 @@
   when: cvp_build_borderleaf_config | bool
   vars:
     _device_hostname: "{{ _cvp_target_devices | first }}"
-    _device_bgp_asn: "{{ hostvars[_cvp_target_devices | first].bgp_as | default(avd_default_bgp_as | default(''), true) }}"
-    _device_loopback_ip: "{{ hostvars[_cvp_target_devices | first].router_id | default(hostvars[_cvp_target_devices | first].ansible_host | default(''), true) }}"
+    _vtep_bgp: "{{ hostvars[_cvp_target_devices | first] | host_vtep_bgp }}"
+    _device_bgp_asn: "{{ _vtep_bgp.asn | default(avd_default_bgp_as | default('', true), true) }}"
+    _device_loopback_ip: "{{ _vtep_bgp.router_id }}"
 
 - name: Load generated leaf configlets
   ansible.builtin.set_fact:
