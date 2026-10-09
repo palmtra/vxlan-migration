@@ -154,6 +154,15 @@ class NxosCliFixtureTests(unittest.TestCase):
         )
         self.assertEqual(summary["bgp_as"], "4200000106")
         self.assertEqual(summary["router_id"], "66.180.0.15")
+        asdot = parse_bgp_summary(
+            "BGP router identifier 66.180.0.15, local AS number 64086.60010\n"
+        )
+        self.assertEqual(asdot["bgp_as"], "64086.60010")
+        encoded = parse_bgp_summary(
+            '{"vrfs":{"default":{"routerId":"66.180.0.15","asn":4200000106}}}'
+        )
+        self.assertEqual(encoded["bgp_as"], "4200000106")
+        self.assertEqual(encoded["router_id"], "66.180.0.15")
         self.assertEqual(
             parse_interface_ipv4(
                 "Loopback1 is up, line protocol is up (connected)\n"

@@ -1142,20 +1142,54 @@ def parse_interface_ipv4(interface_text):
     return match.group(1)
 
 
-_BGP_SUMMARY_AS_RE = re.compile(r"local\s+AS\s+number\s+(\d+(?:\.\d+)?)", re.I)
+_BGP_SUMMARY_AS_RE = re.compile(
+    r"local\s+AS(?:\s+number)?\s*[:=]?\s*(\d+(?:\.\d+)?)",
+    re.I,
+)
 _BGP_SUMMARY_RID_RE = re.compile(
     r"router\s+identifier\s+(\d+\.\d+\.\d+\.\d+)",
     re.I,
 )
 
 
+def _bgp_summary_from_json(blob):
+    import json
+
+    try:
+        data = json.loads(blob)
+    except ValueError:
+        return {"bgp_as": "", "router_id": ""}
+    vrfs = data.get("vrfs") if isinstance(data, dict) else None
+    if not isinstance(vrfs, dict):
+        return {"bgp_as": "", "router_id": ""}
+    ordered = []
+    if isinstance(vrfs.get("default"), dict):
+        ordered.append(vrfs["default"])
+    ordered.extend(
+        value for key, value in vrfs.items() if key != "default" and isinstance(value, dict)
+    )
+    for vrf in ordered:
+        asn = vrf.get("asn")
+        if asn in (None, "", 0, "0"):
+            asn = vrf.get("localAsn") or vrf.get("localAs")
+        if asn in (None, "", 0, "0"):
+            continue
+        router_id = vrf.get("routerId") or vrf.get("router_id") or ""
+        return {"bgp_as": str(asn).strip(), "router_id": str(router_id).strip()}
+    return {"bgp_as": "", "router_id": ""}
+
+
 def parse_bgp_summary(summary_text):
     """ASN and router-id from ``show ip bgp summary``.
 
+    Accepts the JSON form (``vrfs.default.asn``) and the text header.
     A 4-byte ASN may be asplain (``4200000106``) or asdot (``64086.60010``).
-    The running-config ``router bgp`` line is not required.
     """
-    blob = str(summary_text or "")
+    blob = str(summary_text or "").strip()
+    if blob.startswith("{"):
+        parsed = _bgp_summary_from_json(blob)
+        if parsed.get("bgp_as") or parsed.get("router_id"):
+            return parsed
     asn_match = _BGP_SUMMARY_AS_RE.search(blob)
     rid_match = _BGP_SUMMARY_RID_RE.search(blob)
     return {
