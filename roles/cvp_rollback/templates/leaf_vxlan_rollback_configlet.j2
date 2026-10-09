@@ -11,11 +11,9 @@ no vlan {{ target_vlan_id }}
 ! skipped: no vlan {{ target_vlan_id }} (set cvp_rollback_allow_destructive_no_vlan=true to delete VLAN)
 !
 {% endif %}
-{% if evpn_enabled | default(false) | bool %}
-{% set _bgp_as = _device_bgp_asn | default(avd_default_bgp_as | default(''), true) %}
-{% if _bgp_as | length > 0 %}
-router bgp {{ _bgp_as }}
+{% set _bgp = _vlan_to_migrate | bgp_vlan_evpn(_device_hostname, _device_bgp_asn | default('', true), _device_loopback_ip | default('', true)) %}
+{% if _bgp and (_bgp.missing | default([]) | length == 0) %}
+router bgp {{ _bgp.asn }}
  no vlan {{ target_vlan_id }}
 !
-{% endif %}
 {% endif %}

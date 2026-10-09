@@ -13,11 +13,17 @@ interface {{ eos_vxlan_interface | default('Vxlan1') }}
  vxlan vlan {{ target_vlan_id }} multicast group {{ _mcast }}
 {% endif %}
 !
-{% if evpn_enabled | default(false) | bool and (_device_bgp_asn | default('') | length > 0) and (_device_loopback_ip | default('') | length > 0) %}
-router bgp {{ _device_bgp_asn }}
+{% set _bgp = _vlan_to_migrate | bgp_vlan_evpn(_device_hostname, _device_bgp_asn | default('', true), _device_loopback_ip | default('', true)) %}
+{% if _bgp and (_bgp.missing | default([]) | length == 0) %}
+router bgp {{ _bgp.asn }}
  vlan {{ target_vlan_id }}
-  rd {{ _device_loopback_ip }}:{{ _vlan_to_migrate.vni }}
-  route-target both {{ _vlan_to_migrate.vni }}:{{ _vlan_to_migrate.vni }}
+  rd {{ _bgp.rd }}
+{% if _bgp.rt_both | default('') | length > 0 %}
+  route-target both {{ _bgp.rt_both }}
+{% else %}
+  route-target import {{ _bgp.rt_import }}
+  route-target export {{ _bgp.rt_export }}
+{% endif %}
   redistribute learned
 !
 {% endif %}

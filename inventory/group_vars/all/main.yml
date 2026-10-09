@@ -37,6 +37,8 @@ allow_placeholder_fabric_defaults: false
 
 # Optional EVPN control-plane knobs on the VNI. Head-end replication is already
 # on the fabric, so a VLAN migration does not add a multicast group.
+# The BGP VLAN block (rd <router-id>:<vlan>, route-target from the L3 VNI)
+# is rendered from the VLAN record. This flag does not gate it.
 evpn_enabled: false
 
 # Scope controls. AAP surveys can inject these to limit blast radius.
@@ -59,9 +61,8 @@ cvp_rollback_allow_destructive_no_vlan: false
 # instead of the legacy custom Jinja templates in roles/cvp_deploy.
 use_avd: false
 
-# Default BGP ASN used for AVD-generated router_bgp sections.
-# Per-device values can be set as hostvars (bgp_as / router_id). Required when
-# evpn_enabled=true unless allow_placeholder_fabric_defaults=true.
+# Inventory fallback when a VLAN record has no per-leaf asn. Prefer the asn
+# discovered on that VTEP. router_id on the host is the same kind of fallback.
 avd_default_bgp_as: ""
 
 # -----------------------------------------------------------------------------

@@ -68,6 +68,7 @@
   vars:
     _device_hostname: "{{ item }}"
     _device_bgp_asn: "{{ hostvars[item].bgp_as | default(avd_default_bgp_as | default(''), true) }}"
+    _device_loopback_ip: "{{ hostvars[item].router_id | default(hostvars[item].ansible_host | default(''), true) }}"
 
 - name: Render border-leaf import rollback configlet
   ansible.builtin.template:

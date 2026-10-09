@@ -27,11 +27,17 @@ eos_cli: |
    vxlan vlan {{ target_vlan_id }} multicast group {{ _mcast }}
 {% endif %}
   !
-{% if evpn_enabled | default(false) | bool and _bgp_as | length > 0 and _router_id | length > 0 %}
-  router bgp {{ _bgp_as }}
+{% set _bgp = _avd_vlan | bgp_vlan_evpn(_target_device, _bgp_as, _router_id) %}
+{% if _bgp and (_bgp.missing | default([]) | length == 0) %}
+  router bgp {{ _bgp.asn }}
    vlan {{ target_vlan_id }}
-    rd {{ _router_id }}:{{ _vni }}
-    route-target both {{ _vni }}:{{ _vni }}
+    rd {{ _bgp.rd }}
+{% if _bgp.rt_both | default('') | length > 0 %}
+    route-target both {{ _bgp.rt_both }}
+{% else %}
+    route-target import {{ _bgp.rt_import }}
+    route-target export {{ _bgp.rt_export }}
+{% endif %}
     redistribute learned
   !
 {% endif %}

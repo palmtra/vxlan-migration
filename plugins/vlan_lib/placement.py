@@ -239,6 +239,94 @@ def _host_only(hostname):
     return {"hostname": hostname}
 
 
+def _leaf_bgp_map(placement):
+    """Per-VTEP BGP identity from participating and gateway leaves.
+
+    Hostnames stay on ``target_switches``. ASN, router-id, route distinguisher,
+    and VTEP address stay here so the VLAN BGP block can be rendered per leaf.
+    """
+    leaves = {}
+    if not isinstance(placement, dict):
+        return leaves
+    for key in ("participating_leafs", "gateway_leafs"):
+        for item in placement.get(key) or []:
+            if not isinstance(item, dict):
+                continue
+            hostname = _hostname_of(item)
+            if not hostname:
+                continue
+            current = dict(leaves.get(hostname) or {})
+            for field in ("asn", "router_id", "rd", "vtep"):
+                value = item.get(field)
+                if value in (None, ""):
+                    continue
+                text = str(value).strip()
+                if text and not current.get(field):
+                    current[field] = text
+            if current:
+                leaves[hostname] = current
+    return leaves
+
+
+def _vlan_route_target(record):
+    """Route-target for ``router bgp / vlan``.
+
+    Prefer the explicit L3 import and export targets. When those are absent,
+    use ``<l3_vni>:<vlan id>``. An L2 target is the last fallback.
+    """
+    if not isinstance(record, dict):
+        return {}
+    rt_import = str(record.get("rt_import") or "").strip()
+    rt_export = str(record.get("rt_export") or "").strip()
+    if rt_import and rt_export:
+        if rt_import == rt_export:
+            return {"rt_both": rt_import}
+        return {"rt_import": rt_import, "rt_export": rt_export}
+    single = rt_import or rt_export
+    if single:
+        return {"rt_both": single}
+    l3_vni = record.get("l3_vni")
+    vlan_id = record.get("id")
+    if l3_vni not in (None, "") and vlan_id not in (None, ""):
+        return {"rt_both": "%s:%s" % (l3_vni, vlan_id)}
+    l2_rt = str(record.get("l2_rt") or "").strip()
+    if l2_rt:
+        return {"rt_both": l2_rt}
+    return {}
+
+
+def bgp_vlan_evpn(record, hostname, host_asn="", host_router_id=""):
+    """EOS ``router bgp / vlan`` values for one VTEP.
+
+    RD is the leaf route distinguisher, or ``<router-id>:<vlan id>``.
+    An empty result means this VLAN has no route-target to publish.
+    ``missing`` lists asn or rd when a target exists but the leaf cannot build it.
+    """
+    if not isinstance(record, dict):
+        return {}
+    route_target = _vlan_route_target(record)
+    if not route_target:
+        return {}
+    leaf_bgp = record.get("leaf_bgp") if isinstance(record.get("leaf_bgp"), dict) else {}
+    leaf = leaf_bgp.get(hostname) if isinstance(leaf_bgp.get(hostname), dict) else {}
+    asn = str(leaf.get("asn") or host_asn or "").strip()
+    router_id = str(leaf.get("router_id") or host_router_id or "").strip()
+    rd = str(leaf.get("rd") or "").strip()
+    vlan_id = record.get("id")
+    if not rd and router_id and vlan_id not in (None, ""):
+        rd = "%s:%s" % (router_id, vlan_id)
+    result = {"asn": asn, "rd": rd}
+    result.update(route_target)
+    missing = []
+    if not asn:
+        missing.append("asn")
+    if not rd:
+        missing.append("rd")
+    if missing:
+        result["missing"] = missing
+    return result
+
+
 def normalize_static_route_tags(items):
     """Engineer tags used to match ``ip route ... name``. Case-insensitive, optional."""
     tags = []
@@ -912,6 +1000,9 @@ def flatten_deployment_model(document):
         record["rt_import"] = l3_evpn.get("rt_import")
     if l3_evpn.get("rt_export"):
         record["rt_export"] = l3_evpn.get("rt_export")
+    leaf_bgp = _leaf_bgp_map(placement)
+    if leaf_bgp:
+        record["leaf_bgp"] = leaf_bgp
     data_center = site.get("data_center") or ""
     if data_center:
         record["data_center"] = data_center

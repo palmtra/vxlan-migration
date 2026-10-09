@@ -156,6 +156,98 @@ class VlanDbLoaderTests(unittest.TestCase):
             ["cma01-blf01", "fntc-aggacc-sw05", "agg01", "mls01"],
         )
 
+    def test_flatten_keeps_per_leaf_bgp_for_vlan_rd(self):
+        from vlan_lib.placement import bgp_vlan_evpn
+
+        record = parse_vlan_record(
+            {
+                "site": {
+                    "data_center": "omaha",
+                    "vlan": {"id": 2903, "name": "FNTS-LAB-EXTERNAL"},
+                },
+                "migration": {"type": "L3", "protected_vlan": False},
+                "routing": {"vrf": "v0000001a"},
+                "evpn": {
+                    "l2": {"vni": 12903},
+                    "l3": {
+                        "vni": 10003,
+                        "rt_import": "10003:2903",
+                        "rt_export": "10003:2903",
+                    },
+                },
+                "placement": {
+                    "participating_leafs": [
+                        {
+                            "hostname": "oma01-blf01",
+                            "asn": 30452,
+                            "router_id": "66.180.0.3",
+                            "rd": "66.180.0.3:2903",
+                            "vtep": "172.16.0.3",
+                        },
+                        {
+                            "hostname": "oma-ce-sw01",
+                            "asn": "4200000106",
+                            "router_id": "66.180.0.46",
+                            "rd": "66.180.0.46:2903",
+                            "vtep": "172.16.0.15",
+                        },
+                    ],
+                    "gateway_leafs": [
+                        {
+                            "hostname": "oma01-blf01",
+                            "asn": 30452,
+                            "router_id": "66.180.0.3",
+                            "rd": "66.180.0.3:2903",
+                            "vtep": "172.16.0.3",
+                        }
+                    ],
+                },
+            },
+            "nested.yml",
+        )
+        self.assertEqual(record["target_switches"], ["oma01-blf01", "oma-ce-sw01"])
+        self.assertEqual(record["leaf_bgp"]["oma01-blf01"]["asn"], "30452")
+        self.assertEqual(record["rt_import"], "10003:2903")
+        border = bgp_vlan_evpn(record, "oma01-blf01")
+        self.assertEqual(border["asn"], "30452")
+        self.assertEqual(border["rd"], "66.180.0.3:2903")
+        self.assertEqual(border["rt_both"], "10003:2903")
+        self.assertNotIn("missing", border)
+        access = bgp_vlan_evpn(record, "oma-ce-sw01")
+        self.assertEqual(access["asn"], "4200000106")
+        self.assertEqual(access["rd"], "66.180.0.46:2903")
+
+    def test_bgp_vlan_evpn_derives_rd_and_reports_gaps(self):
+        from vlan_lib.placement import bgp_vlan_evpn
+
+        derived = bgp_vlan_evpn(
+            {
+                "id": 2903,
+                "l3_vni": 10003,
+                "leaf_bgp": {"sw1": {"asn": "30452", "router_id": "66.180.0.3"}},
+            },
+            "sw1",
+        )
+        self.assertEqual(derived["rd"], "66.180.0.3:2903")
+        self.assertEqual(derived["rt_both"], "10003:2903")
+
+        split = bgp_vlan_evpn(
+            {
+                "id": 2903,
+                "rt_import": "10003:2903",
+                "rt_export": "10004:2903",
+                "leaf_bgp": {"sw1": {"asn": "30452", "rd": "66.180.0.3:2903"}},
+            },
+            "sw1",
+        )
+        self.assertEqual(split["rt_import"], "10003:2903")
+        self.assertEqual(split["rt_export"], "10004:2903")
+        self.assertNotIn("rt_both", split)
+
+        missing = bgp_vlan_evpn({"id": 2903, "l3_vni": 10003}, "sw1")
+        self.assertEqual(missing["missing"], ["asn", "rd"])
+        self.assertEqual(bgp_vlan_evpn({"id": 2903, "vni": 12903}, "sw1"), {})
+
 
     def test_coalesce_trimmed(self):
         from vlan_filters import coalesce_trimmed, resolve_data_center
