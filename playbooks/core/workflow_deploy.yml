@@ -48,12 +48,13 @@
             name: vlan_db
           vars:
             target_data_center: "{{ [manual_data_center | default(''), hostvars['localhost']['target_data_center'] | default('')] | coalesce_trimmed }}"
-            target_vlan_ids: "{{ [hostvars['localhost']['target_vlan_id'] | int] if (hostvars['localhost']['target_vlan_id'] is defined) else ([manual_vlan_id | int] if (manual_vlan_id is defined) else (target_vlan_ids | default([]))) }}"
+            target_vlan_ids: "{{ [hostvars['localhost']['target_vlan_id']] if (hostvars['localhost']['target_vlan_id'] | default('', true) | string | length > 0) else [] }}"
 
         - name: Set workflow-scoped target VLAN list
           ansible.builtin.set_fact:
             target_vlan_ids:
-              - "{{ hostvars['localhost']['target_vlan_id'] | default(manual_vlan_id) | int }}"
+              - "{{ hostvars['localhost']['target_vlan_id'] | int }}"
+          when: hostvars['localhost']['target_vlan_id'] is defined
       run_once: true
       delegate_to: localhost
       delegate_facts: true

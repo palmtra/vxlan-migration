@@ -30,7 +30,7 @@
     - name: Normalize export input
       ansible.builtin.set_fact:
         target_data_center: "{{ [manual_data_center | default(''), target_data_center | default('')] | coalesce_trimmed }}"
-        target_vlan_ids: "{{ target_vlan_ids | default([]) | normalize_target_vlan_ids(manual_vlan_id | default(none)) }}"
+        _export_target_vlan_ids: "{{ ([] if target_vlan_ids is not defined else target_vlan_ids) | normalize_target_vlan_ids(manual_vlan_id | default(none)) }}"
 
     - name: Fail if data center is not specified
       ansible.builtin.fail:
@@ -42,7 +42,7 @@
         name: vlan_db
       vars:
         target_data_center: "{{ target_data_center }}"
-        target_vlan_ids: "{{ target_vlan_ids }}"
+        target_vlan_ids: "{{ _export_target_vlan_ids }}"
 
 - name: Export VLAN records to NetBox
   hosts: localhost
