@@ -217,6 +217,70 @@ class NxosCliFixtureTests(unittest.TestCase):
 
 
 class DiscoveryReportSsotTests(unittest.TestCase):
+    def test_placeholder_name_uses_source_gateway_name_and_description(self):
+        from vlan_lib.reports import merge_discovered_labels, resolve_discovered_labels
+
+        vlan = {"id": 3000, "name": "vlan_3000", "service_type": "l3"}
+        devices = [
+            {
+                "hostname": "fntc-aggacc-sw13",
+                "vlan_name_on_box": "vlan_3000",
+                "svi_present": False,
+            },
+            {
+                "hostname": "mls01",
+                "vlan_name_on_box": "FNTS-LAB-EXTERNAL",
+                "svi_present": True,
+                "svi_details": {"description": "FNTS-LAB-EXTERNAL gateway"},
+            },
+        ]
+        labels = resolve_discovered_labels(vlan, devices)
+        self.assertEqual(labels["vlan_name"], "FNTS-LAB-EXTERNAL")
+        self.assertEqual(labels["svi_description"], "FNTS-LAB-EXTERNAL gateway")
+        self.assertFalse(labels["needs_vlan_name"])
+        self.assertFalse(labels["needs_svi_description"])
+        merged = merge_discovered_labels(
+            vlan,
+            [
+                {
+                    "vlan_id": 3000,
+                    "discovered_vlan_name": labels["vlan_name"],
+                    "svi_description": labels["svi_description"],
+                    "needs_vlan_name": False,
+                    "needs_svi_description": False,
+                    "name_candidates": labels["name_candidates"],
+                    "description_candidates": labels["description_candidates"],
+                }
+            ],
+        )
+        self.assertEqual(merged["name"], "FNTS-LAB-EXTERNAL")
+        self.assertEqual(merged["svi_description"], "FNTS-LAB-EXTERNAL gateway")
+
+    def test_disagreeing_gateway_descriptions_are_left_to_ask(self):
+        from vlan_lib.reports import resolve_discovered_labels
+
+        labels = resolve_discovered_labels(
+            {"id": 3000, "name": "vlan_3000"},
+            [
+                {
+                    "hostname": "mls01",
+                    "vlan_name_on_box": "FNTS-LAB-EXTERNAL",
+                    "svi_present": True,
+                    "svi_details": {"description": "inside"},
+                },
+                {
+                    "hostname": "mls02",
+                    "vlan_name_on_box": "FNTS-LAB-EXTERNAL",
+                    "svi_present": True,
+                    "svi_details": {"description": "outside"},
+                },
+            ],
+        )
+        self.assertEqual(labels["vlan_name"], "FNTS-LAB-EXTERNAL")
+        self.assertEqual(labels["svi_description"], "")
+        self.assertTrue(labels["needs_svi_description"])
+        self.assertEqual(labels["description_candidates"], ["inside", "outside"])
+
     def test_ssot_and_human_prune_from_fixtures(self):
         eos_trunks = parse_trunk_interfaces(
             _read("eos", "show_interfaces_trunk.txt"), "eos"
@@ -326,6 +390,12 @@ class DiscoveryReportSsotTests(unittest.TestCase):
         self.assertEqual(report["inferred_service_type"], "l3")
         self.assertEqual(report["migration_type"], "l3")
         self.assertEqual(report["vlan_name_on_box"], "WEB_VXLAN")
+        self.assertEqual(report["discovered_vlan_name"], "WEB_VXLAN")
+        self.assertEqual(report["svi_description"], "legacy_web")
+        self.assertEqual(report["deployment_model"]["site"]["vlan"]["name"], "WEB_VXLAN")
+        self.assertEqual(
+            report["deployment_model"]["site"]["vlan"]["description"], "legacy_web"
+        )
         self.assertIn("eos-leaf-lis-01", report["snippet_target_switches"])
         self.assertNotIn("nxos-spine-lis-01", report["snippet_target_switches"])
         model = report["deployment_model"]

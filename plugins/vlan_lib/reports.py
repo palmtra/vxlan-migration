@@ -1,6 +1,8 @@
 # -*- coding: utf-8 -*-
 """Aggregated VLAN discovery report builders."""
 
+import re
+
 from ansible.errors import AnsibleFilterError
 
 from vlan_lib.common import _str_equal, sanitize_report_slug
@@ -11,6 +13,8 @@ from vlan_lib.placement import (
     build_vlan_placement,
 )
 from vlan_lib.prune import build_device_prune_plan, build_prune_execution
+
+_PLACEHOLDER_VLAN_NAME = re.compile(r"^vlan[_-]?\d+$", re.I)
 
 _SHARED_VRF_NOTE = (
     "This VRF may be shared by other VLANs. Neighbors, static routes, RD/RT, "
@@ -435,8 +439,12 @@ def build_vlan_discovery_reports(vlans, play_hosts, hostvars):
         if not vlan.get("vrf") and not record_routing.get("vrf") and ssot.get("discovered_vrf"):
             routing["vrf"] = ssot["discovered_vrf"]
         site_vlan = placement["deployment_model"]["site"]["vlan"]
-        if not site_vlan.get("name"):
+        if ssot.get("discovered_vlan_name"):
+            site_vlan["name"] = ssot["discovered_vlan_name"]
+        elif not site_vlan.get("name"):
             site_vlan["name"] = ssot.get("name") or vlan.get("name") or ""
+        if ssot.get("svi_description"):
+            site_vlan["description"] = ssot["svi_description"]
         attach_associated_routes(placement["deployment_model"], vlan_id, devices)
         (
             endpoints,
@@ -450,11 +458,17 @@ def build_vlan_discovery_reports(vlans, play_hosts, hostvars):
 
         report = {
             "vlan_id": vlan_id,
-            "vlan_name": vlan.get("name", ""),
+            "vlan_name": ssot.get("name") or vlan.get("name", ""),
             "vlan_slug": sanitize_report_slug(
                 ssot.get("name") or vlan.get("name")
             ),
             "vlan_name_on_box": ssot.get("vlan_name_on_box", ""),
+            "discovered_vlan_name": ssot.get("discovered_vlan_name", ""),
+            "name_candidates": ssot.get("name_candidates", []),
+            "needs_vlan_name": ssot.get("needs_vlan_name", False),
+            "svi_description": ssot.get("svi_description", ""),
+            "description_candidates": ssot.get("description_candidates", []),
+            "needs_svi_description": ssot.get("needs_svi_description", False),
             "service_type": placement["migration_type"],
             "inferred_service_type": ssot.get("inferred_service_type", ""),
             "target_switches": vlan.get("target_switches")
@@ -565,6 +579,138 @@ def _prune_export(report):
     }
 
 
+def _placeholder_vlan_name(name, vlan_id):
+    """True for an empty name or the synthetic vlan_<id> placeholder."""
+    text = str(name or "").strip()
+    if not text:
+        return True
+    if _PLACEHOLDER_VLAN_NAME.match(text):
+        return True
+    if vlan_id is not None and text.lower() in (
+        "vlan%s" % vlan_id,
+        "vlan_%s" % vlan_id,
+        "vlan-%s" % vlan_id,
+    ):
+        return True
+    return False
+
+
+def _unique_texts(values):
+    found = []
+    for value in values:
+        text = str(value or "").strip()
+        if text and text not in found:
+            found.append(text)
+    return found
+
+
+def resolve_discovered_labels(vlan, devices):
+    """Choose the VLAN name and the previous-gateway interface description.
+
+    The VLAN name is the on-box name. A source gateway (SVI present) wins
+    over any other switch. One agreed value is used. Differing values are
+    left for the operator to answer.
+
+    The interface description is the description on that previous gateway
+    SVI, with the same agree-or-ask rule. A placeholder record name is not
+    used as a description.
+    """
+    vlan = vlan or {}
+    vlan_id = vlan.get("id")
+    source_names = []
+    other_names = []
+    source_descriptions = []
+    for device in devices or []:
+        if not isinstance(device, dict):
+            continue
+        name = str(device.get("vlan_name_on_box") or "").strip()
+        if name and _placeholder_vlan_name(name, vlan_id):
+            name = ""
+        details = device.get("svi_details") or {}
+        description = str(details.get("description") or "").strip()
+        if description and _placeholder_vlan_name(description, vlan_id):
+            description = ""
+        if device.get("svi_present"):
+            if name:
+                source_names.append(name)
+            if description:
+                source_descriptions.append(description)
+        elif name:
+            other_names.append(name)
+
+    record_name = str(vlan.get("vlan_name") or vlan.get("name") or "").strip()
+    record_description = str(
+        vlan.get("svi_description") or vlan.get("description") or ""
+    ).strip()
+
+    name_candidates = _unique_texts(source_names) or _unique_texts(other_names)
+    description_candidates = _unique_texts(source_descriptions)
+
+    vlan_name = ""
+    name_source = ""
+    if len(name_candidates) == 1:
+        vlan_name = name_candidates[0]
+        name_source = "discovery"
+    elif (
+        not name_candidates
+        and record_name
+        and not _placeholder_vlan_name(record_name, vlan_id)
+    ):
+        vlan_name = record_name
+        name_source = "record"
+
+    svi_description = ""
+    description_source = ""
+    if len(description_candidates) == 1:
+        svi_description = description_candidates[0]
+        description_source = "source_gateway"
+    elif (
+        not description_candidates
+        and record_description
+        and not _placeholder_vlan_name(record_description, vlan_id)
+    ):
+        svi_description = record_description
+        description_source = "record"
+
+    return {
+        "vlan_name": vlan_name,
+        "vlan_name_on_box": name_candidates[0] if name_candidates else "",
+        "name_candidates": name_candidates,
+        "name_source": name_source,
+        "needs_vlan_name": not bool(vlan_name),
+        "svi_description": svi_description,
+        "description_candidates": description_candidates,
+        "description_source": description_source,
+        "needs_svi_description": not bool(svi_description),
+    }
+
+
+def merge_discovered_labels(record, reports):
+    """Copy a resolved discovery name and SVI description onto a VLAN record."""
+    if not isinstance(record, dict):
+        record = {}
+    else:
+        record = dict(record)
+    report = {}
+    for item in reports or []:
+        if isinstance(item, dict) and _str_equal(item.get("vlan_id"), record.get("id")):
+            report = item
+            break
+    name = str(report.get("discovered_vlan_name") or "").strip()
+    if name:
+        record["name"] = name
+        record["vlan_name"] = name
+    description = str(report.get("svi_description") or "").strip()
+    if description:
+        record["description"] = description
+        record["svi_description"] = description
+    record["_label_needs_vlan_name"] = bool(report.get("needs_vlan_name"))
+    record["_label_needs_svi_description"] = bool(report.get("needs_svi_description"))
+    record["_name_candidates"] = list(report.get("name_candidates") or [])
+    record["_description_candidates"] = list(report.get("description_candidates") or [])
+    return record
+
+
 def _ssot_from_discovery(vlan, devices):
     """Derive paste-ready VLAN facts from discovery. Migration type is set by placement."""
     prefixes = []
@@ -631,16 +777,18 @@ def _ssot_from_discovery(vlan, devices):
     # Placement finalizes L2 vs L3. Endpoint attachment is not an l2_l3 type.
     inferred = "l2"
 
-    vlan_name_on_box = names_on_box[0] if names_on_box else ""
-    name = vlan.get("name") or ""
-    if name.startswith("vlan_") and vlan_name_on_box:
-        name = sanitize_report_slug(vlan_name_on_box)
-
+    labels = resolve_discovered_labels(vlan, devices)
     discovered_vrf = vrfs[0] if vrfs else (vlan.get("vrf") or "default")
 
     return {
-        "name": name or vlan.get("name", ""),
-        "vlan_name_on_box": vlan_name_on_box,
+        "name": labels["vlan_name"] or vlan.get("name") or "",
+        "discovered_vlan_name": labels["vlan_name"],
+        "vlan_name_on_box": labels["vlan_name_on_box"] or (names_on_box[0] if names_on_box else ""),
+        "name_candidates": labels["name_candidates"],
+        "needs_vlan_name": labels["needs_vlan_name"],
+        "svi_description": labels["svi_description"],
+        "description_candidates": labels["description_candidates"],
+        "needs_svi_description": labels["needs_svi_description"],
         "inferred_service_type": inferred,
         "discovered_vrf": discovered_vrf,
         "gateway": gateways[0] if gateways else "",

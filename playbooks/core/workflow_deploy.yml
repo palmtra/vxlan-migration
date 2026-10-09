@@ -75,6 +75,8 @@
         - name: Step 2b - Discover legacy VLAN state
           ansible.builtin.include_role:
             name: vlan_discovery
+          vars:
+            vlan_prompt_for_labels: true
 
         - name: Step 3 - Hand off discovered VLAN to external cleanup tool
           ansible.builtin.include_role:

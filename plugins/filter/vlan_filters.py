@@ -63,6 +63,7 @@ from vlan_lib import (  # noqa: E402,F401
     svi_command_indicates_present,
     trunk_interface_is_maintenance_exempt,
     trunk_interface_names,
+    merge_discovered_labels,
     union_vlan_discovery_hosts,
     vlan_db_file_prefix,
     vlan_db_record_filename,
@@ -122,5 +123,6 @@ class FilterModule(object):
             "bgp_vlan_evpn": bgp_vlan_evpn,
             "host_vtep_bgp": host_vtep_bgp,
             "virtual_gateway_address": virtual_gateway_address,
+            "merge_discovered_labels": merge_discovered_labels,
             "union_vlan_discovery_hosts": union_vlan_discovery_hosts,
         }

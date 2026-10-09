@@ -59,7 +59,112 @@
   become: false
   run_once: true
   check_mode: false
-  when: discovery_write_vlan_reports | bool
+
+- name: Apply the discovered VLAN name and previous-gateway description
+  ansible.builtin.set_fact:
+    _target_vlan_record: "{{ hostvars['localhost']['_target_vlan_record'] | merge_discovered_labels(_vlan_discovery_reports | default([])) }}"
+  delegate_to: localhost
+  delegate_facts: true
+  become: false
+  run_once: true
+  when:
+    - hostvars['localhost']['_target_vlan_record'] | default({}) | length > 0
+    - _vlan_discovery_reports | default([]) | length > 0
+
+- name: Use a VLAN name supplied for this run when discovery did not find one
+  ansible.builtin.set_fact:
+    _target_vlan_record: "{{ hostvars['localhost']['_target_vlan_record'] | combine({'name': manual_vlan_name, 'vlan_name': manual_vlan_name, '_label_needs_vlan_name': false}) }}"
+  delegate_to: localhost
+  delegate_facts: true
+  become: false
+  run_once: true
+  when:
+    - vlan_prompt_for_labels | default(false) | bool
+    - (hostvars['localhost']['_target_vlan_record'] | default({}))._label_needs_vlan_name | default(false) | bool
+    - manual_vlan_name | default('') | length > 0
+
+- name: Ask for the VLAN name when discovery did not find one
+  ansible.builtin.pause:
+    prompt: >-
+      VLAN {{ hostvars['localhost']['_target_vlan_record'].id }} has no agreed name from discovery
+      {% if hostvars['localhost']['_target_vlan_record']._name_candidates | default([]) | length > 0 %}(saw {{ hostvars['localhost']['_target_vlan_record']._name_candidates | join(', ') }}). {% else %}. {% endif %}Enter the VLAN name to use on the fabric.
+  register: _asked_vlan_name
+  delegate_to: localhost
+  become: false
+  run_once: true
+  when:
+    - vlan_prompt_for_labels | default(false) | bool
+    - (hostvars['localhost']['_target_vlan_record'] | default({}))._label_needs_vlan_name | default(false) | bool
+    - manual_vlan_name | default('') | length == 0
+
+- name: Store the VLAN name that was asked for
+  ansible.builtin.set_fact:
+    _target_vlan_record: "{{ hostvars['localhost']['_target_vlan_record'] | combine({'name': _asked_vlan_name.user_input | trim, 'vlan_name': _asked_vlan_name.user_input | trim, '_label_needs_vlan_name': false}) }}"
+  delegate_to: localhost
+  delegate_facts: true
+  become: false
+  run_once: true
+  when:
+    - _asked_vlan_name.user_input | default('') | trim | length > 0
+
+- name: Fail when the VLAN name is still unknown
+  ansible.builtin.fail:
+    msg: >-
+      VLAN {{ hostvars['localhost']['_target_vlan_record'].id }} has no name from discovery.
+      Re-run and enter a name, or pass -e manual_vlan_name=.
+  run_once: true
+  when:
+    - vlan_prompt_for_labels | default(false) | bool
+    - (hostvars['localhost']['_target_vlan_record'] | default({}))._label_needs_vlan_name | default(false) | bool
+
+- name: Use a gateway description supplied for this run when discovery did not find one
+  ansible.builtin.set_fact:
+    _target_vlan_record: "{{ hostvars['localhost']['_target_vlan_record'] | combine({'description': manual_svi_description, 'svi_description': manual_svi_description, '_label_needs_svi_description': false}) }}"
+  delegate_to: localhost
+  delegate_facts: true
+  become: false
+  run_once: true
+  when:
+    - vlan_prompt_for_labels | default(false) | bool
+    - (hostvars['localhost']['_target_vlan_record'] | default({})).service_type | default('') == 'l3'
+    - (hostvars['localhost']['_target_vlan_record'] | default({}))._label_needs_svi_description | default(false) | bool
+    - manual_svi_description | default('') | length > 0
+
+- name: Ask for the gateway interface description when discovery did not find one
+  ansible.builtin.pause:
+    prompt: >-
+      VLAN {{ hostvars['localhost']['_target_vlan_record'].id }} has no agreed interface description on the previous gateway
+      {% if hostvars['localhost']['_target_vlan_record']._description_candidates | default([]) | length > 0 %}(saw {{ hostvars['localhost']['_target_vlan_record']._description_candidates | join(', ') }}). {% else %}. {% endif %}Enter the description to use on the fabric SVI.
+  register: _asked_svi_description
+  delegate_to: localhost
+  become: false
+  run_once: true
+  when:
+    - vlan_prompt_for_labels | default(false) | bool
+    - (hostvars['localhost']['_target_vlan_record'] | default({})).service_type | default('') == 'l3'
+    - (hostvars['localhost']['_target_vlan_record'] | default({}))._label_needs_svi_description | default(false) | bool
+    - manual_svi_description | default('') | length == 0
+
+- name: Store the gateway description that was asked for
+  ansible.builtin.set_fact:
+    _target_vlan_record: "{{ hostvars['localhost']['_target_vlan_record'] | combine({'description': _asked_svi_description.user_input | trim, 'svi_description': _asked_svi_description.user_input | trim, '_label_needs_svi_description': false}) }}"
+  delegate_to: localhost
+  delegate_facts: true
+  become: false
+  run_once: true
+  when:
+    - _asked_svi_description.user_input | default('') | trim | length > 0
+
+- name: Fail when the gateway interface description is still unknown
+  ansible.builtin.fail:
+    msg: >-
+      VLAN {{ hostvars['localhost']['_target_vlan_record'].id }} has no interface description from the previous gateway.
+      Re-run and enter one, or pass -e manual_svi_description=.
+  run_once: true
+  when:
+    - vlan_prompt_for_labels | default(false) | bool
+    - (hostvars['localhost']['_target_vlan_record'] | default({})).service_type | default('') == 'l3'
+    - (hostvars['localhost']['_target_vlan_record'] | default({}))._label_needs_svi_description | default(false) | bool
 
 - name: Ensure VLAN report directory exists
   ansible.builtin.file:

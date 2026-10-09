@@ -1110,6 +1110,10 @@ def flatten_deployment_model(document):
     data_center = site.get("data_center") or ""
     if data_center:
         record["data_center"] = data_center
+    description = vlan.get("description") or vlan.get("svi_description") or ""
+    if description:
+        record["description"] = description
+        record["svi_description"] = description
     if "id" not in vlan or vlan.get("id") is None:
         return document
     return record

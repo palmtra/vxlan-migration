@@ -157,7 +157,11 @@ class VlanDbLoaderTests(unittest.TestCase):
             {
                 "site": {
                     "data_center": "lisle",
-                    "vlan": {"id": 100, "name": "legacy_web"},
+                    "vlan": {
+                        "id": 100,
+                        "name": "legacy_web",
+                        "description": "legacy web gateway",
+                    },
                 },
                 "migration": {"type": "L3", "protected_vlan": False},
                 "routing": {
@@ -189,6 +193,7 @@ class VlanDbLoaderTests(unittest.TestCase):
             record["target_switches"], ["cma01-blf01", "fntc-aggacc-sw05"]
         )
         self.assertEqual(record["gateway_leafs"], ["cma01-blf01"])
+        self.assertEqual(record["svi_description"], "legacy web gateway")
         self.assertEqual(
             record["discovery_switches"],
             ["cma01-blf01", "fntc-aggacc-sw05", "agg01", "mls01"],

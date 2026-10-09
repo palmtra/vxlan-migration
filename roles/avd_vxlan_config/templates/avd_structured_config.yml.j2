@@ -4,6 +4,7 @@
 
 {% set _vxlan_intf = eos_vxlan_interface | default('Vxlan1') %}
 {% set _vlan_name = _avd_vlan.vlan_name | default(_avd_vlan.name, true) | default('VLAN' ~ target_vlan_id, true) %}
+{% set _svi_description = (_avd_vlan.svi_description | default(_avd_vlan.description, true) | string) %}
 {% set _mcast = _avd_vlan.mcast_group | default(vxlan_default_mcast_group | default(''), true) %}
 {% set _vni = _avd_vlan.vni | default(_avd_vlan.l3_vni, true) %}
 {% set _vrf = (_avd_vlan.vrf | default(target_vrf | default('default')) | string) %}
@@ -28,7 +29,9 @@ eos_cli: |
   !
 {% if _is_gateway %}
   interface Vlan{{ target_vlan_id }}
-   description {{ _vlan_name }}
+{% if _svi_description | length > 0 %}
+   description {{ _svi_description }}
+{% endif %}
    mtu {{ eos_svi_mtu | default(9214) }}
 {% if _vrf not in ['', 'default'] %}
    vrf {{ _vrf }}
