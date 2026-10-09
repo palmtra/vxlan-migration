@@ -11,6 +11,9 @@
     _eos_bgp_vlan_blocks: []
     _eos_bgp_vrfs: []
     _eos_bgp_as: ""
+    _eos_router_id: ""
+    _eos_loopback0: ""
+    _eos_loopback1: ""
     _eos_ip_route_raw: ""
     _eos_bgp_raw: ""
 
@@ -35,6 +38,27 @@
 - name: EOS - collect L3 discovery context (statics + BGP)
   ansible.builtin.include_tasks: gather_eos_prune_context.yml
   when: discovery_collect_prune_context | default(true) | bool
+
+- name: EOS - show Loopback0 address
+  ansible.netcommon.cli_command:
+    command: show ip interface Loopback0
+  register: _eos_loopback0_show
+  check_mode: false
+  changed_when: false
+  failed_when: false
+
+- name: EOS - show Loopback1 address
+  ansible.netcommon.cli_command:
+    command: show ip interface Loopback1
+  register: _eos_loopback1_show
+  check_mode: false
+  changed_when: false
+  failed_when: false
+
+- name: EOS - record Loopback0 and Loopback1 addresses
+  ansible.builtin.set_fact:
+    _eos_loopback0: "{{ _eos_loopback0_show.stdout | default('') | parse_interface_ipv4 }}"
+    _eos_loopback1: "{{ _eos_loopback1_show.stdout | default('') | parse_interface_ipv4 }}"
 
 - name: EOS - build human-review prune plan (trunk / SVI / VLAN)
   ansible.builtin.set_fact:
@@ -64,6 +88,9 @@
       bgp_vlan_blocks: "{{ _eos_bgp_vlan_blocks | default([]) }}"
       bgp_vrfs: "{{ _eos_bgp_vrfs | default([]) }}"
       bgp_as: "{{ _eos_bgp_as | default('') }}"
+      router_id: "{{ _eos_router_id | default('') }}"
+      loopback0: "{{ _eos_loopback0 | default('') }}"
+      loopback1: "{{ _eos_loopback1 | default('') }}"
       ip_route_raw: "{{ _eos_ip_route_raw | default('') }}"
       bgp_raw: "{{ _eos_bgp_raw | default('') }}"
       prune_plan: "{{ _eos_prune_plan | default({}) }}"

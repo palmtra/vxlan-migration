@@ -35,3 +35,4 @@
     _eos_bgp_vlan_blocks: "{{ _eos_bgp_context.vlan_blocks | default([]) }}"
     _eos_bgp_vrfs: "{{ _eos_bgp_context.vrfs | default([]) }}"
     _eos_bgp_as: "{{ _eos_bgp_context.bgp_as | default('') }}"
+    _eos_router_id: "{{ _eos_bgp_context.router_id | default('') }}"

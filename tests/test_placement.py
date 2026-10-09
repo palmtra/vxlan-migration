@@ -452,6 +452,40 @@ router bgp 65001
         self.assertNotIn("cust_a", missed_names)
         self.assertNotIn("static_route_tags", missed["deployment_model"]["routing"])
 
+    def test_participating_leaf_carries_asn_rd_and_vtep(self):
+        vlan = {"id": 2903, "name": "external", "service_type": "l2"}
+        devices = [
+            _device(
+                "oma01-blf01",
+                compute_ports=["Ethernet1"],
+                bgp_as="30452",
+                router_id="66.180.0.3",
+                loopback0="66.180.0.3",
+                loopback1="172.16.0.3",
+            ),
+            _device(
+                "oma-ce-sw01",
+                compute_ports=["Ethernet2"],
+                bgp_as="4200000106",
+                loopback0="66.180.0.46",
+                loopback1="172.16.0.15",
+                bgp_vlan_blocks=[{"vlan_id": 2903, "rd": "66.180.0.46:2903"}],
+            ),
+        ]
+        model = build_vlan_placement(vlan, devices)["deployment_model"]
+        leaves = {
+            item["hostname"]: item
+            for item in model["placement"]["participating_leafs"]
+        }
+        self.assertEqual(leaves["oma01-blf01"]["asn"], "30452")
+        self.assertEqual(leaves["oma01-blf01"]["router_id"], "66.180.0.3")
+        self.assertEqual(leaves["oma01-blf01"]["rd"], "66.180.0.3:2903")
+        self.assertEqual(leaves["oma01-blf01"]["vtep"], "172.16.0.3")
+        self.assertEqual(leaves["oma-ce-sw01"]["asn"], "4200000106")
+        self.assertEqual(leaves["oma-ce-sw01"]["router_id"], "66.180.0.46")
+        self.assertEqual(leaves["oma-ce-sw01"]["rd"], "66.180.0.46:2903")
+        self.assertEqual(leaves["oma-ce-sw01"]["vtep"], "172.16.0.15")
+
 
 if __name__ == "__main__":
     unittest.main()

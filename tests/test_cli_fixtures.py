@@ -29,6 +29,7 @@ from vlan_filters import (  # noqa: E402
     build_vlan_discovery_reports,
     extract_vlan_targeted_discovery,
     parse_bgp_context,
+    parse_interface_ipv4,
     parse_ip_route_statics,
     parse_svi_details,
     parse_trunk_interfaces,
@@ -141,6 +142,15 @@ class NxosCliFixtureTests(unittest.TestCase):
         context = parse_bgp_context(_read("eos", "show_run_bgp.txt"))
         vlan_100 = next(item for item in context["vlan_blocks"] if item["vlan_id"] == 100)
         self.assertEqual(vlan_100["rd"], "10.1.0.17:100")
+        self.assertEqual(context["bgp_as"], "65001")
+        self.assertEqual(context["router_id"], "10.1.0.17")
+        self.assertEqual(
+            parse_interface_ipv4(
+                "Loopback1 is up, line protocol is up (connected)\n"
+                "  Internet address is 172.16.0.3/32\n"
+            ),
+            "172.16.0.3",
+        )
         self.assertIn("both 65001:100", vlan_100["route_targets"])
         tenant = next(item for item in context["vrfs"] if item["name"] == "TENANT1")
         self.assertEqual(tenant["rd"], "10.1.0.17:1")

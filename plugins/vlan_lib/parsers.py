@@ -13,6 +13,7 @@ from vlan_lib.common import (
     _BGP_NEIGHBOR_STANZA_RE,
     _BGP_RD_RE,
     _BGP_REDIST_RE,
+    _BGP_ROUTER_ID_RE,
     _BGP_ROUTER_RE,
     _BGP_RT_RE,
     _BGP_VLAN_RE,
@@ -894,6 +895,7 @@ def parse_bgp_context(bgp_config):
     """
     empty = {
         "bgp_as": "",
+        "router_id": "",
         "neighbors": [],
         "vlan_blocks": [],
         "vrfs": [],
@@ -911,6 +913,7 @@ def parse_bgp_context(bgp_config):
     current_neighbor = None
     neighbor_indent = None
     bgp_as = ""
+    router_id = ""
 
     def ensure_neighbor(vrf, neighbor):
         key = (vrf, neighbor)
@@ -1003,6 +1006,16 @@ def parse_bgp_context(bgp_config):
 
         if re.match(r"^\s*address-family\b", line, re.I):
             continue
+
+        if (
+            current_vlan is None
+            and current_neighbor is None
+            and current_vrf == "default"
+        ):
+            router_id_match = _BGP_ROUTER_ID_RE.match(line)
+            if router_id_match:
+                router_id = router_id_match.group(1)
+                continue
 
         vlan_match = _BGP_VLAN_RE.match(line)
         if vlan_match:
@@ -1108,10 +1121,25 @@ def parse_bgp_context(bgp_config):
 
     return {
         "bgp_as": bgp_as,
+        "router_id": router_id,
         "neighbors": list(neighbors.values()),
         "vlan_blocks": [vlan_blocks[key] for key in sorted(vlan_blocks)],
         "vrfs": [vrf_blocks[key] for key in sorted(vrf_blocks)],
     }
+
+
+_INTERFACE_IPV4_RE = re.compile(
+    r"Internet address is\s+(\d+\.\d+\.\d+\.\d+)",
+    re.I,
+)
+
+
+def parse_interface_ipv4(interface_text):
+    """First IPv4 address from ``show ip interface``."""
+    match = _INTERFACE_IPV4_RE.search(str(interface_text or ""))
+    if not match:
+        return ""
+    return match.group(1)
 
 
 def parse_bgp_neighbors(bgp_config):

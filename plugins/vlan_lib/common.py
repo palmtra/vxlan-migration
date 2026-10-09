@@ -106,6 +106,11 @@ _IP_ROUTE_RE = re.compile(
 
 _BGP_ROUTER_RE = re.compile(r"^\s*router\s+bgp\s+(\d+)\s*$", re.I)
 
+_BGP_ROUTER_ID_RE = re.compile(
+    r"^\s*router-id\s+(\d+\.\d+\.\d+\.\d+)\s*$",
+    re.I,
+)
+
 _BGP_VRF_RE = re.compile(r"^\s*vrf\s+(\S+)\s*$", re.I)
 
 _BGP_VLAN_RE = re.compile(r"^\s*vlan\s+(\d+)\s*$", re.I)

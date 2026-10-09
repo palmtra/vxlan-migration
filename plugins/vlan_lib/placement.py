@@ -222,16 +222,43 @@ def local_endpoint_evidence(device):
     return qualifying, nonqualifying
 
 
-def _leaf_record(hostname, declared=None, device=None):
+def _leaf_record(hostname, declared=None, device=None, vlan_id=None):
+    """BGP identity for one targeted VTEP.
+
+    ASN comes from ``router bgp``. Router-id comes from BGP, then Loopback0.
+    RD is the on-box VLAN RD when this VLAN is already in BGP, otherwise
+    ``<router-id>:<vlan id>``. VTEP address is Loopback1.
+    """
     declared = declared or {}
     device = device or {}
-    bgp_as = device.get("bgp_as") or ""
+    bgp_as = str(device.get("bgp_as") or "").strip()
+    router_id = str(
+        declared.get("router_id")
+        or device.get("router_id")
+        or device.get("loopback0")
+        or ""
+    ).strip()
+    vtep = str(
+        declared.get("vtep") or device.get("vtep") or device.get("loopback1") or ""
+    ).strip()
+    rd = str(declared.get("rd") or "").strip()
+    if not rd and vlan_id not in (None, ""):
+        for block in device.get("bgp_vlan_blocks") or []:
+            if not isinstance(block, dict):
+                continue
+            if str(block.get("vlan_id")) != str(vlan_id):
+                continue
+            if block.get("rd"):
+                rd = str(block.get("rd")).strip()
+                break
+    if not rd and router_id and vlan_id not in (None, ""):
+        rd = "%s:%s" % (router_id, vlan_id)
     return {
         "hostname": hostname,
-        "asn": declared.get("asn") or bgp_as or "",
-        "router_id": declared.get("router_id") or device.get("router_id") or "",
-        "rd": declared.get("rd") or "",
-        "vtep": declared.get("vtep") or device.get("vtep") or "",
+        "asn": str(declared.get("asn") or bgp_as or "").strip(),
+        "router_id": router_id,
+        "rd": rd,
+        "vtep": vtep,
     }
 
 
@@ -692,6 +719,7 @@ def build_deployment_model(vlan, devices, placement):
     l3_evpn = evpn.get("l3") if isinstance(evpn.get("l3"), dict) else {}
     routing = vlan.get("routing") if isinstance(vlan.get("routing"), dict) else {}
 
+    vlan_id = vlan.get("id")
     participating = []
     for hostname in placement["participating_order"]:
         participating.append(
@@ -699,6 +727,7 @@ def build_deployment_model(vlan, devices, placement):
                 hostname,
                 gateway_declared.get(hostname) or {},
                 by_host.get(hostname) or {},
+                vlan_id,
             )
         )
     gateway_leafs = [
@@ -706,6 +735,7 @@ def build_deployment_model(vlan, devices, placement):
             hostname,
             gateway_declared.get(hostname) or {},
             by_host.get(hostname) or {},
+            vlan_id,
         )
         for hostname in placement["gateway_order"]
     ]
