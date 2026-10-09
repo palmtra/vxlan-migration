@@ -32,7 +32,7 @@ Deploy is `playbooks/core/workflow_deploy.yml`. The old direct-device playbooks 
 |---|---|---|
 | `auto_rollback_on_verification_failure` | `false` | No auto CVP rollback on verify failure |
 | `cvp_rollback_allow_destructive_no_vlan` | `false` | Rollback only removes VXLAN maps, not `no vlan` |
-| `allow_placeholder_fabric_defaults` | `false` | Rejects mcast `239.1.1.1` / empty BGP ASN placeholders |
+| `allow_placeholder_fabric_defaults` | `false` | Rejects mcast `239.1.1.1` / empty BGP ASN placeholders. An empty mcast group is head-end replication, not an error |
 | `cvp_apply_configlets` | `false` | Generate-only until explicitly enabled |
 
 Prefer `playbooks/core/workflow_deploy.yml` for all production migrations.

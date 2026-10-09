@@ -63,6 +63,7 @@ Records are validated against [`schemas/vlan_record.schema.json`](../../schemas/
 | `static_route_tags` | no | Name tags. A static is associated when a tag equals `ip route ... name`, ignoring case |
 | `gateway_leafs` | L3 | Fabric gateway leaves. Engineer-supplied |
 | `target_switches` | yes (migrate) | EOS hosts for CVP. A nested discovery model uses participating leaves |
+| `mcast_group` | no | Omit. BUM is head-end replication already on the fabric |
 
 Choosing `l2` vs `l3`: [docs/VXLAN_SERVICE_TYPES.md](../docs/VXLAN_SERVICE_TYPES.md). A nested discovery model (`site` / `placement`) loads as this flat record.
 

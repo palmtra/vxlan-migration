@@ -8,7 +8,6 @@ gateway_leafs: []
 vlan_name: APP_VXLAN
 vni: 50200
 vrf: default
-mcast_group: "239.1.1.200"
 target_switches:
   - eos-leaf-lis-01
   - eos-leaf-lis-02

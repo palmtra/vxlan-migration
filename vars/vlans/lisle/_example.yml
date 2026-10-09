@@ -45,7 +45,6 @@ prefixes:                  # optional; derived from SVI CIDRs
   - 10.10.100.0/24
 # static_route_tags:       # optional; case-insensitive match against `ip route ... name`
 #   - cust_a
-mcast_group: "239.1.1.100"
 target_switches:
   - eos-leaf-lis-01
   - eos-leaf-lis-02

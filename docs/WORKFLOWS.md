@@ -183,7 +183,7 @@ Pass `-e manual_service_id=<id>` on discovery to seed VLAN IDs and apply `prune.
 | `vlan_name` | no | On-box / post-migration VLAN name |
 | `gateway` | no | Anycast / HSRP / VR address discovered on the SVI |
 | `prefixes` | no | Subnets derived from SVI CIDRs |
-| `mcast_group` | no | BUM group override |
+| `mcast_group` | no | Omit. BUM is head-end replication. Set only to emit `vxlan vlan <id> multicast group` |
 
 ---
 

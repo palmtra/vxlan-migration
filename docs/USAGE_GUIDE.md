@@ -171,7 +171,7 @@ Detailed generate-only walkthrough: [examples/generate-config-without-cvp-push.m
 | `cvp_change_control_auto_execute_allowed` | `false` | Must stay `false` unless explicitly overriding after review |
 | `cvp_build_borderleaf_config` | `false` | Border-leaf VRF/L3 VNI configlet. Off: do not create or rebind an existing VRF |
 | `avd_default_bgp_as` | `""` | Default BGP ASN for AVD when not set per host (required if `evpn_enabled`) |
-| `allow_placeholder_fabric_defaults` | `false` | Allow lab placeholder mcast `239.1.1.1` / empty ASN |
+| `allow_placeholder_fabric_defaults` | `false` | Allow lab placeholder mcast `239.1.1.1` / empty ASN. Empty mcast means head-end replication |
 | `auto_rollback_on_verification_failure` | `false` | Attempt CVP rollback on verify failure (off by default) |
 | `cvp_rollback_allow_destructive_no_vlan` | `false` | Allow rollback to emit `no vlan` / VRF teardown |
 | `artifacts_dir` / `ARTIFACTS_DIR` | project root | Root for `reports/` and `backups/` (AAP EE mount) |

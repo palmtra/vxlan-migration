@@ -52,17 +52,17 @@
   become: false
   run_once: true
 
-- name: Fail if multicast group is unset or still the repo placeholder
+- name: Fail if a multicast group is the repo placeholder
   ansible.builtin.fail:
     msg: >-
-      VLAN {{ target_vlan_id }} needs a real mcast_group (record field or fabric
-      vxlan_default_mcast_group). Refusing unset/placeholder '239.1.1.1'
-      unless allow_placeholder_fabric_defaults=true.
+      VLAN {{ target_vlan_id }} has mcast_group 239.1.1.1, which is a placeholder.
+      BUM uses head-end replication already on the fabric. Omit mcast_group.
+      Set allow_placeholder_fabric_defaults=true only for a lab.
   vars:
     _effective_mcast: "{{ _vlan_to_migrate.mcast_group | default(vxlan_default_mcast_group | default(''), true) | string }}"
   when:
     - not (allow_placeholder_fabric_defaults | default(false) | bool)
-    - _effective_mcast | length == 0 or _effective_mcast == '239.1.1.1'
+    - _effective_mcast == '239.1.1.1'
   delegate_to: localhost
   become: false
   run_once: true

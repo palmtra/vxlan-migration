@@ -26,8 +26,8 @@ network_backup_enabled: true
 vtep_loopback_id: 0
 vtep_source_interface: "Loopback{{ vtep_loopback_id }}"
 
-# Default multicast group for VXLAN BUM traffic. Leave empty and set per-VLAN
-# mcast_group, or set a real fabric value. Placeholder 239.1.1.1 is rejected
+# BUM is head-end replication, already deployed on the fabric. Leave this empty.
+# A per-VLAN mcast_group is emitted only when set. Placeholder 239.1.1.1 is rejected
 # unless allow_placeholder_fabric_defaults=true.
 vxlan_default_mcast_group: ""
 
@@ -35,8 +35,8 @@ vxlan_default_mcast_group: ""
 # Keep false for production.
 allow_placeholder_fabric_defaults: false
 
-# Optional EVPN AFIs to enable on VNI.  Disable if your fabric is multicast only.
-# This is an example of a design-parameter that should be promoted to per-VLAN data.
+# Optional EVPN control-plane knobs on the VNI. Head-end replication is already
+# on the fabric, so a VLAN migration does not add a multicast group.
 evpn_enabled: false
 
 # Scope controls. AAP surveys can inject these to limit blast radius.

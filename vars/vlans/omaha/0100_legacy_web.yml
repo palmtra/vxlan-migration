@@ -6,7 +6,6 @@ service_type: l3
 vlan_name: WEB_VXLAN
 vni: 50100
 vrf: default
-mcast_group: "239.1.1.100"
 target_switches:
   - eos-leaf-oma-01
   - eos-leaf-oma-02
