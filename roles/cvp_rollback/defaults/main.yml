@@ -44,4 +44,5 @@ cvp_change_control_state: "set"
 cvp_change_control_auto_execute_allowed: false
 
 cvp_borderleaf_regex: ".*border.*"
-cvp_build_borderleaf_config: true
+# Same default as cvp_deploy: do not create or rebind the VRF L3 VNI.
+cvp_build_borderleaf_config: false

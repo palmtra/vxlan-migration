@@ -163,7 +163,7 @@ ansible-playbook -i inventory/hosts.yml playbooks/core/workflow_verify.yml \
 |---|---|---|
 | `cvp_apply_configlets` | `false` | Master switch for CVP API calls |
 | `use_avd` | `false` | `true` → AVD path; `false` → Jinja templates |
-| `cvp_build_borderleaf_config` | `true` | Border-leaf import configlet (Jinja path) |
+| `cvp_build_borderleaf_config` | `false` | Jinja border-leaf VRF import. Off unless the VRF itself must be created |
 | `cvp_configlet_build_dir` | `reports/cvp_configlets` | Jinja output directory |
 | `avd_output_dir` | `cvp_configlets/avd` | AVD output directory |
 | `cvp_change_control_state` | `set` | Never auto-execute without explicit override |

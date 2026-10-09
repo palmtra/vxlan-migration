@@ -42,7 +42,7 @@ gateway_leafs:
   - cma01-blf02
 ```
 
-Set `vrf` to the target VRF. Assign `vni` (L2) before deploy. An L3 VNI, when the design uses one, belongs on `evpn.l3.vni` in the discovery model.
+Set `vrf` to the target VRF. Assign `evpn.l2.vni` before deploy. Leave `evpn.l3` empty. The VRF and its L3 VNI are already on the fabric, so deploy does not create them (`cvp_build_borderleaf_config` defaults to `false`).
 
 ---
 

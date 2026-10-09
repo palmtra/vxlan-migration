@@ -39,5 +39,8 @@ cvp_change_control_auto_execute_allowed: false
 # Device tags/regex used to identify border leafs from the inventory.
 cvp_borderleaf_regex: ".*border.*"
 
-# Whether to generate border-leaf import (VRF-aware) config as well.
-cvp_build_borderleaf_config: true
+# Border-leaf VRF import is off. The fabric VRF and its L3 VNI already exist.
+# A migration either extends L2 to endpoint leaves, or adds the VLAN L2 VNI
+# and the gateway SVI on leaves that already have the VRF. Set this true only
+# when the change must create the VRF or bind vxlan vrf <vrf> vni.
+cvp_build_borderleaf_config: false

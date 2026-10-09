@@ -20,7 +20,8 @@ avd_output_dir: "{{ avd_configlet_build_dir }}/avd"
 avd_tmp_dir: "{{ avd_output_dir }}/tmp_eos_cli_config_gen"
 avd_keep_tmp_files: false
 
-# If true, add a per-VRF VNI import section for border-leaf devices.
+# Off by default. VRFs and their L3 VNIs already exist. Set true only to
+# emit a per-VRF VNI import on border leaves.
 avd_build_borderleaf_config: false
 # Match both "border" and common "blf" naming (e.g. chi01-blf01).
 avd_borderleaf_regex: "(?i)(border|blf)"
