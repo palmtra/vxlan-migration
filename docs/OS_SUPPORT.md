@@ -24,11 +24,12 @@ but are **disabled by default** on `main` (`discovery_enable_ios: false`).
 
 Deploy, AVD, CVP, and post-change verification remain **EOS-only** regardless of discovery OS.
 
-## Safety gates (direct device + rollback)
+## Safety gates
+
+Deploy is `playbooks/core/workflow_deploy.yml`. The old direct-device playbooks and `roles/migrate_to_vxlan` have been removed.
 
 | Control | Default | Purpose |
 |---|---|---|
-| `allow_direct_device_push` | `false` | Blocks `roles/migrate_to_vxlan` / `site.yml` (bypasses CVP) |
 | `auto_rollback_on_verification_failure` | `false` | No auto CVP rollback on verify failure |
 | `cvp_rollback_allow_destructive_no_vlan` | `false` | Rollback only removes VXLAN maps, not `no vlan` |
 | `allow_placeholder_fabric_defaults` | `false` | Rejects mcast `239.1.1.1` / empty BGP ASN placeholders |

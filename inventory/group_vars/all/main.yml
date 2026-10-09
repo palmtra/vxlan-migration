@@ -5,7 +5,7 @@
 
 # Normalize repo root whether playbooks run from playbooks/ or playbooks/core/.
 project_root: "{{ playbook_dir | regex_replace('/playbooks(/core|/advanced)?$', '') }}"
-# Artifacts root — override with -e artifacts_dir=... or env ARTIFACTS_DIR (AAP EE mounts).
+# Artifacts root - override with -e artifacts_dir=... or env ARTIFACTS_DIR (AAP EE mounts).
 artifacts_dir: "{{ lookup('env', 'ARTIFACTS_DIR') | default(project_root, true) }}"
 reports_dir: "{{ artifacts_dir }}/reports"
 network_backup_dir: "{{ artifacts_dir }}/backups/{{ inventory_hostname }}"

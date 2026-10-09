@@ -18,7 +18,7 @@ Open features and planned work. Completed items are kept for context.
 - [x] Workflow docs with mermaid diagrams (`docs/WORKFLOWS.md`, `docs/USAGE_GUIDE.md`)
 - [x] Service bundles + retain-aware discovery prune plans
 - [x] Platform policy: `main` = NXOS→EOS; IOS parked (`docs/OS_SUPPORT.md`, archive tag/branch)
-- [x] P0 hardening: `no_log` on secrets, gate direct-device migrate, safer rollback defaults, GitHub CI
+- [x] P0 hardening: `no_log` on secrets, safer rollback defaults, GitHub CI. The direct-device migrate path was removed; deploy is CVP only
 - [x] Split `vlan_filters` into `plugins/vlan_lib/` + thin `plugins/filter/vlan_filters.py`
 - [x] JSON Schema validation for VLAN/service SSOT (`schemas/*.schema.json`)
 - [x] Molecule localhost scenarios for `vlan_db` and `service_db`
@@ -49,9 +49,8 @@ Open features and planned work. Completed items are kept for context.
 ### Parked / hold (do not implement until there is a use-case)
 
 - [ ] Default-VRF static route + BGP neighbor **prune candidates** (shown as L3 review only; not actions)
-- [ ] In-repo prune apply role (session diffs + commit timer + retain fail-closed)
 
-Human operators prune from the **prune report** (EOS configure session + timer). Automated apply is reserved until that report is proven; discovery never deletes.
+Discovery never deletes. Prune apply is `playbooks/core/prune_vlan.yml`: dry-run unless `prune_apply=true` and `prune_approval=approve`.
 
 ### VLAN database
 

@@ -3,7 +3,7 @@
 # netbox_export defaults
 # -----------------------------------------------------------------------------
 # Standalone export of local VLAN DB records to NetBox. Not part of the Core or
-# Advanced migration workflow — run manually when you want to sync inventory.
+# Advanced migration workflow - run manually when you want to sync inventory.
 # -----------------------------------------------------------------------------
 
 netbox_export_dry_run: true

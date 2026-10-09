@@ -13,16 +13,17 @@ Two workflow tiers share the same roles. **Build and harden Core first**, then e
 | In scope (this repo) | Out of scope |
 |---|---|
 | Read-only VLAN discovery (NXOS + EOS; optional IOS) | Greenfield / new VLAN deployments (separate app) |
-| Local per-DC VLAN DB as primary SSOT | Automatic trunk/SVI cleanup **apply** on devices (candidates only today) |
-| Optional service bundles (`vars/services/`) for multi-VLAN cutovers | Executing prune/delete sessions (parked; human prune from the report) |
-| AVD or Jinja → CVP configlet generation | NetBox export as part of the migration run |
-| CVP change control creation (pending approval) | Executing CVP change control automatically |
-| NXOS→EOS as the supported migration path on `main` | Expanding IOS as a first-class platform on `main` |
+| Local per-DC VLAN DB as primary SSOT | NetBox export as part of the migration run |
+| Optional service bundles (`vars/services/`) for multi-VLAN cutovers | Executing CVP change control automatically |
+| AVD or Jinja → CVP configlet generation | Expanding IOS as a first-class platform on `main` |
+| CVP change control creation (pending approval) | Direct device config push |
+| Prune apply via `playbooks/core/prune_vlan.yml` (dry-run unless approved) | |
+| NXOS→EOS as the supported migration path on `main` | |
 
-Legacy VLAN cleanup and trunk pruning are **reported** during discovery as a
-human-review `prune_plan` (trunk / SVI / VLAN only). Application is not automated
-and is parked until there is a use-case. Default-VRF statics and BGP are L3 review
-only, never prune actions.
+Legacy VLAN cleanup is reported during discovery and applied by
+`playbooks/core/prune_vlan.yml`. Dry-run is the default. Apply needs
+`-e prune_apply=true -e prune_approval=approve`. Default-VRF statics and BGP
+are L3 review only, never prune actions.
 
 ---
 

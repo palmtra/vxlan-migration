@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""vlan_lib — split implementation of VLAN Jinja filters."""
+"""vlan_lib - split implementation of VLAN Jinja filters."""
 
 from vlan_lib.common import *  # noqa: F401,F403
 from vlan_lib.parsers import *  # noqa: F401,F403

@@ -17,7 +17,7 @@
 
 - name: Skip service load when no service id was provided
   ansible.builtin.debug:
-    msg: "No manual_service_id/service_id set — service bundle and prune.retain not loaded."
+    msg: "No manual_service_id/service_id set - service bundle and prune.retain not loaded."
   when: hostvars['localhost']['_service_db_id'] | default('') | length == 0
 
 - name: Fail when service id is set without a data center

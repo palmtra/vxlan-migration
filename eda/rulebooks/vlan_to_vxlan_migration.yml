@@ -38,7 +38,7 @@
   # "all" here, NOT "localhost": ansible-rulebook derives the --limit passed
   # to run_playbook from this ruleset's hosts field. workflow_deploy.yml
   # targets network_devices/eos_devices internally, so --limit must not
-  # restrict beyond that — "all" lets the sub-playbook's play-level hosts
+  # restrict beyond that - "all" lets the sub-playbook's play-level hosts
   # control targeting. Using "localhost" here would break network device plays.
   hosts: all
 

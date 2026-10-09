@@ -5,7 +5,7 @@
 
 # --- EVPN BGP peer status ----------------------------------------------------
 
-- name: EOS — show bgp evpn summary
+- name: EOS - show bgp evpn summary
   ansible.netcommon.cli_command:
     command: show bgp evpn summary
   register: _eos_bgp_evpn
@@ -14,14 +14,14 @@
   failed_when: false
   when: verify_bgp_evpn | bool
 
-- name: EOS — count established EVPN peers
+- name: EOS - count established EVPN peers
   ansible.builtin.set_fact:
     _evpn_established_count: "{{ (_eos_bgp_evpn.stdout | default('')) | regex_findall('Estab') | length }}"
   when: verify_bgp_evpn | bool
 
 # --- VTEP reachability (underlay) --------------------------------------------
 
-- name: EOS — show vxlan vtep (discover remote VTEPs learned via EVPN)
+- name: EOS - show vxlan vtep (discover remote VTEPs learned via EVPN)
   ansible.netcommon.cli_command:
     command: show vxlan vtep
   register: _eos_vxlan_vtep
@@ -30,12 +30,12 @@
   failed_when: false
   when: verify_vtep_reachability | bool
 
-- name: EOS — extract remote VTEP IPv4 addresses
+- name: EOS - extract remote VTEP IPv4 addresses
   ansible.builtin.set_fact:
     _remote_vteps: "{{ (_eos_vxlan_vtep.stdout | default('')) | regex_findall('\\b\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\b') | unique }}"
   when: verify_vtep_reachability | bool
 
-- name: EOS — ping each remote VTEP over the underlay
+- name: EOS - ping each remote VTEP over the underlay
   ansible.netcommon.cli_command:
     command: "ping {{ item }} source {{ vtep_source_interface }}"
   loop: "{{ _remote_vteps | default([]) }}"
@@ -47,14 +47,14 @@
   failed_when: false
   when: verify_vtep_reachability | bool
 
-- name: EOS — identify unreachable VTEPs
+- name: EOS - identify unreachable VTEPs
   ansible.builtin.set_fact:
     _vtep_unreachable: "{{ _eos_vtep_ping.results | default([]) | rejectattr('stdout', 'search', '[1-9][0-9]*\\s+received|bytes from') | map(attribute='item') | list }}"
   when: verify_vtep_reachability | bool
 
 # --- VNI mapping + MAC/ARP learning, per VLAN --------------------------------
 
-- name: EOS — show vxlan vlan-to-vni
+- name: EOS - show vxlan vlan-to-vni
   ansible.netcommon.cli_command:
     command: show vxlan vlan-to-vni
   register: _eos_vxlan_vni
@@ -63,7 +63,7 @@
   failed_when: false
   when: verify_vni_mapping | bool
 
-- name: EOS — show MAC address table for verified VLANs
+- name: EOS - show MAC address table for verified VLANs
   ansible.netcommon.cli_command:
     command: "show mac address-table vlan {{ item }}"
   loop: "{{ verify_vlan_ids }}"
@@ -75,7 +75,7 @@
   failed_when: false
   when: verify_mac_arp_learning | bool
 
-- name: EOS — show ARP table for target VRF
+- name: EOS - show ARP table for target VRF
   ansible.netcommon.cli_command:
     command: "show ip arp vrf {{ target_vrf | default('default') }}"
   register: _eos_arp_verify
@@ -84,7 +84,7 @@
   failed_when: false
   when: verify_mac_arp_learning | bool
 
-- name: EOS — assemble per-VLAN VNI/MAC/ARP verification results
+- name: EOS - assemble per-VLAN VNI/MAC/ARP verification results
   ansible.builtin.set_fact:
     _per_vlan_verification: "{{ verify_vlan_ids | map('build_vlan_verification', {
         'vni_output': _eos_vxlan_vni.stdout | default(''),
@@ -95,7 +95,7 @@
 
 # --- Aggregate result ---------------------------------------------------------
 
-- name: EOS — assemble overall verification result
+- name: EOS - assemble overall verification result
   ansible.builtin.set_fact:
     _verification_results:
       bgp_evpn:

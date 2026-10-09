@@ -174,7 +174,6 @@ Detailed generate-only walkthrough: [examples/generate-config-without-cvp-push.m
 | `allow_placeholder_fabric_defaults` | `false` | Allow lab placeholder mcast `239.1.1.1` / empty ASN |
 | `auto_rollback_on_verification_failure` | `false` | Attempt CVP rollback on verify failure (off by default) |
 | `cvp_rollback_allow_destructive_no_vlan` | `false` | Allow rollback to emit `no vlan` / VRF teardown |
-| `allow_direct_device_push` | `false` | Unlock legacy `migrate_to_vxlan` direct-device path |
 | `artifacts_dir` / `ARTIFACTS_DIR` | project root | Root for `reports/` and `backups/` (AAP EE mount) |
 
 ### Discovery during deploy

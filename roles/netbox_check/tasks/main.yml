@@ -4,7 +4,7 @@
 # -----------------------------------------------------------------------------
 # Secondary NetBox validation after the local per-DC VLAN database has already
 # validated the target VLAN (roles/vlan_db). NetBox is used to detect drift and
-# to prepare future sync-back after migration — it does not override the local
+# to prepare future sync-back after migration - it does not override the local
 # VLAN DB unless netbox_ssot_required is true.
 #
 # Sets:

@@ -20,7 +20,7 @@ _meta:
 
 # Stable service id (must match filename without .yml)
 id: aspira_0000822
-name: Aspira VXLAN Migration – Lisle
+name: Aspira VXLAN Migration - Lisle
 data_center: lisle
 customer_id: "0000822"
 customer_prefix: "822_"
@@ -126,7 +126,7 @@ build:
   #        vrf v0000001c
   #         neighbor 10.202.9.117 remote-as 4210000822
 
-# Prune/teardown intent — discovery emits candidate plans; apply is not automated yet
+# Prune/teardown intent. Apply is playbooks/core/prune_vlan.yml (dry-run unless approved).
 prune:
   # Hard keep-list. Discovery marks matching delete candidates as blocked_by_retain.
   retain:
