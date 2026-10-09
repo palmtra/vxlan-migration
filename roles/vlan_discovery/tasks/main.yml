@@ -41,7 +41,7 @@
 - name: Write legacy per-host JSON report
   ansible.builtin.template:
     src: host_report.json.j2
-    dest: "{{ discovery_reports_dir }}/{{ data_center | default('unknown') }}/{{ inventory_hostname }}/{{ inventory_hostname }}_vlan_state_{{ _report_timestamp_ms }}.json"
+    dest: "{{ discovery_reports_dir }}/{{ hostvars['localhost']['_vlan_db_data_center'] }}/{{ inventory_hostname }}/{{ inventory_hostname }}_vlan_state_{{ _report_timestamp_ms }}.json"
     mode: '0644'
   delegate_to: localhost
   become: false
@@ -54,7 +54,7 @@
     _vlan_discovery_reports: "{{ _effective_vlans_for_reports | build_vlan_discovery_reports(ansible_play_hosts, hostvars) | map('combine', {'data_center': _report_data_center}) | list }}"
   vars:
     _effective_vlans_for_reports: "{{ hostvars['localhost']['_effective_vlans'] | default(_effective_vlans | default([])) }}"
-    _report_data_center: "{{ [hostvars['localhost']['_vlan_db_data_center'] | default(''), hostvars['localhost']['target_data_center'] | default(''), data_center | default(''), 'unknown'] | coalesce_trimmed }}"
+    _report_data_center: "{{ hostvars['localhost']['_vlan_db_data_center'] }}"
   delegate_to: localhost
   become: false
   run_once: true
@@ -206,7 +206,7 @@
     state: directory
     mode: '0755'
   vars:
-    _report_data_center: "{{ [hostvars['localhost']['_vlan_db_data_center'] | default(''), hostvars['localhost']['target_data_center'] | default(''), data_center | default(''), 'unknown'] | coalesce_trimmed }}"
+    _report_data_center: "{{ hostvars['localhost']['_vlan_db_data_center'] }}"
   delegate_to: localhost
   become: false
   run_once: true
@@ -221,7 +221,7 @@
     dest: "{{ discovery_reports_dir }}/{{ _report_data_center }}/_prune_plans/{{ item.hostname }}_prune_plan_{{ _report_timestamp_ms }}.json"
     mode: '0644'
   vars:
-    _report_data_center: "{{ [hostvars['localhost']['_vlan_db_data_center'] | default(''), hostvars['localhost']['target_data_center'] | default(''), data_center | default(''), 'unknown'] | coalesce_trimmed }}"
+    _report_data_center: "{{ hostvars['localhost']['_vlan_db_data_center'] }}"
   delegate_to: localhost
   become: false
   run_once: true

@@ -167,6 +167,31 @@ class VlanDbLoaderTests(unittest.TestCase):
         self.assertEqual(resolve_data_center("lisle", "", ""), "lisle")
         self.assertEqual(resolve_data_center("", "omaha", "lisle"), "omaha")
 
+    def test_resolve_run_data_center_follows_limit_not_host(self):
+        from ansible.errors import AnsibleFilterError
+        from vlan_filters import resolve_run_data_center
+
+        self.assertEqual(
+            resolve_run_data_center({"manual": "", "target": "", "limit": "dc_omaha"}),
+            "omaha",
+        )
+        self.assertEqual(
+            resolve_run_data_center(
+                {"manual": "omaha", "target": "", "limit": "dc_omaha:&eos_devices"}
+            ),
+            "omaha",
+        )
+        self.assertEqual(
+            resolve_run_data_center({"manual": "lisle", "target": "", "limit": ""}),
+            "lisle",
+        )
+        with self.assertRaises(AnsibleFilterError):
+            resolve_run_data_center(
+                {"manual": "lisle", "target": "", "limit": "dc_omaha"}
+            )
+        with self.assertRaises(AnsibleFilterError):
+            resolve_run_data_center({"manual": "chicago", "target": "", "limit": ""})
+
     def test_union_vlan_discovery_hosts(self):
         from vlan_filters import union_vlan_discovery_hosts
 

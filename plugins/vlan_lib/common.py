@@ -200,6 +200,73 @@ def coalesce_trimmed(*values):
     return ""
 
 
+_DATA_CENTERS = ("lisle", "omaha")
+_LIMIT_SPLIT_RE = re.compile(r"[:,&|!\s]+")
+
+
+def normalize_data_center(value):
+    """Return ``lisle`` or ``omaha``. Accepts a ``dc_`` prefix. Anything else is empty."""
+    text = str(value or "").strip().lower()
+    if text.startswith("dc_"):
+        text = text[3:]
+    if text in _DATA_CENTERS:
+        return text
+    return ""
+
+
+def _data_centers_in_limit(limit):
+    found = []
+    for token in _LIMIT_SPLIT_RE.split(str(limit or "").lower()):
+        token = token.strip()
+        if not token or token.startswith("~"):
+            continue
+        name = normalize_data_center(token)
+        if name and name not in found:
+            found.append(name)
+    return found
+
+
+def resolve_run_data_center(sources):
+    """Pick the one data center for this run. Only ``lisle`` or ``omaha``.
+
+    ``sources`` is a dict with ``manual``, ``target``, and ``limit``.
+    ``--limit dc_omaha`` and ``-e manual_data_center=`` must name the same site.
+    A switch inventory ``data_center`` is not consulted: that value wrote Omaha
+    runs under ``reports/lisle``.
+    """
+    if not isinstance(sources, dict):
+        raise AnsibleFilterError(
+            "resolve_run_data_center expects a dict, got %s" % type(sources)
+        )
+    chosen = []
+    for label, key in (
+        ("manual_data_center", "manual"),
+        ("target_data_center", "target"),
+    ):
+        raw = sources.get(key)
+        text = str(raw or "").strip()
+        if not text:
+            continue
+        name = normalize_data_center(text)
+        if not name:
+            raise AnsibleFilterError(
+                "%s must be lisle or omaha, got %r" % (label, text)
+            )
+        if name not in chosen:
+            chosen.append(name)
+    for name in _data_centers_in_limit(sources.get("limit")):
+        if name not in chosen:
+            chosen.append(name)
+    if len(chosen) > 1:
+        raise AnsibleFilterError(
+            "Data center is both %s. Use one of lisle or omaha."
+            % " and ".join(chosen)
+        )
+    if chosen:
+        return chosen[0]
+    return ""
+
+
 def resolve_data_center(manual_data_center="", target_data_center="", data_center=""):
     """Resolve data center from playbook/extra vars (safe for Ansible strict undefined)."""
     return coalesce_trimmed(manual_data_center, target_data_center, data_center)

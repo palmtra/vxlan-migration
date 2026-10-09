@@ -92,6 +92,7 @@ def load_vlan_db_from_directory(vlan_db_dir, data_center, target_vlan_ids=None):
             )
 
         seen_ids[vlan_id] = filename
+        record["data_center"] = dc
         records.append(record)
         sources.append(path)
 

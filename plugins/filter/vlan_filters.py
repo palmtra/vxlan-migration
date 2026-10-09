@@ -51,6 +51,7 @@ from vlan_lib import (  # noqa: E402,F401
     interface_config_entries_from_cli_results,
     ports_needing_interface_config,
     resolve_data_center,
+    resolve_run_data_center,
     resolve_trunk_allowed_vlans,
     sanitize_report_slug,
     select_vlans_for_run,
@@ -111,6 +112,7 @@ class FilterModule(object):
             "normalize_target_vlan_ids": normalize_target_vlan_ids,
             "coalesce_trimmed": coalesce_trimmed,
             "resolve_data_center": resolve_data_center,
+            "resolve_run_data_center": resolve_run_data_center,
             "load_vlan_db_from_directory": load_vlan_db_from_directory,
             "union_vlan_discovery_hosts": union_vlan_discovery_hosts,
         }

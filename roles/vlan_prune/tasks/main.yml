@@ -37,7 +37,7 @@
     state: directory
     mode: "0755"
   vars:
-    _report_data_center: "{{ [hostvars['localhost']['_vlan_db_data_center'] | default(''), hostvars['localhost']['target_data_center'] | default(''), data_center | default(''), 'unknown'] | coalesce_trimmed }}"
+    _report_data_center: "{{ hostvars['localhost']['_vlan_db_data_center'] }}"
   delegate_to: localhost
   become: false
   run_once: true
@@ -49,7 +49,7 @@
     mode: "0644"
   vars:
     plans: "{{ _prune_eligible_plans | default([]) }}"
-    _report_data_center: "{{ [hostvars['localhost']['_vlan_db_data_center'] | default(''), hostvars['localhost']['target_data_center'] | default(''), data_center | default(''), 'unknown'] | coalesce_trimmed }}"
+    _report_data_center: "{{ hostvars['localhost']['_vlan_db_data_center'] }}"
   delegate_to: localhost
   become: false
   run_once: true

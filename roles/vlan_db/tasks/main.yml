@@ -9,15 +9,15 @@
 
 - name: Resolve effective data center for VLAN DB lookup
   ansible.builtin.set_fact:
-    _vlan_db_data_center: "{{ [manual_data_center | default(''), target_data_center | default(''), data_center | default('')] | coalesce_trimmed }}"
+    _vlan_db_data_center: "{{ {'manual': manual_data_center | default(''), 'target': target_data_center | default(''), 'limit': ansible_limit | default('')} | resolve_run_data_center }}"
     _vlan_db_target_vlan_ids: "{{ target_vlan_ids | default([]) | normalize_target_vlan_ids(manual_vlan_id | default(none)) }}"
   delegate_facts: true
 
 - name: Fail if data center is not specified
   ansible.builtin.fail:
     msg: >-
-      A data center must be provided via target_data_center or manual_data_center
-      (e.g. lisle, omaha). Per-DC VLAN databases live under {{ vlan_db_dir }}/<dc>/.
+      A data center must be lisle or omaha, via -e manual_data_center= or --limit dc_lisle / dc_omaha.
+      Per-DC VLAN databases live under {{ vlan_db_dir }}/<dc>/.
   when: hostvars['localhost']['_vlan_db_data_center'] | default('') | length == 0
 
 - name: Load VLAN records from the DC directory
@@ -76,11 +76,13 @@
         action: migrate
         service_type: "{{ discovery_probe_service_type | default('l3') }}"
         vrf: default
+        data_center: "{{ hostvars['localhost']['_vlan_db_data_center'] }}"
     _target_vlan_record:
       id: "{{ hostvars['localhost']['_probe_vlan_id'] }}"
       name: "vlan_{{ hostvars['localhost']['_probe_vlan_id'] }}"
       action: migrate
       service_type: "{{ discovery_probe_service_type | default('l3') }}"
+      data_center: "{{ hostvars['localhost']['_vlan_db_data_center'] }}"
       target_switches: []
     _workflow_discovery_hosts: []
     _discovery_probe_mode: true

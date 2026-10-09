@@ -11,7 +11,7 @@
 
 - name: Resolve data center for service DB lookup
   ansible.builtin.set_fact:
-    _service_db_data_center: "{{ [manual_data_center | default(''), target_data_center | default(''), hostvars['localhost']['_vlan_db_data_center'] | default(''), data_center | default('')] | coalesce_trimmed }}"
+    _service_db_data_center: "{{ {'manual': manual_data_center | default(''), 'target': target_data_center | default(''), 'limit': ansible_limit | default('')} | resolve_run_data_center }}"
     _service_db_id: "{{ [manual_service_id | default(''), service_id | default('')] | coalesce_trimmed }}"
   delegate_facts: true
 
