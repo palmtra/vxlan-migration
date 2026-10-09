@@ -517,6 +517,34 @@ router bgp 65001
         self.assertEqual(fallback["router_id"], "66.180.0.46")
         self.assertNotIn("10.9.9.9", fallback.values())
 
+        from collections.abc import Mapping
+
+        class _HostVars(Mapping):
+            def __init__(self, data):
+                self._data = data
+
+            def __getitem__(self, key):
+                return self._data[key]
+
+            def __iter__(self):
+                return iter(self._data)
+
+            def __len__(self):
+                return len(self._data)
+
+        mapped = host_vtep_bgp(
+            _HostVars(
+                {
+                    "ansible_host": "10.9.9.9",
+                    "_vlan_discovery": _HostVars(
+                        {"bgp_as": "30452", "loopback0": "66.180.0.4"}
+                    ),
+                }
+            )
+        )
+        self.assertEqual(mapped["asn"], "30452")
+        self.assertEqual(mapped["router_id"], "66.180.0.4")
+
 
 if __name__ == "__main__":
     unittest.main()

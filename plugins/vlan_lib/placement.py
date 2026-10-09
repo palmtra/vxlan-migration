@@ -14,6 +14,7 @@ listed first, because it is the root of the legacy L2.
 """
 
 from ansible.errors import AnsibleFilterError
+from collections.abc import Mapping
 
 from vlan_lib.parsers import network_prefix, normalize_mac_address
 
@@ -322,18 +323,23 @@ def _vlan_route_target(record):
     return {}
 
 
+def _as_mapping(value):
+    if isinstance(value, Mapping) and not isinstance(value, (str, bytes)):
+        return value
+    return {}
+
+
 def host_vtep_bgp(host):
     """ASN and router-id learned for one inventory host.
 
     Discovery facts from this run win. Inventory ``bgp_as`` and ``router_id``
     are the fallback. ``ansible_host`` is the management address and is not a
     route distinguisher.
+
+    Ansible passes ``hostvars[hostname]`` as a mapping, not a dict.
     """
-    if not isinstance(host, dict):
-        host = {}
-    discovery = host.get("_vlan_discovery")
-    if not isinstance(discovery, dict):
-        discovery = {}
+    host = _as_mapping(host)
+    discovery = _as_mapping(host.get("_vlan_discovery"))
     asn = str(discovery.get("bgp_as") or host.get("bgp_as") or "").strip()
     router_id = str(
         discovery.get("router_id")
