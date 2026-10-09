@@ -166,6 +166,58 @@
     - (hostvars['localhost']['_target_vlan_record'] | default({})).service_type | default('') == 'l3'
     - (hostvars['localhost']['_target_vlan_record'] | default({}))._label_needs_svi_description | default(false) | bool
 
+- name: Use a gateway VRF supplied for this run when discovery did not find one
+  ansible.builtin.set_fact:
+    _target_vlan_record: "{{ hostvars['localhost']['_target_vlan_record'] | combine({'vrf': manual_vrf, '_label_needs_vrf': false}) }}"
+  delegate_to: localhost
+  delegate_facts: true
+  become: false
+  run_once: true
+  when:
+    - vlan_prompt_for_labels | default(false) | bool
+    - (hostvars['localhost']['_target_vlan_record'] | default({})).service_type | default('') == 'l3'
+    - (hostvars['localhost']['_target_vlan_record'] | default({}))._label_needs_vrf | default(false) | bool
+    - manual_vrf | default('') | length > 0
+    - manual_vrf | lower != 'default'
+
+- name: Ask for the gateway VRF when discovery did not find one
+  ansible.builtin.pause:
+    prompt: >-
+      VLAN {{ hostvars['localhost']['_target_vlan_record'].id }} has no agreed VRF on the previous gateway
+      {% if hostvars['localhost']['_target_vlan_record']._vrf_candidates | default([]) | length > 0 %}(saw {{ hostvars['localhost']['_target_vlan_record']._vrf_candidates | join(', ') }}). {% else %}. {% endif %}Enter the VRF for the fabric SVI and the BGP network statement.
+  register: _asked_vrf
+  delegate_to: localhost
+  become: false
+  run_once: true
+  when:
+    - vlan_prompt_for_labels | default(false) | bool
+    - (hostvars['localhost']['_target_vlan_record'] | default({})).service_type | default('') == 'l3'
+    - (hostvars['localhost']['_target_vlan_record'] | default({}))._label_needs_vrf | default(false) | bool
+    - manual_vrf | default('') | length == 0 or manual_vrf | lower == 'default'
+
+- name: Store the gateway VRF that was asked for
+  ansible.builtin.set_fact:
+    _target_vlan_record: "{{ hostvars['localhost']['_target_vlan_record'] | combine({'vrf': _asked_vrf.user_input | trim, '_label_needs_vrf': false}) }}"
+  delegate_to: localhost
+  delegate_facts: true
+  become: false
+  run_once: true
+  when:
+    - _asked_vrf.user_input | default('') | trim | length > 0
+    - (_asked_vrf.user_input | default('') | trim | lower) != 'default'
+
+- name: Fail when the gateway VRF is still unknown
+  ansible.builtin.fail:
+    msg: >-
+      VLAN {{ hostvars['localhost']['_target_vlan_record'].id }} gateway SVI and BGP network
+      must be in the same named VRF. Discovery did not find one.
+      Re-run and enter it, or pass -e manual_vrf=.
+  run_once: true
+  when:
+    - vlan_prompt_for_labels | default(false) | bool
+    - (hostvars['localhost']['_target_vlan_record'] | default({})).service_type | default('') == 'l3'
+    - (hostvars['localhost']['_target_vlan_record'] | default({}))._label_needs_vrf | default(false) | bool
+
 - name: Ensure VLAN report directory exists
   ansible.builtin.file:
     path: "{{ discovery_reports_dir }}/{{ item.data_center | default('unknown') }}/{{ item.vlan_slug }}"

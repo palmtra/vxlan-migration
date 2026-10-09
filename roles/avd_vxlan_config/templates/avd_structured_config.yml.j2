@@ -59,10 +59,8 @@ eos_cli: |
     route-target export {{ _bgp.rt_export }}
 {% endif %}
     redistribute learned
-{% if _is_gateway and (_prefixes | length > 0) %}
-{% if _vrf not in ['', 'default'] %}
+{% if _is_gateway and (_prefixes | length > 0) and (_vrf not in ['', 'default']) %}
    vrf {{ _vrf }}
-{% endif %}
 {% for _prefix in _prefixes %}
     network {{ _prefix }}
 {% endfor %}

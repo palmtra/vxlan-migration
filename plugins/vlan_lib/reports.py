@@ -436,8 +436,14 @@ def build_vlan_discovery_reports(vlans, play_hosts, hostvars):
             routing["gateway_ip"] = ssot.get("gateway") or ""
         if not (vlan.get("prefixes") or record_routing.get("prefixes")):
             routing["prefixes"] = list(ssot.get("prefixes") or [])
-        if not vlan.get("vrf") and not record_routing.get("vrf") and ssot.get("discovered_vrf"):
-            routing["vrf"] = ssot["discovered_vrf"]
+        if ssot.get("gateway_vrf"):
+            routing["vrf"] = ssot["gateway_vrf"]
+        elif (
+            not _named_vrf(vlan.get("vrf"))
+            and not _named_vrf(record_routing.get("vrf"))
+            and _named_vrf(ssot.get("discovered_vrf"))
+        ):
+            routing["vrf"] = _named_vrf(ssot["discovered_vrf"])
         site_vlan = placement["deployment_model"]["site"]["vlan"]
         if ssot.get("discovered_vlan_name"):
             site_vlan["name"] = ssot["discovered_vlan_name"]
@@ -469,6 +475,9 @@ def build_vlan_discovery_reports(vlans, play_hosts, hostvars):
             "svi_description": ssot.get("svi_description", ""),
             "description_candidates": ssot.get("description_candidates", []),
             "needs_svi_description": ssot.get("needs_svi_description", False),
+            "gateway_vrf": ssot.get("gateway_vrf", ""),
+            "vrf_candidates": ssot.get("vrf_candidates", []),
+            "needs_vrf": ssot.get("needs_vrf", False),
             "service_type": placement["migration_type"],
             "inferred_service_type": ssot.get("inferred_service_type", ""),
             "target_switches": vlan.get("target_switches")
@@ -595,6 +604,14 @@ def _placeholder_vlan_name(name, vlan_id):
     return False
 
 
+def _named_vrf(value):
+    """Return a tenant VRF name. The global table is not a gateway VRF."""
+    text = str(value or "").strip()
+    if not text or text.lower() == "default":
+        return ""
+    return text
+
+
 def _unique_texts(values):
     found = []
     for value in values:
@@ -614,12 +631,16 @@ def resolve_discovered_labels(vlan, devices):
     The interface description is the description on that previous gateway
     SVI, with the same agree-or-ask rule. A placeholder record name is not
     used as a description.
+
+    The gateway VRF is the VRF on that same SVI. The fabric SVI and the BGP
+    network statement both use it. ``default`` is not a gateway VRF.
     """
     vlan = vlan or {}
     vlan_id = vlan.get("id")
     source_names = []
     other_names = []
     source_descriptions = []
+    source_vrfs = []
     for device in devices or []:
         if not isinstance(device, dict):
             continue
@@ -635,6 +656,11 @@ def resolve_discovered_labels(vlan, devices):
                 source_names.append(name)
             if description:
                 source_descriptions.append(description)
+            vrf_text = str(
+                device.get("svi_vrf") or details.get("vrf") or ""
+            ).strip()
+            if vrf_text:
+                source_vrfs.append(vrf_text)
         elif name:
             other_names.append(name)
 
@@ -642,9 +668,12 @@ def resolve_discovered_labels(vlan, devices):
     record_description = str(
         vlan.get("svi_description") or vlan.get("description") or ""
     ).strip()
+    record_vrf = _named_vrf(vlan.get("vrf"))
 
     name_candidates = _unique_texts(source_names) or _unique_texts(other_names)
     description_candidates = _unique_texts(source_descriptions)
+    vrf_candidates = _unique_texts(source_vrfs)
+    named_vrfs = [_named_vrf(item) for item in vrf_candidates if _named_vrf(item)]
 
     vlan_name = ""
     name_source = ""
@@ -658,6 +687,17 @@ def resolve_discovered_labels(vlan, devices):
     ):
         vlan_name = record_name
         name_source = "record"
+
+    gateway_vrf = ""
+    vrf_source = ""
+    if len(vrf_candidates) > 1:
+        gateway_vrf = ""
+    elif len(named_vrfs) == 1:
+        gateway_vrf = named_vrfs[0]
+        vrf_source = "source_gateway"
+    elif record_vrf:
+        gateway_vrf = record_vrf
+        vrf_source = "record"
 
     svi_description = ""
     description_source = ""
@@ -682,6 +722,10 @@ def resolve_discovered_labels(vlan, devices):
         "description_candidates": description_candidates,
         "description_source": description_source,
         "needs_svi_description": not bool(svi_description),
+        "gateway_vrf": gateway_vrf,
+        "vrf_candidates": vrf_candidates,
+        "vrf_source": vrf_source,
+        "needs_vrf": not bool(gateway_vrf),
     }
 
 
@@ -704,10 +748,15 @@ def merge_discovered_labels(record, reports):
     if description:
         record["description"] = description
         record["svi_description"] = description
+    gateway_vrf = _named_vrf(report.get("gateway_vrf"))
+    if gateway_vrf:
+        record["vrf"] = gateway_vrf
     record["_label_needs_vlan_name"] = bool(report.get("needs_vlan_name"))
     record["_label_needs_svi_description"] = bool(report.get("needs_svi_description"))
+    record["_label_needs_vrf"] = bool(report.get("needs_vrf"))
     record["_name_candidates"] = list(report.get("name_candidates") or [])
     record["_description_candidates"] = list(report.get("description_candidates") or [])
+    record["_vrf_candidates"] = list(report.get("vrf_candidates") or [])
     return record
 
 
@@ -789,6 +838,9 @@ def _ssot_from_discovery(vlan, devices):
         "svi_description": labels["svi_description"],
         "description_candidates": labels["description_candidates"],
         "needs_svi_description": labels["needs_svi_description"],
+        "gateway_vrf": labels["gateway_vrf"],
+        "vrf_candidates": labels["vrf_candidates"],
+        "needs_vrf": labels["needs_vrf"],
         "inferred_service_type": inferred,
         "discovered_vrf": discovered_vrf,
         "gateway": gateways[0] if gateways else "",

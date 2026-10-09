@@ -281,6 +281,60 @@ class DiscoveryReportSsotTests(unittest.TestCase):
         self.assertTrue(labels["needs_svi_description"])
         self.assertEqual(labels["description_candidates"], ["inside", "outside"])
 
+    def test_gateway_vrf_comes_from_the_previous_gateway(self):
+        from vlan_lib.reports import merge_discovered_labels, resolve_discovered_labels
+
+        labels = resolve_discovered_labels(
+            {"id": 2903, "name": "FNTS-LAB-EXTERNAL", "vrf": "default", "service_type": "l3"},
+            [
+                {
+                    "hostname": "mls01",
+                    "vlan_name_on_box": "FNTS-LAB-EXTERNAL",
+                    "svi_present": True,
+                    "svi_vrf": "v0000001a",
+                    "svi_details": {"description": "FNTS-LAB-EXTERNAL", "vrf": "v0000001a"},
+                },
+                {
+                    "hostname": "mls02",
+                    "vlan_name_on_box": "FNTS-LAB-EXTERNAL",
+                    "svi_present": True,
+                    "svi_vrf": "v0000001a",
+                    "svi_details": {"description": "FNTS-LAB-EXTERNAL", "vrf": "v0000001a"},
+                },
+            ],
+        )
+        self.assertEqual(labels["gateway_vrf"], "v0000001a")
+        self.assertFalse(labels["needs_vrf"])
+        merged = merge_discovered_labels(
+            {"id": 2903, "name": "vlan_2903", "vrf": "default"},
+            [{"vlan_id": 2903, "gateway_vrf": labels["gateway_vrf"], "needs_vrf": False}],
+        )
+        self.assertEqual(merged["vrf"], "v0000001a")
+
+    def test_disagreeing_gateway_vrfs_are_left_to_ask(self):
+        from vlan_lib.reports import resolve_discovered_labels
+
+        labels = resolve_discovered_labels(
+            {"id": 3000, "name": "vlan_3000", "vrf": "default"},
+            [
+                {
+                    "hostname": "mls01",
+                    "svi_present": True,
+                    "svi_vrf": "v0000001a",
+                    "svi_details": {},
+                },
+                {
+                    "hostname": "mls02",
+                    "svi_present": True,
+                    "svi_vrf": "v0000001b",
+                    "svi_details": {},
+                },
+            ],
+        )
+        self.assertEqual(labels["gateway_vrf"], "")
+        self.assertTrue(labels["needs_vrf"])
+        self.assertEqual(labels["vrf_candidates"], ["v0000001a", "v0000001b"])
+
     def test_ssot_and_human_prune_from_fixtures(self):
         eos_trunks = parse_trunk_interfaces(
             _read("eos", "show_interfaces_trunk.txt"), "eos"

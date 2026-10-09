@@ -42,7 +42,7 @@ gateway_leafs:
   - cma01-blf02
 ```
 
-Set `vrf` to the target VRF. The VLAN VNI is `evpn.l2.vni`, or `evpn.l3.vni` when the L2 VNI is empty. Each VTEP gets the VLAN name taken from discovery (`show vlan`), `vxlan vlan <id> vni`, and `router bgp / vlan <id>` with `rd <router-id>:<vlan>` and `route-target both <l3 vni>:<vlan>`. `gateway_leafs` also get the SVI (`ip address virtual`, VRF, jumbo MTU) and `router bgp / vrf / network` for the VLAN prefix. The SVI description is the description on the previous gateway, not the VLAN name. If discovery does not find the name or that description, the deploy run asks for it. The VRF itself is not created (`cvp_build_borderleaf_config` defaults to `false`). BUM is head-end replication, already on the VTEPs. Do not set `mcast_group`.
+Set `vrf` to the target VRF. The VLAN VNI is `evpn.l2.vni`, or `evpn.l3.vni` when the L2 VNI is empty. Each VTEP gets the VLAN name taken from discovery (`show vlan`), `vxlan vlan <id> vni`, and `router bgp / vlan <id>` with `rd <router-id>:<vlan>` and `route-target both <l3 vni>:<vlan>`. `gateway_leafs` also get the SVI (`vrf`, `ip address virtual`, jumbo MTU) and `router bgp / vrf / network` for the VLAN prefix. The `network` statement is under that VRF, beside the `vlan` block, and the SVI is in the same VRF. A non-gateway VTEP gets the VLAN name, the VXLAN VNI, and the BGP VLAN block only. The VRF name and the SVI description come from the previous gateway. If discovery does not find the VLAN name, that description, or one agreed VRF, the deploy run asks for it. The VRF itself is not created (`cvp_build_borderleaf_config` defaults to `false`). BUM is head-end replication, already on the VTEPs. Do not set `mcast_group`.
 
 ---
 

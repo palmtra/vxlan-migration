@@ -22,10 +22,8 @@ no vlan {{ target_vlan_id }}
 {% set _bgp = _vlan_to_migrate | bgp_vlan_evpn(_device_hostname, _device_bgp_asn | default('', true), _device_loopback_ip | default('', true)) %}
 {% if _bgp and (_bgp.missing | default([]) | length == 0) %}
 router bgp {{ _bgp.asn }}
-{% if _is_gateway and (_prefixes | length > 0) %}
-{% if _vrf not in ['', 'default'] %}
+{% if _is_gateway and (_prefixes | length > 0) and (_vrf not in ['', 'default']) %}
  vrf {{ _vrf }}
-{% endif %}
 {% for _prefix in _prefixes %}
   no network {{ _prefix }}
 {% endfor %}
