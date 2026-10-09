@@ -60,6 +60,21 @@
     _eos_loopback0: "{{ _eos_loopback0_show.stdout | default('') | parse_interface_ipv4 }}"
     _eos_loopback1: "{{ _eos_loopback1_show.stdout | default('') | parse_interface_ipv4 }}"
 
+- name: EOS - show BGP summary for the local ASN
+  ansible.netcommon.cli_command:
+    command: show ip bgp summary | include local AS
+  register: _eos_bgp_summary
+  check_mode: false
+  changed_when: false
+  failed_when: false
+
+- name: EOS - fill ASN and router-id from BGP summary when the config parse missed them
+  ansible.builtin.set_fact:
+    _eos_bgp_as: "{{ _summary.bgp_as if (_eos_bgp_as | default('') | string | length == 0 and _summary.bgp_as | length > 0) else _eos_bgp_as }}"
+    _eos_router_id: "{{ _summary.router_id if (_eos_router_id | default('') | string | length == 0 and _summary.router_id | length > 0) else _eos_router_id }}"
+  vars:
+    _summary: "{{ _eos_bgp_summary.stdout | default('') | parse_bgp_summary }}"
+
 - name: EOS - build human-review prune plan (trunk / SVI / VLAN)
   ansible.builtin.set_fact:
     _eos_prune_plan: "{{ inventory_hostname | string | build_device_prune_plan(_pp_vlans, _pp_retain, _pp_statics, _pp_bgp, none, prune_commit_timer | default('00:10:00')) }}"

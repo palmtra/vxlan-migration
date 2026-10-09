@@ -104,7 +104,7 @@ _IP_ROUTE_RE = re.compile(
     re.I | re.M,
 )
 
-_BGP_ROUTER_RE = re.compile(r"^\s*router\s+bgp\s+(\d+)\s*$", re.I)
+_BGP_ROUTER_RE = re.compile(r"^\s*router\s+bgp\s+(\d+(?:\.\d+)?)\b", re.I)
 
 _BGP_ROUTER_ID_RE = re.compile(
     r"^\s*router-id\s+(\d+\.\d+\.\d+\.\d+)\s*$",

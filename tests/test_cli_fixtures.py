@@ -29,6 +29,7 @@ from vlan_filters import (  # noqa: E402
     build_vlan_discovery_reports,
     extract_vlan_targeted_discovery,
     parse_bgp_context,
+    parse_bgp_summary,
     parse_interface_ipv4,
     parse_ip_route_statics,
     parse_svi_details,
@@ -144,6 +145,15 @@ class NxosCliFixtureTests(unittest.TestCase):
         self.assertEqual(vlan_100["rd"], "10.1.0.17:100")
         self.assertEqual(context["bgp_as"], "65001")
         self.assertEqual(context["router_id"], "10.1.0.17")
+        self.assertEqual(
+            parse_bgp_context("router bgp 64086.60010\n   router-id 66.180.0.15\n").get("bgp_as"),
+            "64086.60010",
+        )
+        summary = parse_bgp_summary(
+            "Router identifier 66.180.0.15, local AS number 4200000106\n"
+        )
+        self.assertEqual(summary["bgp_as"], "4200000106")
+        self.assertEqual(summary["router_id"], "66.180.0.15")
         self.assertEqual(
             parse_interface_ipv4(
                 "Loopback1 is up, line protocol is up (connected)\n"

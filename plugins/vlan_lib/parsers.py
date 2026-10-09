@@ -1142,6 +1142,28 @@ def parse_interface_ipv4(interface_text):
     return match.group(1)
 
 
+_BGP_SUMMARY_AS_RE = re.compile(r"local\s+AS\s+number\s+(\d+(?:\.\d+)?)", re.I)
+_BGP_SUMMARY_RID_RE = re.compile(
+    r"router\s+identifier\s+(\d+\.\d+\.\d+\.\d+)",
+    re.I,
+)
+
+
+def parse_bgp_summary(summary_text):
+    """ASN and router-id from ``show ip bgp summary``.
+
+    A 4-byte ASN may be asplain (``4200000106``) or asdot (``64086.60010``).
+    The running-config ``router bgp`` line is not required.
+    """
+    blob = str(summary_text or "")
+    asn_match = _BGP_SUMMARY_AS_RE.search(blob)
+    rid_match = _BGP_SUMMARY_RID_RE.search(blob)
+    return {
+        "bgp_as": asn_match.group(1) if asn_match else "",
+        "router_id": rid_match.group(1) if rid_match else "",
+    }
+
+
 def parse_bgp_neighbors(bgp_config):
     """Parse VRF-scoped BGP neighbors from ``show run`` BGP output."""
     return parse_bgp_context(bgp_config).get("neighbors") or []
