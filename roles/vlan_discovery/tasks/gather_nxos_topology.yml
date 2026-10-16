@@ -1,0 +1,58 @@
+---
+# -----------------------------------------------------------------------------
+# NXOS - neighbors, port-channels, routing policy (once per device)
+# -----------------------------------------------------------------------------
+# LLDP and CDP both run: legacy cores often have only one of them enabled.
+# A disabled protocol returns an error, which is ignored here.
+# -----------------------------------------------------------------------------
+
+- name: NXOS - show lldp neighbors detail
+  ansible.netcommon.cli_command:
+    command: show lldp neighbors detail
+  register: _nxos_lldp_show
+  check_mode: false
+  changed_when: false
+  failed_when: false
+
+- name: NXOS - show cdp neighbors detail
+  ansible.netcommon.cli_command:
+    command: show cdp neighbors detail
+  register: _nxos_cdp_show
+  check_mode: false
+  changed_when: false
+  failed_when: false
+
+- name: NXOS - show running-config section channel-group
+  ansible.netcommon.cli_command:
+    command: show running-config | section channel-group
+  register: _nxos_channel_group_show
+  check_mode: false
+  changed_when: false
+  failed_when: false
+
+- name: NXOS - show running-config rpm (prefix-lists and route-maps)
+  ansible.netcommon.cli_command:
+    command: show running-config rpm
+  register: _nxos_rpm_show
+  check_mode: false
+  changed_when: false
+  failed_when: false
+  when: discovery_collect_prune_context | default(true) | bool
+
+- name: NXOS - show running-config ospf
+  ansible.netcommon.cli_command:
+    command: show running-config ospf
+  register: _nxos_ospf_show
+  check_mode: false
+  changed_when: false
+  failed_when: false
+  when: discovery_collect_prune_context | default(true) | bool
+
+- name: NXOS - parse neighbors, port-channels, and policy
+  ansible.builtin.set_fact:
+    _disc_neighbors: "{{ (_nxos_lldp_show.stdout | default('') | parse_lldp_neighbors('nxos')) + (_nxos_cdp_show.stdout | default('') | parse_cdp_neighbors) }}"
+    _disc_port_channels: "{{ _nxos_channel_group_show.stdout | default('') | parse_port_channel_members('nxos') }}"
+    _disc_prefix_lists: "{{ _nxos_rpm_show.stdout | default('') | parse_prefix_lists }}"
+    _disc_route_maps: "{{ _nxos_rpm_show.stdout | default('') | parse_route_maps }}"
+    _disc_ospf: "{{ _nxos_ospf_show.stdout | default('') | parse_ospf_context }}"
+    _disc_vxlan_mappings: []

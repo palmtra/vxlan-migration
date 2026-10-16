@@ -18,8 +18,55 @@ from vlan_lib.parsers import (
     parse_vlan_id_ports,
     svi_command_indicates_present,
 )
+from vlan_lib.policy import parse_bgp_prefix_detail
+from vlan_lib.topology import (
+    classify_neighbor,
+    neighbors_for_interface,
+    parse_spanning_tree_vlan,
+    parse_vxlan_vlan_to_vni,
+)
 
-_ENDPOINT_MAC_ROLES = frozenset({"compute", "unknown"})
+# Ports whose MACs are local endpoints of the VLAN.
+_ENDPOINT_MAC_ROLES = frozenset(
+    {"compute", "unknown", "network_service", "downstream_switch"}
+)
+
+# When a port-channel's members see different neighbors, the strongest wins.
+_NEIGHBOR_ROLE_RANK = (
+    "switch",
+    "downstream_switch",
+    "network_service",
+    "transit",
+    "compute",
+)
+
+
+def _port_neighbor(iface, topology, platform):
+    """Return ``(role, label)`` for the neighbor(s) seen on *iface*."""
+    neighbors = neighbors_for_interface(
+        iface,
+        topology.get("neighbors") or [],
+        topology.get("port_channels") or {},
+        platform,
+    )
+    if not neighbors:
+        return "", ""
+    inventory = topology.get("inventory_hostnames") or []
+    roles = [classify_neighbor(item, inventory) for item in neighbors]
+    role = ""
+    for candidate in _NEIGHBOR_ROLE_RANK:
+        if candidate in roles:
+            role = candidate
+            break
+    label = ", ".join(
+        sorted(
+            {
+                ("%s %s" % (item.get("neighbor_name") or "?", item.get("neighbor_port") or "")).strip()
+                for item in neighbors
+            }
+        )
+    )
+    return role, label
 
 
 def _attachment_for_port(
@@ -31,8 +78,10 @@ def _attachment_for_port(
     exempt_trunk_ports,
     switch_hostnames,
     mac_count=0,
+    topology=None,
 ):
     parsed = config_by_norm.get(_normalize_interface_name(iface, platform), {})
+    neighbor_role, neighbor = _port_neighbor(iface, topology or {}, platform)
     role = classify_attachment_role(
         iface,
         parsed,
@@ -40,11 +89,14 @@ def _attachment_for_port(
         trunk_ports,
         exempt_trunk_ports,
         switch_hostnames,
+        neighbor_role,
     )
     return {
         "interface": parsed.get("interface") or iface,
         "role": role,
         "description": parsed.get("description") or "",
+        "neighbor": neighbor,
+        "neighbor_role": neighbor_role,
         "mode": parsed.get("mode") or "",
         "raw": parsed.get("raw") or "",
         "mac_count": mac_count,
@@ -60,6 +112,7 @@ def _build_port_attachments(
     trunk_ports,
     exempt_trunk_ports,
     switch_hostnames,
+    topology=None,
 ):
     mac_counts = {}
     extra_mac_ports = []
@@ -90,6 +143,7 @@ def _build_port_attachments(
                 exempt_trunk_ports,
                 switch_hostnames,
                 mac_counts.get(norm, 0),
+                topology,
             )
         )
     return attachments
@@ -112,7 +166,16 @@ def extract_vlan_targeted_discovery(vlan, outputs):
     trunk_interface_names = outputs.get("trunk_interface_names", []) or []
     exempt_trunk_interface_names = outputs.get("exempt_trunk_interface_names", []) or []
     trunk_summaries = outputs.get("trunk_summaries") or []
-    switch_hostnames = outputs.get("switch_hostnames") or []
+    inventory_hostnames = outputs.get("inventory_hostnames") or []
+    switch_hostnames = list(outputs.get("switch_hostnames") or [])
+    for host in inventory_hostnames:
+        if host not in switch_hostnames:
+            switch_hostnames.append(host)
+    topology = {
+        "neighbors": outputs.get("neighbors") or [],
+        "port_channels": outputs.get("port_channels") or {},
+        "inventory_hostnames": switch_hostnames,
+    }
     config_by_norm = index_interface_configs(
         outputs.get("interface_configs") or [], platform
     )
@@ -144,6 +207,7 @@ def extract_vlan_targeted_discovery(vlan, outputs):
         trunk_ports,
         exempt_trunk_ports,
         switch_hostnames,
+        topology,
     )
     attachment_by_norm = {
         _normalize_interface_name(item["interface"], platform): item
@@ -153,6 +217,8 @@ def extract_vlan_targeted_discovery(vlan, outputs):
     switch_uplink_ports = _ifaces_with_role(port_attachments, "switch_uplink")
     peer_link_ports = _ifaces_with_role(port_attachments, "peer_link")
     unknown_ports = _ifaces_with_role(port_attachments, "unknown")
+    service_ports = _ifaces_with_role(port_attachments, "network_service")
+    downstream_switch_ports = _ifaces_with_role(port_attachments, "downstream_switch")
     for entry in mac_entries:
         iface = entry.get("interface", "")
         entry["port_role"] = classify_mac_port_role(
@@ -172,6 +238,7 @@ def extract_vlan_targeted_discovery(vlan, outputs):
             exempt_trunk_ports,
             switch_hostnames,
         )
+        entry["neighbor"] = attached.get("neighbor") or ""
         entry["description"] = attached.get("description") or (
             config_by_norm.get(_normalize_interface_name(iface, platform), {}).get(
                 "description"
@@ -184,16 +251,26 @@ def extract_vlan_targeted_discovery(vlan, outputs):
         if entry.get("attachment_role") in _ENDPOINT_MAC_ROLES
     ]
 
-    svi_details = parse_svi_details(svi_output, platform) if svi_present else {
-        "present": False,
-        "description": "",
-        "mtu": None,
-        "vrf": "",
-        "ip_addresses": [],
-        "virtual_router_addresses": [],
-        "hsrp_addresses": [],
-        "hsrp_groups": [],
-    }
+    svi_details = parse_svi_details(svi_output if svi_present else "", platform)
+    bgp_prefix_detail = []
+    for item in outputs.get("bgp_prefix_outputs") or []:
+        if not isinstance(item, dict) or item.get("skipped"):
+            continue
+        parsed_bgp = parse_bgp_prefix_detail(item.get("stdout") or "")
+        parsed_bgp.update(
+            {
+                "prefix": item.get("prefix") or str(item.get("item") or ""),
+                "vrf": item.get("vrf") or svi_vrf or "default",
+            }
+        )
+        bgp_prefix_detail.append(parsed_bgp)
+    acl_configs = {}
+    for item in outputs.get("acl_outputs") or []:
+        if not isinstance(item, dict) or item.get("skipped"):
+            continue
+        name = item.get("name") or str(item.get("item") or "")
+        if name:
+            acl_configs[name] = str(item.get("stdout") or "").strip()
     summary_by_norm = {}
     for item in trunk_summaries:
         if not isinstance(item, dict):
@@ -256,6 +333,10 @@ def extract_vlan_targeted_discovery(vlan, outputs):
         "switch_uplink_ports": switch_uplink_ports,
         "peer_link_ports": peer_link_ports,
         "unknown_ports": unknown_ports,
+        "service_ports": service_ports,
+        "downstream_switch_ports": downstream_switch_ports,
+        "mlag_peer_ports": port_membership.get("mlag_peer_ports", []),
+        "vxlan_mapped": port_membership.get("vxlan_mapped", False),
         "port_attachments": port_attachments,
         "trunk_allowed": trunk_allowed,
         "uplinks": uplinks,
@@ -271,6 +352,10 @@ def extract_vlan_targeted_discovery(vlan, outputs):
         "mac_table_raw": mac_output,
         "arp_raw": arp_output,
         "trunk_cleanup_recommendations": trunk_cleanup_recommendations,
+        "stp": parse_spanning_tree_vlan(outputs.get("stp_output") or ""),
+        "bgp_prefix_detail": bgp_prefix_detail,
+        "acl_configs": acl_configs,
+        "errors": list(outputs.get("errors") or []),
     }
 
 
@@ -343,7 +428,10 @@ def build_vlan_verification(vlan_id, outputs):
 
     vni_mapped = False
     if vni is not None:
-        vni_mapped = _vlan_present(vlan_id, vni_output) and _vlan_present(vni, vni_output)
+        vni_mapped = any(
+            str(item["vlan_id"]) == str(vlan_id) and str(item["vni"]) == str(vni)
+            for item in parse_vxlan_vlan_to_vni(vni_output)
+        )
 
     mac_outputs = outputs.get("mac_outputs", []) or []
     mac_output = ""

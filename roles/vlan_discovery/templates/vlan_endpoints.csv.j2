@@ -1,0 +1,4 @@
+vlan_id,ip,mac,location,switch,interface,port_faces,role,flags,also_on
+{% for row in (report.endpoint_table.endpoints | default([])) + (report.endpoint_table.mac_only | default([])) %}
+{{ report.vlan_id }},{{ row.ip }},{{ row.mac }},{{ row.location }},{{ row.hostname }},{{ row.interface }},"{{ row.port_label | default('') | replace('"', "'") }}",{{ row.role }},"{{ row.flags | join(';') }}","{{ row.also_on | default([]) | join(';') }}"
+{% endfor %}

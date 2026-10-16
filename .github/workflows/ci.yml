@@ -35,6 +35,9 @@ jobs:
       - name: Unit tests
         run: python -m unittest discover -s tests -v
 
+      - name: Discovery end to end (mock CLI)
+        run: tests/run_discovery_mock.sh
+
       - name: Molecule (vlan_db + service_db)
         run: |
           molecule test -s vlan_db

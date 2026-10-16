@@ -19,14 +19,10 @@ from vlan_lib.common import (
     _BGP_VLAN_RE,
     _BGP_VRF_RE,
     _IP_ADDRESS_RE,
-    _IP_ROUTE_LINE_RE,
     _MAC_ADDRESS_RE,
     _PORT_NAME_RE,
     _VRF_CONTEXT_RE,
     _SVI_DESC_RE,
-    _SVI_IP_RE,
-    _SVI_MTU_RE,
-    _SVI_VR_ADDR_RE,
     _SVI_VRF_PATTERNS,
     _TRUNK_ALLOWED_VLAN_RE,
     _TRUNK_INTERFACE_NAME_RES,
@@ -61,6 +57,8 @@ def _normalize_interface_name(name, platform="eos"):
         ("gigabitethernet", "gi"),
         ("fastethernet", "fa"),
         ("ethernet", "et"),
+        # NXOS show vlan / show interface trunk print Eth1/5; show run prints Ethernet1/5.
+        ("eth", "et"),
     )
     for prefix, short in prefixes:
         if normalized.startswith(prefix):
@@ -100,7 +98,8 @@ def _collect_vlan_id_port_fragments(vlan_output, vlan_id):
 
         stripped = line.strip()
         if not stripped:
-            continue
+            # NXOS follows the ports table with VLAN Type / Remote SPAN tables.
+            break
         if re.match(r"^\d+\s+\S", stripped):
             break
         if re.match(r"^-+$", stripped):
@@ -125,6 +124,10 @@ def _extract_port_names_from_fragments(fragments):
             seen.add(key)
             ports.append(port)
     return ports
+
+
+_MLAG_PEER_PORT_RE = re.compile(r"(?<![A-Za-z0-9])P(?:Et|Po)[\d./-]+", re.I)
+_VXLAN_MEMBER_RE = re.compile(r"(?<![A-Za-z0-9])Vx\d+\b", re.I)
 
 
 def parse_vlan_id_name(vlan_output, vlan_id):
@@ -181,6 +184,8 @@ def parse_vlan_id_ports(
             "access_ports": [],
             "trunk_ports": [],
             "exempt_trunk_ports": [],
+            "mlag_peer_ports": [],
+            "vxlan_mapped": False,
         }
 
     vlan_present = vlan_id_command_indicates_present(vlan_output, vlan_id)
@@ -210,6 +215,10 @@ def parse_vlan_id_ports(
         "access_ports": access_ports,
         "trunk_ports": trunk_ports,
         "exempt_trunk_ports": exempt_trunk_ports,
+        "mlag_peer_ports": [
+            match.group(0) for match in _MLAG_PEER_PORT_RE.finditer(ports_raw)
+        ],
+        "vxlan_mapped": bool(_VXLAN_MEMBER_RE.search(ports_raw)),
     }
 
 
@@ -260,17 +269,12 @@ def svi_command_indicates_present(stdout, vlan_id):
     """Return True when 'show run interface VlanX' (or equivalent) shows an SVI."""
     if _output_indicates_missing(stdout):
         return False
-    vid = re.escape(str(vlan_id))
-    text = str(stdout)
-    patterns = (
-        rf"interface\s+Vlan{vid}\b",
-        rf"interface\s+vlan{vid}\b",
-        rf"interface\s+Vlan\s*{vid}\b",
+    vid = re.escape(str(int(vlan_id)))
+    # Anchor on the interface line. NXOS echoes "!Command: show running-config
+    # interface Vlan100" even when the SVI does not exist.
+    return bool(
+        re.search(rf"^\s*interface\s+vlan\s*{vid}\s*$", str(stdout), re.I | re.M)
     )
-    if any(re.search(pattern, text, re.I) for pattern in patterns):
-        return True
-    # Brief output fallback: configured SVI line without full running-config.
-    return bool(re.search(rf"\bVlan{vid}\b", text, re.I))
 
 
 def normalize_mac_address(mac):
@@ -380,22 +384,27 @@ def mac_table_has_learned_addresses(mac_output):
     return bool(parse_mac_address_table(mac_output))
 
 
+_ARP_VLAN_IFACE_RE = re.compile(r"(?<![A-Za-z0-9])vlan\s*(\d+)(?!\d)", re.I)
+
+
 def parse_arp_entries(arp_output, vlan_id=None):
     """Parse ARP table rows into structured entries.
 
     Returns a list of dicts::
-        {ip, mac, interface, age}
+        {ip, mac, interface, port, age}
 
-    Prefer rows bound to ``Vlan<id>`` when *vlan_id* is provided; if none match,
-    fall back to all parseable host ARP rows.
+    ``interface`` is the SVI (``Vlan100``) when the row names one, otherwise the
+    port. ``port`` is the physical or port-channel member EOS prints after the
+    SVI (``Vlan100, Ethernet3``). With *vlan_id*, rows bound to another SVI are
+    dropped: ``include Vlan100`` on EOS also returns Vlan1000-Vlan1009.
+    Incomplete entries have no MAC and are skipped.
     """
     if not arp_output or not str(arp_output).strip():
         return []
 
     entries = []
     seen = set()
-    vid = str(vlan_id) if vlan_id is not None else None
-    vlan_iface_re = re.compile(rf"\bvlan\s*{re.escape(vid)}\b", re.I) if vid else None
+    vid = str(int(vlan_id)) if vlan_id is not None else None
 
     for raw_line in str(arp_output).splitlines():
         line = raw_line.strip()
@@ -415,20 +424,27 @@ def parse_arp_entries(arp_output, vlan_id=None):
 
         ip_addr = ip_match.group(1) if ip_match.lastindex else ip_match.group(0)
         mac = normalize_mac_address(mac_match.group(0))
-        iface_match = _PORT_NAME_RE.search(line) or re.search(
-            r"\b(Vlan\d+|vlan\d+)\b", line, re.I
-        )
-        interface = iface_match.group(0) if iface_match else ""
+        tail = line[mac_match.end():]
+        vlan_match = _ARP_VLAN_IFACE_RE.search(tail) or _ARP_VLAN_IFACE_RE.search(line)
+        port_match = _PORT_NAME_RE.search(tail)
+        svi = "Vlan%s" % vlan_match.group(1) if vlan_match else ""
+        port = port_match.group(0) if port_match else ""
+
+        if vid is not None and vlan_match and vlan_match.group(1) != vid:
+            continue
 
         age = ""
-        age_match = re.search(r"\b(\d+|-+)\b", line[ip_match.end() : mac_match.start()])
+        age_match = re.search(
+            r"(\d+:\d+:\d+|\d+|-+|static)", line[ip_match.end(): mac_match.start()], re.I
+        )
         if age_match:
             age = age_match.group(1)
 
         entry = {
             "ip": ip_addr,
             "mac": mac,
-            "interface": interface,
+            "interface": svi or port,
+            "port": port,
             "age": age,
         }
         key = (entry["ip"], entry["mac"], entry["interface"].lower())
@@ -437,10 +453,6 @@ def parse_arp_entries(arp_output, vlan_id=None):
         seen.add(key)
         entries.append(entry)
 
-    if vlan_iface_re is not None:
-        scoped = [item for item in entries if vlan_iface_re.search(item.get("interface", ""))]
-        if scoped:
-            return scoped
     return entries
 
 
@@ -493,6 +505,26 @@ _COMPUTE_DESC_RE = re.compile(
     r"\bcompute\b|\bvmnic\b|\bvnic\b"
     r")"
 )
+
+# Firewalls, load balancers, and routers. These are endpoints of the VLAN and,
+# when no SVI exists, usually the external gateway. Checked before the switch
+# rule: "to-fw01" must never make a switch prune-eligible.
+_NETWORK_SERVICE_DESC_RE = re.compile(
+    r"(?i)(?<![a-z])(?:"
+    r"fw\d*|firewall|palo(?:alto)?|pan|asa\d*|forti\w*|checkpoint|chkp|"
+    r"f5|big-?ip|ltm|lb\d*|load-?balancer|netscaler|adc|srx\d*|"
+    r"router|rtr\d*|wan|isp|inet|internet"
+    r")(?![a-z])"
+)
+
+# Neighbor (LLDP/CDP) role -> attachment role. "unknown" falls through.
+_NEIGHBOR_ATTACHMENT_ROLES = {
+    "switch": "switch_uplink",
+    "downstream_switch": "downstream_switch",
+    "network_service": "network_service",
+    "transit": "transit",
+    "compute": "compute",
+}
 
 # Switch-to-switch: uplinks, peer links, and descriptions pointing at other switches.
 _SWITCH_DESC_RE = re.compile(
@@ -608,12 +640,16 @@ def classify_attachment_role(
     trunk_ports=None,
     exempt_trunk_ports=None,
     switch_hostnames=None,
+    neighbor_role="",
 ):
-    """Classify a VLAN member as compute, switch_uplink, peer_link, or unknown.
+    """Classify a VLAN member port.
 
-    Compute means the link faces servers / IBM Z / Nutanix / UCS / HCI - not
-    another switch. Descriptions win over access-vs-trunk: compute trunks
-    (z14 OSA, UCS, Nutanix) are still endpoints.
+    Roles: ``compute``, ``network_service`` (firewall / LB / router),
+    ``switch_uplink`` (switch in the inventory), ``downstream_switch`` (switch
+    outside the inventory), ``peer_link``, ``transit``, or ``unknown``.
+
+    An LLDP/CDP neighbor decides first. Then descriptions, which win over
+    access-vs-trunk: compute trunks (z14 OSA, UCS, Nutanix) are still endpoints.
     """
     parsed = parsed or {}
     description = parsed.get("description") or ""
@@ -622,8 +658,12 @@ def classify_attachment_role(
     )
     if parsed.get("peer_link") or port_role == "exempt_trunk":
         return "peer_link"
+    if neighbor_role in _NEIGHBOR_ATTACHMENT_ROLES:
+        return _NEIGHBOR_ATTACHMENT_ROLES[neighbor_role]
     if description and _TRANSIT_DESC_RE.search(description):
         return "transit"
+    if description and _NETWORK_SERVICE_DESC_RE.search(description):
+        return "network_service"
     if description and _COMPUTE_DESC_RE.search(description):
         return "compute"
     desc_l = description.lower()
@@ -744,82 +784,468 @@ def parse_svi_ip_addresses(svi_config):
 
 
 def parse_hsrp_groups(svi_config):
-    """Parse NXOS HSRP groups from an SVI snippet as ``{group, ip}`` dicts."""
-    groups = []
-    current = None
-    for raw_line in str(svi_config or "").splitlines():
-        group_match = re.match(r"^\s*hsrp\s+(\d+)(?:\s+\S+)?\s*$", raw_line, re.I)
-        if group_match and not re.match(r"^\s*hsrp\s+version\b", raw_line, re.I):
-            current = {"group": int(group_match.group(1)), "ip": ""}
-            groups.append(current)
-            continue
-        if current is None:
-            continue
-        if re.match(r"^\s*interface\b", raw_line, re.I):
-            current = None
-            continue
-        if re.match(r"^\s*hsrp\s+\d+", raw_line, re.I):
-            continue
-        match = re.match(r"^\s+ip\s+(\d+\.\d+\.\d+\.\d+)\s*$", raw_line, re.I)
-        if match:
-            if not current.get("ip"):
-                current["ip"] = match.group(1)
-            continue
-        stripped = raw_line.strip()
-        if stripped and not raw_line.startswith((" ", "\t")):
-            current = None
-    return [group for group in groups if group.get("ip")]
+    """Parse HSRP groups from an SVI snippet as ``{group, ip, ...}`` dicts.
+
+    Handles NXOS ``hsrp N`` blocks and IOS ``standby N ...`` one-liners.
+    Groups without a virtual IPv4 address (``hsrp 1 ipv6``) are dropped.
+    """
+    return [
+        group
+        for group in _parse_svi_stanza(svi_config)["fhrp_groups"]
+        if group["protocol"] == "hsrp" and group.get("ip")
+    ]
 
 
 def parse_hsrp_addresses(svi_config):
-    """Parse NXOS HSRP VIP addresses from an SVI snippet."""
+    """Parse HSRP VIP addresses from an SVI snippet."""
     addresses = []
-    seen = set()
     for group in parse_hsrp_groups(svi_config):
-        vip = group.get("ip")
-        if not vip or vip in seen:
-            continue
-        seen.add(vip)
-        addresses.append(vip)
+        for vip in [group.get("ip")] + list(group.get("secondary_ips") or []):
+            if vip and vip not in addresses:
+                addresses.append(vip)
     return addresses
 
 
-def parse_svi_details(svi_config, platform="eos"):
-    """Parse structured fields from an SVI running-config snippet."""
-    if not svi_config or _output_indicates_missing(svi_config):
-        return {
-            "present": False,
-            "description": "",
-            "mtu": None,
-            "vrf": "",
-            "ip_addresses": [],
-            "virtual_router_addresses": [],
-            "hsrp_addresses": [],
-            "hsrp_groups": [],
-        }
+_SVI_BENIGN_LINES = (
+    re.compile(r"^no\s+shutdown$", re.I),
+    re.compile(r"^no\s+ipv?6?\s*redirects$", re.I),
+    re.compile(r"^no\s+ip\s+redirects$", re.I),
+    re.compile(r"^no\s+ipv6\s+redirects$", re.I),
+    re.compile(r"^load-interval\b", re.I),
+    re.compile(r"^no\s+autostate$", re.I),
+    re.compile(r"^management$", re.I),
+)
+_HOST_IP_RE = re.compile(r"(\d+\.\d+\.\d+\.\d+)(?:/\d+)?")
 
-    text = str(svi_config)
-    desc_match = _SVI_DESC_RE.search(text)
-    mtu_match = _SVI_MTU_RE.search(text)
-    vr_addrs = [match.group(1) for match in _SVI_VR_ADDR_RE.finditer(text)]
-    hsrp_groups = parse_hsrp_groups(text)
-    hsrp_addrs = parse_hsrp_addresses(text)
+
+def _host_ip(text):
+    match = _HOST_IP_RE.match(str(text or "").strip())
+    return match.group(1) if match else ""
+
+
+def _cidr_from_address(address, mask=None):
+    """Return ``A.B.C.D/len`` from CIDR text or an address plus dotted mask."""
+    text = str(address or "").strip()
+    if "/" in text or not mask:
+        return text
+    plen = _dotted_mask_to_prefix_len(mask)
+    return "%s/%s" % (text, plen) if plen is not None else text
+
+
+def _empty_svi_stanza():
     return {
-        "present": True,
-        "description": desc_match.group(1).strip() if desc_match else "",
-        "mtu": int(mtu_match.group(1)) if mtu_match else None,
-        "vrf": parse_svi_vrf(text, platform),
-        "ip_addresses": parse_svi_ip_addresses(text) or [
-            match.group(1) for match in _SVI_IP_RE.finditer(text)
-        ],
-        "virtual_router_addresses": vr_addrs,
-        "hsrp_addresses": hsrp_addrs,
-        "hsrp_groups": hsrp_groups,
+        "description": "",
+        "mtu": None,
+        "vrf": "",
+        "shutdown": False,
+        "addresses": [],
+        "virtual_router_addresses": [],
+        "fhrp_groups": [],
+        "ipv6_addresses": [],
+        "dhcp_relay": [],
+        "acls": [],
+        "pbr": [],
+        "ospf": [],
+        "multicast": [],
+        "nat": [],
+        "urpf": [],
+        "other_lines": [],
     }
 
 
+def _fhrp_group(groups, protocol, number, family="ipv4"):
+    for group in groups:
+        if (
+            group["protocol"] == protocol
+            and group["group"] == number
+            and group["family"] == family
+        ):
+            return group
+    group = {
+        "protocol": protocol,
+        "group": number,
+        "family": family,
+        "ip": "",
+        "secondary_ips": [],
+        "priority": None,
+        "preempt": False,
+    }
+    groups.append(group)
+    return group
+
+
+def _fhrp_add_ip(group, ip_text, secondary=False):
+    ip_addr = _host_ip(ip_text)
+    if not ip_addr:
+        return
+    if secondary or group["ip"]:
+        if ip_addr != group["ip"] and ip_addr not in group["secondary_ips"]:
+            group["secondary_ips"].append(ip_addr)
+    else:
+        group["ip"] = ip_addr
+
+
+def _parse_fhrp_child(group, line):
+    """Apply one line from inside an NXOS ``hsrp N`` / ``vrrp N`` block."""
+    match = re.match(
+        r"^(?:ip|address)\s+(\d+\.\d+\.\d+\.\d+)(?:\s+(secondary|primary))?$",
+        line,
+        re.I,
+    )
+    if match:
+        _fhrp_add_ip(group, match.group(1), (match.group(2) or "").lower() == "secondary")
+        return
+    match = re.match(r"^priority(?:-level)?\s+(\d+)", line, re.I)
+    if match:
+        group["priority"] = int(match.group(1))
+        return
+    if re.match(r"^preempt\b", line, re.I):
+        group["preempt"] = True
+
+
+def _parse_svi_stanza(svi_config):
+    """Line-by-line parse of an SVI stanza (EOS, NXOS, IOS).
+
+    Every line that is not understood lands in ``other_lines`` so nothing that
+    must move with the gateway is dropped silently.
+    """
+    result = _empty_svi_stanza()
+    stanza = _interface_stanza(svi_config)
+    if not re.match(r"^interface\s+\S+", stanza, re.I):
+        return result
+    lines = stanza.splitlines()[1:]
+    block = None
+    block_indent = None
+
+    for raw_line in lines:
+        if not raw_line.strip() or raw_line.strip().startswith("!"):
+            continue
+        indent = len(raw_line) - len(raw_line.lstrip())
+        line = raw_line.strip()
+
+        if block is not None and indent > block_indent:
+            _parse_fhrp_child(block, line)
+            continue
+        block = None
+        block_indent = None
+
+        if any(pattern.match(line) for pattern in _SVI_BENIGN_LINES):
+            continue
+
+        match = re.match(r"^description\s+(.+)$", line, re.I)
+        if match:
+            result["description"] = match.group(1).strip()
+            continue
+        match = re.match(r"^mtu\s+(\d+)$", line, re.I)
+        if match:
+            result["mtu"] = int(match.group(1))
+            continue
+        match = re.match(
+            r"^(?:vrf\s+member|vrf\s+forwarding|ip\s+vrf\s+forwarding|vrf)\s+(\S+)$",
+            line,
+            re.I,
+        )
+        if match:
+            result["vrf"] = match.group(1)
+            continue
+        if re.match(r"^shutdown$", line, re.I):
+            result["shutdown"] = True
+            continue
+
+        match = re.match(
+            r"^ip\s+address\s+virtual\s+(\d+\.\d+\.\d+\.\d+/\d+)(\s+secondary)?$",
+            line,
+            re.I,
+        )
+        if match:
+            result["addresses"].append(
+                {
+                    "cidr": match.group(1),
+                    "secondary": bool(match.group(2)),
+                    "virtual": True,
+                }
+            )
+            continue
+        match = re.match(
+            r"^ip\s+address\s+(\d+\.\d+\.\d+\.\d+)"
+            r"(?:/(\d+)|\s+(\d+\.\d+\.\d+\.\d+))?(\s+secondary)?$",
+            line,
+            re.I,
+        )
+        if match:
+            if match.group(2):
+                cidr = "%s/%s" % (match.group(1), match.group(2))
+            else:
+                cidr = _cidr_from_address(match.group(1), match.group(3))
+            result["addresses"].append(
+                {"cidr": cidr, "secondary": bool(match.group(4)), "virtual": False}
+            )
+            continue
+        match = re.match(r"^ip\s+virtual-router\s+address\s+(\S+)", line, re.I)
+        if match:
+            vip = _host_ip(match.group(1))
+            if vip and vip not in result["virtual_router_addresses"]:
+                result["virtual_router_addresses"].append(vip)
+            continue
+        match = re.match(r"^ipv6\s+address\s+(\S+)", line, re.I)
+        if match:
+            result["ipv6_addresses"].append(match.group(1))
+            continue
+
+        match = re.match(
+            r"^ip\s+helper-address\s+(?:vrf\s+(\S+)\s+)?(\S+)(?:\s+vrf\s+(\S+))?",
+            line,
+            re.I,
+        )
+        if match:
+            result["dhcp_relay"].append(
+                {"server": match.group(2), "vrf": match.group(1) or match.group(3) or ""}
+            )
+            continue
+        match = re.match(
+            r"^ip\s+dhcp\s+relay\s+address\s+(\S+)(?:\s+use-vrf\s+(\S+))?",
+            line,
+            re.I,
+        )
+        if match:
+            result["dhcp_relay"].append(
+                {"server": match.group(1), "vrf": match.group(2) or ""}
+            )
+            continue
+        match = re.match(r"^ip\s+access-group\s+(\S+)\s+(in|out)\b", line, re.I)
+        if match:
+            result["acls"].append(
+                {"name": match.group(1), "direction": match.group(2).lower()}
+            )
+            continue
+        match = re.match(
+            r"^(?:ip\s+policy\s+route-map|service-policy\s+type\s+pbr\s+input)\s+(\S+)",
+            line,
+            re.I,
+        )
+        if match:
+            result["pbr"].append(match.group(1))
+            continue
+        if re.match(r"^(?:ip\s+router\s+ospf|ip\s+ospf)\b", line, re.I):
+            result["ospf"].append(line)
+            continue
+        if re.match(r"^(?:ip\s+pim|ip\s+igmp|pim\s+ipv4|ip\s+multicast)\b", line, re.I):
+            result["multicast"].append(line)
+            continue
+        if re.match(r"^ip\s+nat\b", line, re.I):
+            result["nat"].append(line)
+            continue
+        if re.match(r"^ip\s+verify\s+unicast\b", line, re.I):
+            result["urpf"].append(line)
+            continue
+
+        if re.match(r"^hsrp\s+version\b", line, re.I):
+            continue
+        match = re.match(r"^hsrp\s+(\d+)(?:\s+(ipv4|ipv6))?$", line, re.I)
+        if match:
+            block = _fhrp_group(
+                result["fhrp_groups"],
+                "hsrp",
+                int(match.group(1)),
+                (match.group(2) or "ipv4").lower(),
+            )
+            block_indent = indent
+            continue
+        match = re.match(r"^vrrp(?:v3)?\s+(\d+)(?:\s+address-family\s+(ipv4|ipv6))?$", line, re.I)
+        if match:
+            block = _fhrp_group(
+                result["fhrp_groups"],
+                "vrrp",
+                int(match.group(1)),
+                (match.group(2) or "ipv4").lower(),
+            )
+            block_indent = indent
+            continue
+        match = re.match(r"^vrrp\s+(\d+)\s+(.+)$", line, re.I)
+        if match:
+            group = _fhrp_group(result["fhrp_groups"], "vrrp", int(match.group(1)))
+            rest = match.group(2)
+            addr = re.match(r"^(?:ipv4|ip)\s+(\S+)(\s+secondary)?$", rest, re.I)
+            if addr:
+                _fhrp_add_ip(group, addr.group(1), bool(addr.group(2)))
+            else:
+                _parse_fhrp_child(group, rest)
+            continue
+        match = re.match(r"^standby\s+(\d+)\s+(.+)$", line, re.I)
+        if match:
+            group = _fhrp_group(result["fhrp_groups"], "hsrp", int(match.group(1)))
+            _parse_fhrp_child(group, match.group(2))
+            continue
+
+        result["other_lines"].append(line)
+
+    return result
+
+
+def svi_prefixes(svi_config, platform="eos"):
+    """Network prefixes of an SVI (primary and secondary), for per-prefix lookups."""
+    if not svi_config or _output_indicates_missing(svi_config):
+        return []
+    found = []
+    for cidr in parse_svi_details(svi_config, platform).get("ip_addresses") or []:
+        prefix = network_prefix(cidr)
+        if "/" in prefix and prefix not in found:
+            found.append(prefix)
+    return found
+
+
+def parse_svi_details(svi_config, platform="eos"):
+    """Parse structured fields from an SVI running-config snippet.
+
+    ``gateway_addresses`` is every first-hop address hosts may point at:
+    VARP, HSRP, VRRP, and EOS anycast ``ip address virtual``.
+    """
+    if not svi_config or _output_indicates_missing(svi_config):
+        details = _empty_svi_stanza()
+        details.pop("addresses")
+        details.update(
+            {
+                "present": False,
+                "ip_addresses": [],
+                "primary_ip": "",
+                "secondary_ips": [],
+                "anycast_addresses": [],
+                "hsrp_addresses": [],
+                "hsrp_groups": [],
+                "vrrp_addresses": [],
+                "gateway_addresses": [],
+                "redundancy": "",
+            }
+        )
+        return details
+
+    parsed = _parse_svi_stanza(svi_config)
+    addresses = parsed.pop("addresses")
+    ip_addresses = []
+    for item in addresses:
+        if item["cidr"] not in ip_addresses:
+            ip_addresses.append(item["cidr"])
+    primary = [item["cidr"] for item in addresses if not item["secondary"]]
+    anycast = [_host_ip(item["cidr"]) for item in addresses if item["virtual"]]
+    hsrp_groups = [
+        group
+        for group in parsed["fhrp_groups"]
+        if group["protocol"] == "hsrp" and group.get("ip")
+    ]
+    hsrp_addrs = []
+    vrrp_addrs = []
+    for group in parsed["fhrp_groups"]:
+        bucket = hsrp_addrs if group["protocol"] == "hsrp" else vrrp_addrs
+        for vip in [group.get("ip")] + list(group.get("secondary_ips") or []):
+            if vip and vip not in bucket:
+                bucket.append(vip)
+
+    gateways = []
+    for vip in parsed["virtual_router_addresses"] + hsrp_addrs + vrrp_addrs + anycast:
+        if vip and vip not in gateways:
+            gateways.append(vip)
+    if anycast:
+        redundancy = "anycast"
+    elif parsed["virtual_router_addresses"]:
+        redundancy = "varp"
+    elif hsrp_addrs:
+        redundancy = "hsrp"
+    elif vrrp_addrs:
+        redundancy = "vrrp"
+    elif ip_addresses:
+        redundancy = "none"
+    else:
+        redundancy = ""
+
+    parsed.update(
+        {
+            "present": True,
+            "vrf": parsed["vrf"] or parse_svi_vrf(svi_config, platform),
+            "ip_addresses": ip_addresses,
+            "primary_ip": primary[0] if primary else "",
+            "secondary_ips": [item["cidr"] for item in addresses if item["secondary"]],
+            "anycast_addresses": anycast,
+            "hsrp_addresses": hsrp_addrs,
+            "hsrp_groups": hsrp_groups,
+            "vrrp_addresses": vrrp_addrs,
+            "gateway_addresses": gateways,
+            "redundancy": redundancy,
+        }
+    )
+    return parsed
+
+
+_ROUTE_IFACE_TOKEN_RE = re.compile(
+    r"^(?:vlan|ethernet|eth|et|port-channel|po|null|loopback|lo|tunnel|"
+    r"management|mgmt|gigabitethernet|gi|tengigabitethernet|te)[\d/.:-]*\d$",
+    re.I,
+)
+_ROUTE_HEAD_RE = re.compile(
+    r"^\s*ip\s+route(?:\s+vrf\s+(?P<vrf>\S+))?\s+(?P<rest>\S.*)$", re.I
+)
+_IPV4_TOKEN_RE = re.compile(r"^\d+\.\d+\.\d+\.\d+$")
+
+
+def _parse_route_tokens(rest):
+    """Split the text after ``ip route [vrf X]`` into route fields.
+
+    EOS:  PREFIX [INTF] [NEXTHOP] [DISTANCE] [tag T] [name N] [metric M]
+    NXOS: PREFIX [INTF] NEXTHOP [vrf V] [tag T] [name N] [DISTANCE]
+    Either may use ``NETWORK MASK`` instead of ``NETWORK/LEN``.
+    """
+    tokens = rest.split()
+    if not tokens:
+        return None
+    prefix = tokens[0]
+    index = 1
+    if (
+        "/" not in prefix
+        and len(tokens) > 1
+        and _IPV4_TOKEN_RE.match(prefix)
+        and _IPV4_TOKEN_RE.match(tokens[1])
+    ):
+        plen = _dotted_mask_to_prefix_len(tokens[1])
+        if plen is not None:
+            prefix = "%s/%s" % (prefix, plen)
+            index = 2
+    route = {
+        "prefix": prefix,
+        "next_hop_ip": "",
+        "interface": "",
+        "distance": "",
+        "tag": "",
+        "name": "",
+        "nexthop_vrf": "",
+    }
+    keyed = {"name": "name", "tag": "tag", "vrf": "nexthop_vrf"}
+    skip_value = {"metric", "track"}
+    while index < len(tokens):
+        token = tokens[index]
+        lower = token.lower()
+        if lower in keyed and index + 1 < len(tokens):
+            route[keyed[lower]] = tokens[index + 1]
+            index += 2
+            continue
+        if lower in skip_value:
+            index += 2
+            continue
+        if _IPV4_TOKEN_RE.match(token) and not route["next_hop_ip"]:
+            route["next_hop_ip"] = token
+        elif _ROUTE_IFACE_TOKEN_RE.match(token) and not route["interface"]:
+            route["interface"] = token
+        elif token.isdigit() and not route["distance"]:
+            route["distance"] = token
+        index += 1
+    return route
+
+
 def parse_ip_route_statics(route_config):
-    """Parse static routes from EOS ``ip route [vrf X]`` and NXOS vrf-context."""
+    """Parse static routes from EOS ``ip route [vrf X]`` and NXOS vrf-context.
+
+    ``next_hop`` is the next-hop address, or the exit interface for an
+    interface-only route (``Null0``). ``interface`` keeps the exit interface
+    when both are given (``ip route 10.0.0.0/8 Vlan100 10.10.100.5``).
+    """
     if not route_config or not str(route_config).strip():
         return []
 
@@ -837,34 +1263,30 @@ def parse_ip_route_statics(route_config):
             current_vrf = ctx_match.group(1)
             continue
 
-        if current_vrf and not raw_line[:1] in (" ", "\t"):
-            if not _VRF_CONTEXT_RE.match(line):
-                current_vrf = None
+        if current_vrf and raw_line[:1] not in (" ", "\t"):
+            current_vrf = None
 
-        match = _IP_ROUTE_LINE_RE.match(line)
+        match = _ROUTE_HEAD_RE.match(line)
         if not match:
             continue
-        if match.group("network") and match.group("mask"):
-            plen = _dotted_mask_to_prefix_len(match.group("mask"))
-            prefix = (
-                "%s/%s" % (match.group("network"), plen)
-                if plen is not None
-                else match.group("network")
-            )
-            next_hop = match.group("nexthop_mask")
-        else:
-            prefix = match.group("prefix")
-            next_hop = match.group("nexthop")
+        parsed = _parse_route_tokens(match.group("rest"))
+        if not parsed:
+            continue
         route = {
             "vrf": match.group("vrf") or current_vrf or "default",
-            "prefix": prefix,
-            "next_hop": next_hop,
-            "name": match.group("name") or "",
+            "prefix": parsed["prefix"],
+            "next_hop": parsed["next_hop_ip"] or parsed["interface"],
+            "interface": parsed["interface"],
+            "distance": parsed["distance"],
+            "tag": parsed["tag"],
+            "name": parsed["name"],
+            "nexthop_vrf": parsed["nexthop_vrf"],
         }
         key = (
             route["vrf"],
             route["prefix"],
             route["next_hop"],
+            route["interface"],
             route["name"],
         )
         if key in seen:
@@ -1213,7 +1635,7 @@ def arp_discovery_command(platform, vlan_id, svi_vrf=None, svi_present=False):
     if plat == "eos":
         return f"show ip arp vrf {vrf} | include Vlan{vid}"
     if plat == "nxos":
-        return f"show ip arp vrf {vrf} vlan {vid}"
+        return f"show ip arp vlan {vid} vrf {vrf}"
     if plat == "ios":
         return f"show ip arp vrf {vrf} | include Vlan{vid}"
     return f"show ip arp vrf {vrf}"

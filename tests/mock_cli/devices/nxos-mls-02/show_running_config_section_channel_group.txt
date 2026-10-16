@@ -1,0 +1,2 @@
+interface Ethernet1/30
+  channel-group 20 mode active

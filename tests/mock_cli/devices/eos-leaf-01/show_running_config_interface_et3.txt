@@ -1,0 +1,2 @@
+interface Ethernet3
+   switchport access vlan 300

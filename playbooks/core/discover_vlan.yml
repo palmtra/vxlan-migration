@@ -43,6 +43,14 @@
       delegate_facts: true
       run_once: true
 
+    - name: Mark switches outside the VLAN DB scope as skipped on purpose
+      ansible.builtin.set_fact:
+        _discovery_skipped: true
+      when:
+        - not discovery_scan_all_switches
+        - _discovery_hosts | length > 0
+        - inventory_hostname not in _discovery_hosts
+
     - name: Limit discovery to switches declared in the VLAN DB
       ansible.builtin.meta: end_host
       when:

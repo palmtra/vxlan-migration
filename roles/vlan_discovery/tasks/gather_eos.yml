@@ -20,20 +20,8 @@
 - name: EOS - collect trunk interface names for port classification
   ansible.builtin.include_tasks: gather_eos_trunks.yml
 
-- name: EOS - targeted discovery per VLAN
-  ansible.builtin.include_tasks: gather_eos_vlan.yml
-  loop: "{{ _effective_vlans }}"
-  loop_control:
-    loop_var: _disc_vlan
-    label: "{{ _disc_vlan.id }}"
-
-- name: EOS - show VXLAN vlan-to-vni mappings (reference)
-  ansible.netcommon.cli_command:
-    command: show vxlan vlan-to-vni
-  register: _eos_show_vxlan
-  check_mode: false
-  changed_when: false
-  failed_when: false
+- name: EOS - collect neighbors, port-channels, routing policy, VXLAN map
+  ansible.builtin.include_tasks: gather_eos_topology.yml
 
 - name: EOS - collect L3 discovery context (statics + BGP)
   ansible.builtin.include_tasks: gather_eos_prune_context.yml
@@ -102,6 +90,13 @@
     - _eos_bgp_as | default('') | string | length == 0
     - _eos_bgp_router_parsed.bgp_as | default('') | length > 0
 
+- name: EOS - targeted discovery per VLAN
+  ansible.builtin.include_tasks: gather_eos_vlan.yml
+  loop: "{{ _effective_vlans }}"
+  loop_control:
+    loop_var: _disc_vlan
+    label: "{{ _disc_vlan.id }}"
+
 - name: EOS - build human-review prune plan (trunk / SVI / VLAN)
   ansible.builtin.set_fact:
     _eos_prune_plan: "{{ inventory_hostname | string | build_device_prune_plan(_pp_vlans, _pp_retain, _pp_statics, _pp_bgp, none, prune_commit_timer | default('00:10:00')) }}"
@@ -123,7 +118,15 @@
       hostname: "{{ inventory_hostname }}"
       data_center: "{{ data_center | default('unknown') }}"
       os_family: "{{ network_os_family }}"
+      migration_tier: "{{ migration_tier | default('') }}"
       timestamp: "{{ ansible_date_time.iso8601 }}"
+      errors: "{{ {'show interfaces trunk': _eos_trunk_show | default({})} | collect_command_errors }}"
+      neighbors: "{{ _disc_neighbors | default([]) }}"
+      port_channels: "{{ _disc_port_channels | default({}) }}"
+      prefix_lists: "{{ _disc_prefix_lists | default({}) }}"
+      route_maps: "{{ _disc_route_maps | default({}) }}"
+      ospf: "{{ _disc_ospf | default([]) }}"
+      vxlan_mappings: "{{ _disc_vxlan_mappings | default([]) }}"
       vxlan_raw: "{{ _eos_show_vxlan.stdout | default('') }}"
       static_routes: "{{ _eos_static_routes | default([]) }}"
       bgp_neighbors: "{{ _eos_bgp_neighbors | default([]) }}"

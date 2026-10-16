@@ -127,22 +127,36 @@ Per switch, per VLAN (read-only):
 
 | Attribute | Source |
 |---|---|
-| VLAN + L2 ports | `show vlan id <id>` (Ports column; empty = no access/trunk) |
-| Compute vs switch uplink | Interface `description` (z14/Nutanix/UCS vs `to ...-sw`) plus access-vs-trunk fallback |
-| Learned MACs | `show mac address-table dynamic vlan <id>` (discovery shows compute/unknown links only) |
-| SVI / L3 | `show run interface Vlan<id>` (parsed: VRF, IP, VR/anycast, HSRP, MTU, description) |
-| SVI VRF + ARP | VRF from SVI config; ARP whenever an SVI exists (not gated on `service_type`) |
-| Static routes (EOS + NXOS) | EOS `section ip route`; NXOS `vrf context` + global `ip route` → **L3 discovery** (shared VRF OK; not prune actions) |
-| BGP (EOS + NXOS) | Neighbors (incl. NXOS split stanzas), VLAN EVPN blocks, VRF RD/RT → **L3 discovery** |
+| VLAN + L2 ports | `show vlan id <id>` (Ports column; empty = no access/trunk). EOS MLAG peer ports (`PEt`, `PPo`) are not local; `Vx1` means the VLAN is already VXLAN-mapped |
+| Neighbors | `show lldp neighbors detail` (EOS, NXOS) and `show cdp neighbors detail` (NXOS) |
+| Port-channel members | EOS `show running-config section channel-group`; NXOS `show running-config \| section channel-group` (neighbors of members are the port-channel's neighbors) |
+| Port role | Neighbor first, then interface `description`, then access-vs-trunk. See **Port logic** below |
+| Learned MACs | `show mac address-table dynamic vlan <id>` |
+| Spanning tree | `show spanning-tree vlan <id>`: root bridge, root port, blocked ports |
+| SVI / L3 | `show run interface Vlan<id>`: VRF, primary and secondary IPs, HSRP / VRRP / VARP / anycast, DHCP relay, ACL, PBR, IPv6, OSPF, PIM/IGMP, NAT, uRPF, MTU, shutdown. Unrecognised lines are kept as `other_lines` |
+| SVI VRF + ARP | VRF from SVI config; ARP whenever an SVI exists. EOS `show ip arp vrf <vrf> \| include Vlan<id>` (rows for other SVIs are dropped); NXOS `show ip arp vlan <id> vrf <vrf>` |
+| SVI ACL contents | `show ip access-lists <name>` for each ACL on the SVI (JSON report) |
+| Static routes (EOS + NXOS) | EOS `section ip route`; NXOS `vrf context` + global `ip route`. Exit interface, distance, tag, name, next-hop VRF parsed → **L3 discovery** (shared VRF OK; not prune actions) |
+| BGP (EOS + NXOS) | Neighbors (incl. NXOS split stanzas), VLAN EVPN blocks, VRF RD/RT, networks, aggregates, redistribution → **L3 discovery** |
+| BGP advertisement | `show ip bgp <prefix> vrf <vrf>` on each SVI owner: in the table, originated here, advertised to which peers |
+| Routing policy | EOS `section prefix-list` / `section route-map`; NXOS `show running-config rpm`. Used to evaluate redistribution and peer export for the VLAN prefix |
+| OSPF | EOS `section router ospf`; NXOS `show running-config ospf` |
+| VXLAN map (EOS) | `show vxlan vlan-to-vni`: VLAN already mapped, VNI collisions |
 | Retain keep-list | Service `prune.retain` or `discovery_prune_retain` → `blocked_by_retain` |
 
-**Port logic:** Empty **Ports** on `show vlan id` means no L2 attachment. Remaining ports are classified from interface descriptions plus access-vs-trunk:
+Every critical command that fails, and every switch that never reports back, is listed under **Action items** in the report. A switch missing from discovery is never shown as "VLAN absent".
+
+**Gateway location:** an active SVI (has an IPv4 address, not shut) on a `legacy` switch means the gateway is on the legacy MLS and moves into the fabric (`l3`). No active SVI means the gateway is external (`l2`); ports facing a firewall or router are listed as `external_exits`. Inventory host var `migration_tier` (`legacy` or `fabric`) decides the tier; without it, EOS is `fabric` and everything else `legacy`.
+
+**Port logic:** Empty **Ports** on `show vlan id` means no L2 attachment. Remaining ports are classified from the LLDP/CDP neighbor, then the interface description, then access-vs-trunk:
 
 - **Compute** — servers, IBM Z, Nutanix, UCS, HCI (including compute trunks such as z14 OSA)
-- **Switch uplink** — links to other switches (prune candidates)
+- **Network service** — firewall, load balancer, or router. A local endpoint of the VLAN; when there is no SVI it is usually the external gateway. The switch stays participating until the device is re-homed
+- **Switch uplink** — links to switches in the inventory (prune candidates)
+- **Downstream switch** — a switch outside the inventory. With MACs learned it counts as local endpoints; without, the switch is `review`
 - **Peer-link** — EOS MLAG peer (`switchport trunk group mlagpeer`) and NXOS vPC peer-link (exempt)
 
-Discovery reports MACs learned on compute / unknown links only. Prune CLI is a **separate** report: EOS `configure session` + `commit timer` + `configure confirm`; NXOS checkpoint + rollback. Nothing is applied.
+Discovery reports MACs learned on endpoint-facing links only. Active IP endpoints are ARP entries joined to the edge port where their MAC is learned; the report and `<vlan>_endpoints_<ts>.csv` list them as the test baseline. Prune CLI is a **separate** report: EOS `configure session` + `commit timer` + `configure confirm`; NXOS checkpoint + rollback. Nothing is applied.
 
 **Human prune plan:** prune-eligible switches get trunk / SVI / VLAN CLI. That set is switches where the VLAN is present, there are no local endpoints, and the VLAN is not protected. Source gateways are in that set, and they are listed first, because they are the root of the legacy L2. Participating leaves and engineer-named gateway leaves are withheld. A source gateway that still has local endpoints stays participating. Default-VRF statics and BGP, and objects in a **shared VRF**, are L3 review only — never prune candidates. Applying that CLI is `playbooks/core/prune_vlan.yml`: dry-run unless `-e prune_apply=true -e prune_approval=approve`. See [examples/prune-vlan.md](examples/prune-vlan.md).
 
@@ -153,6 +167,7 @@ reports/<dc>/<vlan_slug>/<vlan_slug>_discovery_<timestamp>.md    # short operato
 reports/<dc>/<vlan_slug>/<vlan_slug>_discovery_<timestamp>.yml   # deployable VLAN model
 reports/<dc>/<vlan_slug>/<vlan_slug>_discovery_<timestamp>.json  # LLM analysis payload
 reports/<dc>/<vlan_slug>/<vlan_slug>_discovery_<timestamp>.csv
+reports/<dc>/<vlan_slug>/<vlan_slug>_endpoints_<timestamp>.csv   # endpoint test baseline
 reports/<dc>/<vlan_slug>/<vlan_slug>_prune_<timestamp>.{md,json}
 reports/<dc>/_prune_plans/<hostname>_prune_plan_<timestamp>.json
 ```
@@ -175,6 +190,8 @@ Pass `-e manual_service_id=<id>` on discovery to seed VLAN IDs and apply `prune.
 | `action` | yes | `migrate` |
 | `service_type` | yes | `l2` or `l3` - see [VXLAN_SERVICE_TYPES.md](VXLAN_SERVICE_TYPES.md) |
 | `gateway_leafs` | L3 | Fabric leaves that host the gateway. Engineer-supplied; discovery does not infer them |
+| `gateway_mode` | L3 | `distributed_anycast` (every participating leaf) or `centralized_anycast` (a leaf pair in `gateway_leafs`). Engineer-supplied |
+| `gateway_location` | no | Filled by discovery: `legacy`, `fabric`, `mixed`, or `external` |
 | `protected_vlan` | no | When true, no switch is prune-eligible |
 | `vni` | yes for migrate | VXLAN network identifier (not inferred by discovery) |
 | `vrf` | yes | Target VRF (discovery fills from SVI when present) |

@@ -6,11 +6,12 @@ import re
 from ansible.errors import AnsibleFilterError
 
 from vlan_lib.common import _str_equal, sanitize_report_slug
-from vlan_lib.parsers import network_prefix
+from vlan_lib.parsers import network_prefix, normalize_mac_address
 from vlan_lib.placement import (
     PRUNE_STATUS_BY_ROLE,
     attach_associated_routes,
     build_vlan_placement,
+    device_tier,
 )
 from vlan_lib.prune import build_device_prune_plan, build_prune_execution
 
@@ -160,8 +161,246 @@ def build_l3_discovery(vlan_id, devices):
         "devices": devices_l3,
     }
 
-def build_vlan_discovery_reports(vlans, play_hosts, hostvars):
-    """Build one aggregated discovery report dict per VLAN in *vlans*."""
+_ENDPOINT_ROLES = frozenset(
+    {"compute", "unknown", "access", "network_service", "downstream_switch"}
+)
+# HSRP v1/v2 and VRRP virtual MACs. These are gateways, not hosts.
+_FHRP_MAC_PREFIXES = ("00:00:0c:07:ac", "00:00:0c:9f:f", "00:00:5e:00:01", "00:00:5e:00:02")
+
+
+def _ip_sort_key(text):
+    try:
+        return tuple(int(part) for part in str(text).split("."))
+    except ValueError:
+        return (999,)
+
+
+def _host_part(cidr):
+    return str(cidr or "").split("/")[0]
+
+
+def build_endpoint_table(devices, gateway=None):
+    """One row per active IP endpoint, located at its edge port.
+
+    ARP (from the SVI owners) gives IP to MAC. The MAC table gives the port.
+    A MAC learned on an endpoint-facing port is located there; a MAC seen only
+    on switch-to-switch trunks is ``uplink_only`` (it sits behind a switch
+    outside discovery scope, or in the legacy L2 beyond it). Gateway and FHRP
+    addresses are flagged so they are not mistaken for hosts.
+    """
+    gateway = gateway or {}
+    infra_ips = set()
+    for entry in list(gateway.get("svis") or []) + list(gateway.get("inactive_svis") or []):
+        for cidr in entry.get("ip_addresses") or []:
+            infra_ips.add(_host_part(cidr))
+        infra_ips.update(entry.get("gateway_addresses") or [])
+
+    edge = {}
+    uplink = {}
+    for device in devices or []:
+        hostname = device.get("hostname") or ""
+        for entry in device.get("mac_entries") or []:
+            if not isinstance(entry, dict):
+                continue
+            mac = normalize_mac_address(entry.get("mac"))
+            if not mac:
+                continue
+            role = entry.get("attachment_role") or entry.get("port_role") or "unknown"
+            if role in _ENDPOINT_ROLES:
+                edge.setdefault(mac, []).append(
+                    {
+                        "hostname": hostname,
+                        "interface": entry.get("interface") or "",
+                        "description": entry.get("description") or "",
+                        "neighbor": entry.get("neighbor") or "",
+                        "role": role,
+                    }
+                )
+            else:
+                uplink.setdefault(mac, [])
+                if hostname not in uplink[mac]:
+                    uplink[mac].append(hostname)
+
+    arp = {}
+    for device in devices or []:
+        for entry in device.get("arp_entries") or []:
+            if not isinstance(entry, dict) or not entry.get("ip"):
+                continue
+            row = arp.setdefault(
+                entry["ip"],
+                {"mac": normalize_mac_address(entry.get("mac")), "seen_by": [], "age": entry.get("age") or ""},
+            )
+            if device.get("hostname") not in row["seen_by"]:
+                row["seen_by"].append(device.get("hostname"))
+
+    def located(mac):
+        places = edge.get(mac) or []
+        if places:
+            return "edge", places[0], places[1:]
+        if mac in uplink:
+            return "uplink_only", {}, []
+        return "not_in_mac_table", {}, []
+
+    rows = []
+    for ip_addr in sorted(arp, key=_ip_sort_key):
+        mac = arp[ip_addr]["mac"]
+        where, place, others = located(mac)
+        flags = []
+        if ip_addr in infra_ips:
+            flags.append("gateway")
+        if mac.startswith(_FHRP_MAC_PREFIXES):
+            flags.append("fhrp_mac")
+        rows.append(
+            {
+                "ip": ip_addr,
+                "mac": mac,
+                "location": where,
+                "hostname": place.get("hostname", ""),
+                "interface": place.get("interface", ""),
+                "port_label": place.get("neighbor") or place.get("description") or "",
+                "role": place.get("role", ""),
+                "also_on": ["%s %s" % (o["hostname"], o["interface"]) for o in others],
+                "arp_from": arp[ip_addr]["seen_by"],
+                "uplink_seen_on": uplink.get(mac, []) if where != "edge" else [],
+                "flags": flags,
+            }
+        )
+    arp_macs = {row["mac"] for row in rows}
+    mac_only = []
+    for mac in sorted(edge):
+        if mac in arp_macs:
+            continue
+        place = edge[mac][0]
+        mac_only.append(
+            {
+                "ip": "",
+                "mac": mac,
+                "location": "edge",
+                "hostname": place["hostname"],
+                "interface": place["interface"],
+                "port_label": place.get("neighbor") or place.get("description") or "",
+                "role": place["role"],
+                "also_on": ["%s %s" % (o["hostname"], o["interface"]) for o in edge[mac][1:]],
+                "flags": ["fhrp_mac"] if mac.startswith(_FHRP_MAC_PREFIXES) else [],
+            }
+        )
+    hosts = [row for row in rows if not row["flags"]]
+    return {
+        "endpoints": rows,
+        "mac_only": mac_only,
+        "summary": {
+            "active_ips": len(hosts),
+            "gateway_or_fhrp": len(rows) - len(hosts),
+            "mac_only": len(mac_only),
+            "uplink_only": len([row for row in hosts if row["location"] == "uplink_only"]),
+            "not_in_mac_table": len([row for row in hosts if row["location"] == "not_in_mac_table"]),
+            "arp_available": any(device.get("svi_present") for device in devices or []),
+        },
+    }
+
+
+def summarize_spanning_tree(devices):
+    """Resolve the STP root bridge to a discovered switch, or flag it as outside."""
+    by_bridge = {}
+    roots = []
+    for device in devices or []:
+        stp = device.get("stp") or {}
+        if stp.get("bridge_address"):
+            by_bridge[stp["bridge_address"]] = device.get("hostname")
+        if stp.get("present") and stp.get("root_address"):
+            roots.append((device.get("hostname"), stp))
+    if not roots:
+        return {"present": False}
+    addresses = []
+    for _host, stp in roots:
+        if stp["root_address"] not in addresses:
+            addresses.append(stp["root_address"])
+    root_address = addresses[0]
+    return {
+        "present": True,
+        "root_address": root_address,
+        "root_priority": roots[0][1].get("root_priority"),
+        "root_hostname": by_bridge.get(root_address, ""),
+        "inconsistent_roots": addresses[1:],
+        "blocked": [
+            {"hostname": host, "ports": stp["blocked_ports"]}
+            for host, stp in roots
+            if stp.get("blocked_ports")
+        ],
+    }
+
+
+def _vni_findings(vlan, devices):
+    vlan_id = int(vlan.get("id"))
+    wanted = vlan.get("vni")
+    already = []
+    conflicts = []
+    for device in devices or []:
+        for item in device.get("vxlan_mappings") or []:
+            if item.get("vlan_id") == vlan_id:
+                already.append({"hostname": device.get("hostname"), "vni": item.get("vni")})
+            elif wanted not in (None, "") and str(item.get("vni")) == str(wanted):
+                conflicts.append(
+                    {"hostname": device.get("hostname"), "vlan_id": item.get("vlan_id"), "vni": wanted}
+                )
+    return already, conflicts
+
+
+def build_action_items(report):
+    """Everything an engineer must resolve before this VLAN can migrate."""
+    items = []
+    for host in report.get("not_discovered") or []:
+        items.append("%s was not discovered (unreachable or failed); placement and prune lists may be incomplete." % host)
+    for device in report.get("devices") or []:
+        for error in device.get("errors") or []:
+            items.append("%s: `%s` failed: %s" % (device.get("hostname"), error.get("command"), error.get("error")))
+    if not report.get("switches_vlan_defined") and not report.get("switches_with_svi"):
+        items.append(
+            "VLAN %s is not configured on any discovered switch. Nothing to migrate or prune here."
+            % report.get("vlan_id")
+        )
+        return items
+    items.extend((report.get("gateway_assessment") or {}).get("warnings") or [])
+    for item in (report.get("placement_analysis") or {}).get("switches") or []:
+        if item.get("role") == "review":
+            items.append("%s needs review: %s" % (item.get("hostname"), "; ".join(item.get("nonqualifying") or [])))
+    if report.get("needs_vlan_name"):
+        items.append(
+            "VLAN name is not agreed across switches (%s)."
+            % (", ".join(report.get("name_candidates") or []) or "none found")
+        )
+    stp = report.get("spanning_tree") or {}
+    if stp.get("present") and not stp.get("root_hostname"):
+        items.append("STP root %s is not a discovered switch; the VLAN extends beyond discovery scope." % stp.get("root_address"))
+    if stp.get("inconsistent_roots"):
+        items.append("Switches disagree on the STP root (%s); the L2 domain may be split." % ", ".join([stp.get("root_address")] + stp["inconsistent_roots"]))
+    for item in report.get("vni_conflicts") or []:
+        items.append("VNI %s is already mapped to VLAN %s on %s." % (item["vni"], item["vlan_id"], item["hostname"]))
+    for item in report.get("vxlan_already_mapped") or []:
+        items.append("VLAN is already VXLAN-mapped on %s (VNI %s)." % (item["hostname"], item["vni"]))
+    summary = (report.get("endpoint_table") or {}).get("summary") or {}
+    if summary.get("uplink_only"):
+        items.append(
+            "%s active IP(s) are only seen on switch-to-switch trunks; their edge switch is outside discovery scope."
+            % summary["uplink_only"]
+        )
+    if summary.get("not_in_mac_table"):
+        items.append(
+            "%s active IP(s) are in ARP but not in any MAC table (aged out, or behind a switch that was not "
+            "discovered). Re-run discovery or check them by hand." % summary["not_in_mac_table"]
+        )
+    if report.get("vni") in (None, "", 0) and report.get("vlan_id") is not None:
+        items.append("Assign evpn.l2.vni (VNI) in the SSOT record.")
+    return items
+
+
+def build_vlan_discovery_reports(vlans, play_hosts, hostvars, all_hosts=None):
+    """Build one aggregated discovery report dict per VLAN in *vlans*.
+
+    *all_hosts* (``ansible_play_hosts_all``) lets the report name switches
+    that dropped out of the play (unreachable or failed). Hosts that were
+    skipped on purpose set ``_discovery_skipped`` and are not listed.
+    """
     if not isinstance(vlans, list):
         raise AnsibleFilterError(
             "build_vlan_discovery_reports expects a list, got %s" % type(vlans)
@@ -171,6 +410,17 @@ def build_vlan_discovery_reports(vlans, play_hosts, hostvars):
             "build_vlan_discovery_reports expects play_hosts list, got %s"
             % type(play_hosts)
         )
+
+    not_discovered = []
+    for host in all_hosts or []:
+        if host in play_hosts or host == "localhost":
+            continue
+        host_data = hostvars.get(host, {}) or {}
+        if host_data.get("_discovery_skipped"):
+            continue
+        if host_data.get("_vlan_discovery"):
+            continue
+        not_discovered.append(host)
 
     reports = []
     for vlan in vlans:
@@ -205,6 +455,21 @@ def build_vlan_discovery_reports(vlans, play_hosts, hostvars):
                     "switch_uplink_ports": per_vlan.get("switch_uplink_ports", []),
                     "peer_link_ports": per_vlan.get("peer_link_ports", []),
                     "unknown_ports": per_vlan.get("unknown_ports", []),
+                    "service_ports": per_vlan.get("service_ports", []),
+                    "downstream_switch_ports": per_vlan.get("downstream_switch_ports", []),
+                    "mlag_peer_ports": per_vlan.get("mlag_peer_ports", []),
+                    "vxlan_mapped": per_vlan.get("vxlan_mapped", False),
+                    "stp": per_vlan.get("stp", {}),
+                    "bgp_prefix_detail": per_vlan.get("bgp_prefix_detail", []),
+                    "errors": list(discovery.get("errors") or [])
+                    + list(per_vlan.get("errors") or []),
+                    "migration_tier": discovery.get("migration_tier", ""),
+                    "neighbor_count": len(discovery.get("neighbors") or []),
+                    "prefix_lists": discovery.get("prefix_lists", {}),
+                    "route_maps": discovery.get("route_maps", {}),
+                    "ospf": discovery.get("ospf", []),
+                    "vxlan_mappings": discovery.get("vxlan_mappings", []),
+                    "acl_configs": per_vlan.get("acl_configs", {}),
                     "port_attachments": per_vlan.get("port_attachments", []),
                     "trunk_allowed": per_vlan.get("trunk_allowed", []),
                     "all_ports": per_vlan.get("all_ports", []),
@@ -461,6 +726,11 @@ def build_vlan_discovery_reports(vlans, play_hosts, hostvars):
             unknown_inventory,
         ) = _build_endpoint_inventory(devices)
         l3_discovery = build_l3_discovery(vlan_id, devices)
+        gateway = placement["gateway"]
+        endpoint_table = build_endpoint_table(devices, gateway)
+        already_mapped, vni_conflicts = _vni_findings(vlan, devices)
+        for device in devices:
+            device["migration_tier"] = device_tier(device)
 
         report = {
             "vlan_id": vlan_id,
@@ -514,7 +784,15 @@ def build_vlan_discovery_reports(vlans, play_hosts, hostvars):
             "migration_reason": placement["migration_reason"],
             "deployment_model": placement["deployment_model"],
             "placement_analysis": placement["analysis"],
+            "gateway_assessment": gateway,
+            "endpoint_table": endpoint_table,
+            "spanning_tree": summarize_spanning_tree(devices),
+            "vxlan_already_mapped": already_mapped,
+            "vni_conflicts": vni_conflicts,
+            "not_discovered": list(not_discovered),
+            "switches_scanned": [device["hostname"] for device in devices],
         }
+        report["action_items"] = build_action_items(report)
         report["deployment_model"]["site"]["data_center"] = (
             report["deployment_model"]["site"].get("data_center")
             or vlan.get("data_center")
@@ -788,6 +1066,7 @@ def _ssot_from_discovery(vlan, devices):
         ips = list(details.get("ip_addresses") or [])
         vips = list(details.get("virtual_router_addresses") or [])
         hsrp = list(details.get("hsrp_addresses") or [])
+        all_gateways = list(details.get("gateway_addresses") or (vips + hsrp))
         svi_inventory.append(
             {
                 "hostname": hostname,
@@ -804,7 +1083,7 @@ def _ssot_from_discovery(vlan, devices):
             if prefix and prefix not in prefix_seen:
                 prefix_seen.add(prefix)
                 prefixes.append(prefix)
-        for vip in vips + hsrp:
+        for vip in all_gateways:
             if vip and vip not in gateway_seen:
                 gateway_seen.add(vip)
                 gateways.append(vip)

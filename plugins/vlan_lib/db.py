@@ -230,8 +230,42 @@ def service_probe_vlan_records(service_record, existing_vlans=None):
                 or [],
                 "static_route_tags": entry.get("static_route_tags") or [],
                 "_from_service": service_record.get("id", ""),
+                "_probe": not entry.get("service_type"),
             }
         )
     return records
 
 
+
+
+def probe_vlan_records(target_vlan_ids, existing_vlans=None, data_center="", service_type=""):
+    """Synthetic records for requested VLAN IDs that are not in the DC database.
+
+    ``_probe`` marks them so discovery, not the placeholder, decides L2 vs L3.
+    """
+    existing_ids = {
+        int(item.get("id"))
+        for item in (existing_vlans or [])
+        if isinstance(item, dict) and item.get("id") is not None
+    }
+    records = []
+    for vid in target_vlan_ids or []:
+        vlan_id = int(vid)
+        if vlan_id in existing_ids:
+            continue
+        existing_ids.add(vlan_id)
+        # service_type satisfies record validation. Unless the operator set
+        # it, it is a placeholder and _probe lets discovery decide L2 vs L3.
+        records.append(
+            {
+                "id": vlan_id,
+                "name": "vlan_%s" % vlan_id,
+                "action": "migrate",
+                "service_type": service_type or "l3",
+                "vrf": "default",
+                "data_center": data_center,
+                "target_switches": [],
+                "_probe": not bool(service_type),
+            }
+        )
+    return records

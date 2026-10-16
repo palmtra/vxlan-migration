@@ -1,0 +1,6 @@
+Chassis id: 00aa.bbcc.0042
+Port id: Gi1/0/48
+Local Port id: Eth1/30
+System Name: acc-sw-12.example.net
+System Description: Cisco IOS Software, C2960X Software
+Enabled Capabilities: B

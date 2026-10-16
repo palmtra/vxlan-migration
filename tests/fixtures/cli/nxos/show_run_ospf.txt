@@ -1,0 +1,6 @@
+router ospf 1
+  router-id 10.1.0.21
+  redistribute direct route-map RM_CONN
+  passive-interface default
+  vrf TENANT1
+    redistribute static route-map RM_STATIC

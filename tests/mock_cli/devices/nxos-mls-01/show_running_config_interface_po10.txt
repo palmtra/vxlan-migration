@@ -1,0 +1,4 @@
+interface port-channel10
+  switchport mode trunk
+  switchport trunk allowed vlan 100,300
+  vpc 10

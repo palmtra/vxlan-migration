@@ -86,6 +86,16 @@ ansible-playbook -i inventory/hosts.yml playbooks/core/discover_vlan.yml \
   --limit dc_lisle
 ```
 
+Range form (VLANs not in the DB are probed when `discovery_allow_probe=true`):
+
+```bash
+ansible-playbook -i inventory/hosts.yml playbooks/core/discover_vlan.yml \
+  -e manual_data_center=lisle \
+  -e target_vlan_ids=300-310,400 \
+  -e discovery_allow_probe=true \
+  --limit dc_lisle
+```
+
 Comma-separated form:
 
 ```bash
@@ -150,7 +160,7 @@ ansible-playbook -i inventory/hosts.yml playbooks/core/discover_vlan.yml \
 
 Look for:
 
-- `failed=0` on targeted switches (not `localhost` only)
+- `failed=0` on targeted switches (not `localhost` only). An `unreachable` switch does not stop the run; it is listed under **Action items** in the report
 - Tasks such as `EOS — show vlan id 100` → **ok** (not `unreachable` / `failed`)
 - Final task: **Display VLAN report output paths** → lists files under `reports/`
 
@@ -177,13 +187,22 @@ that far without failing on earlier hosts.
 
 ```text
 <repo-root>/reports/<dc>/<vlan_name>/<vlan_name>_discovery_<timestamp>.md
+<repo-root>/reports/<dc>/<vlan_name>/<vlan_name>_endpoints_<timestamp>.csv
 <repo-root>/reports/<dc>/<vlan_name>/<vlan_name>_prune_<timestamp>.md
 <repo-root>/reports/<dc>/_prune_plans/<hostname>_prune_plan_<timestamp>.json
 ```
 
 Two reports:
 
-1. **Discovery** — MACs learned on compute links (servers, IBM Z, Nutanix, UCS, HCI), plus those endpoint configs. Switch-to-switch uplinks are listed for context. No prune CLI.
+1. **Discovery** — read top to bottom:
+   - **Summary**: VLAN name, where the gateway is (legacy MLS, fabric, or external firewall), subnets and VIP, VRF, migration type, gateway mode, counts, STP root.
+   - **Action items**: resolve every line before migrating (unreachable switches, failed commands, firewall still on the MLS, `review` switches, missing `gateway_mode` or VNI, endpoints that could not be located).
+   - **Switches**: one row per switch carrying the VLAN with its tier, role, local endpoint ports, VLAN trunks, and SVI.
+   - **Gateway objects to rebuild in the fabric**: addresses, HSRP/VRRP, DHCP relay, ACL, PBR, OSPF, multicast, IPv6, and any SVI line discovery did not recognise.
+   - **Routing objects tied to the VLAN**: statics, BGP networks and redistribution (with route-map verdicts), BGP peers on the VLAN, what each peer is sent, the live BGP table, OSPF.
+   - **Active endpoints**: every IP in ARP with its MAC, edge switch, and port. The same list is in `<vlan>_endpoints_<ts>.csv`; keep it as the test baseline.
+   - **Prune order**.
+   No prune CLI.
 2. **Prune** — review `*_prune_*.md`, then apply with [prune-vlan.md](prune-vlan.md). Dry-run is the default. Source gateways are prune-eligible and come first. Compute endpoints and engineer-named gateway leaves are not pruned.
 
 SSOT snippet → fill VNI → generate VXLAN config (`workflow_deploy.yml`, `cvp_apply_configlets=false` by default).
@@ -206,6 +225,14 @@ It is listed in `.gitignore`, so it will not appear in `git status` even when pr
 | `UNREACHABLE` / timeout | Wrong IP or network path | Fix `ansible_host` in inventory |
 | `skipping: no hosts matched` on first play | Legacy playbook with `--limit dc_*` only | Update playbook (bootstrap now runs on first network host) |
 | Play succeeds but empty reports | All hosts `meta: end_host` (not in `discovery_switches`) | Use `discovery_allow_probe=true` or add hosts to VLAN DB |
+| Action item "was not discovered" | Switch unreachable or failed | Fix reachability and re-run; until then placement and prune lists are incomplete |
+| Ports classified by description only | LLDP/CDP disabled on the switch or the neighbor | Enable LLDP (EOS/NXOS) or CDP (NXOS), or fix port descriptions |
+
+## Test discovery without devices
+
+`make mock` (or `tests/run_discovery_mock.sh`) runs this playbook end to end against canned
+CLI output under `tests/mock_cli/devices/`. Add a device directory there to reproduce a field
+problem: one file per command, named after the command (lowercase, non-alphanumerics as `_`).
 
 ---
 

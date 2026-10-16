@@ -119,8 +119,12 @@ class NxosCliFixtureTests(unittest.TestCase):
         self.assertEqual(details["ip_addresses"], ["10.10.100.2/24"])
         self.assertEqual(details["hsrp_addresses"], ["10.10.100.1"])
         self.assertEqual(
-            details["hsrp_groups"], [{"group": 1, "ip": "10.10.100.1"}]
+            [(g["group"], g["ip"]) for g in details["hsrp_groups"]],
+            [(1, "10.10.100.1")],
         )
+        self.assertEqual(details["redundancy"], "hsrp")
+        self.assertEqual(details["gateway_addresses"], ["10.10.100.1"])
+        self.assertEqual(details["other_lines"], [])
 
     def test_l3_bgp_split_stanzas_and_vrf_context_statics(self):
         context = parse_bgp_context(_read("nxos", "show_run_bgp.txt"))
@@ -510,7 +514,8 @@ class DiscoveryReportSsotTests(unittest.TestCase):
         self.assertEqual(nxos_l3["vrf"], "TENANT1")
         self.assertEqual(nxos_l3["svi"]["hsrp_addresses"], ["10.10.100.1"])
         self.assertEqual(
-            nxos_l3["svi"]["hsrp_groups"], [{"group": 1, "ip": "10.10.100.1"}]
+            [(g["group"], g["ip"]) for g in nxos_l3["svi"]["hsrp_groups"]],
+            [(1, "10.10.100.1")],
         )
         self.assertTrue(
             any(peer["neighbor"] == "10.10.1.1" for peer in nxos_l3["bgp_neighbors"])

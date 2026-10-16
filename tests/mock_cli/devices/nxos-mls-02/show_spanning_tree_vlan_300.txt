@@ -1,0 +1,9 @@
+VLAN0300
+  Spanning tree enabled protocol rstp
+  Root ID    Priority    24876
+             Address     0023.04ee.be01
+             Cost        2
+             Port        4096 (port-channel1)
+
+  Bridge ID  Priority    32768  (priority 32768 sys-id-ext 300)
+             Address     0023.04ee.be02

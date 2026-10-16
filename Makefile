@@ -1,9 +1,10 @@
 # vxlan-migration developer tasks
-.PHONY: help lint test syntax molecule ci ee-deps
+.PHONY: help lint test mock syntax molecule ci ee-deps
 
 help:
 	@echo "make lint     - yamllint + ansible-lint"
 	@echo "make test     - unit tests"
+	@echo "make mock     - run discover_vlan.yml end to end against canned CLI output"
 	@echo "make syntax   - ansible-playbook --syntax-check on core playbooks"
 	@echo "make molecule - localhost molecule scenarios (vlan_db, service_db)"
 	@echo "make ci       - lint + test + syntax + molecule (local CI mirror)"
@@ -14,6 +15,9 @@ lint:
 
 test:
 	python -m unittest discover -s tests -v
+
+mock:
+	tests/run_discovery_mock.sh
 
 syntax:
 	@set -e; \
@@ -27,7 +31,7 @@ molecule:
 	molecule test -s vlan_db
 	molecule test -s service_db
 
-ci: lint test syntax molecule
+ci: lint test mock syntax molecule
 
 ee-deps:
 	pip install -r requirements.txt

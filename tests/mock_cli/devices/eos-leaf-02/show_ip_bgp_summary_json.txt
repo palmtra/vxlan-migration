@@ -1,0 +1,1 @@
+{"vrfs": {"default": {"asn": "65101", "routerId": "10.1.0.12"}}}

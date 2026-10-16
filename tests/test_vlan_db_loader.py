@@ -26,6 +26,7 @@ sys.path.insert(0, os.path.join(_REPO, "plugins", "filter"))
 
 from vlan_filters import (  # noqa: E402
     load_vlan_db_from_directory,
+    probe_vlan_records,
     normalize_target_vlan_ids,
     parse_vlan_record,
     vlan_db_record_filename,
@@ -52,6 +53,23 @@ class VlanDbLoaderTests(unittest.TestCase):
         self.assertEqual(normalize_target_vlan_ids([100, 200]), [100, 200])
         self.assertEqual(normalize_target_vlan_ids("[100,200]"), [100, 200])
         self.assertEqual(normalize_target_vlan_ids("100,200"), [100, 200])
+
+    def test_normalize_target_vlan_id_ranges(self):
+        self.assertEqual(normalize_target_vlan_ids("100-103,200"), [100, 101, 102, 103, 200])
+        self.assertEqual(normalize_target_vlan_ids(["10-11", 11, "12"]), [10, 11, 12])
+        self.assertEqual(normalize_target_vlan_ids(manual_vlan_id="5-6"), [5, 6])
+        self.assertEqual(normalize_target_vlan_ids("[\"20-21\"]"), [20, 21])
+        with self.assertRaises(Exception):
+            normalize_target_vlan_ids("4090-4095")
+
+    def test_probe_vlan_records_skip_known_ids(self):
+        records = probe_vlan_records([100, 101, 102], [{"id": 101}], "lisle")
+        self.assertEqual([r["id"] for r in records], [100, 102])
+        self.assertTrue(records[0]["_probe"])
+        self.assertEqual(records[0]["service_type"], "l3")
+        explicit = probe_vlan_records([100], [], "lisle", "l2")[0]
+        self.assertEqual(explicit["service_type"], "l2")
+        self.assertFalse(explicit["_probe"])
 
     def test_vlan_db_record_filename(self):
         self.assertEqual(vlan_db_record_filename(100, "legacy_web"), "0100_legacy_web.yml")

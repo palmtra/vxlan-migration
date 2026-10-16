@@ -30,6 +30,16 @@
       "description": "Engineer-supplied fabric leaves that will host the gateway. Never inferred from discovery.",
       "items": { "type": "string", "minLength": 1 }
     },
+    "gateway_mode": {
+      "type": "string",
+      "enum": ["", "distributed_anycast", "centralized_anycast"],
+      "description": "L3 only. distributed_anycast: every participating leaf hosts the anycast gateway. centralized_anycast: a leaf pair (gateway_leafs) hosts it."
+    },
+    "gateway_location": {
+      "type": "string",
+      "enum": ["", "legacy", "fabric", "mixed", "external"],
+      "description": "Filled by discovery: where the gateway lives today."
+    },
     "vlan_name": { "type": "string" },
     "vni": {
       "type": ["integer", "null"],
@@ -58,6 +68,7 @@
     },
     "_meta": { "type": "object" },
     "_from_service": { "type": "string" },
+    "_probe": { "type": "boolean" },
     "_source_file": { "type": "string" }
   }
 }

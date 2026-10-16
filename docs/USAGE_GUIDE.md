@@ -42,7 +42,9 @@ Each VLAN record requires `service_type`. The type says where the gateway will l
 | `l3` | The gateway moves into the VXLAN fabric. Name those leaves in `gateway_leafs`. |
 | `l2` | The gateway stays outside the fabric. The fabric provides Layer-2 transport only. |
 
-Discovery always queries SVI; ARP runs when an SVI is present. A discovered SVI is recorded as a source gateway. It is not copied into `gateway_leafs`. Probe mode defaults to `l3`; pass `-e discovery_probe_service_type=l2` for an L2 probe.
+Discovery always queries SVI; ARP runs when an SVI is present. A discovered SVI is recorded as a source gateway. It is not copied into `gateway_leafs`. For a probe (a VLAN not yet in the DB), discovery picks the type: an active SVI on a discovered switch means `l3`, no SVI means `l2` (external gateway). Pass `-e discovery_probe_service_type=l2|l3` to force it. An explicit `service_type` on a DB record always wins; when it disagrees with discovery, the report lists it under **Action items**.
+
+For `l3`, also set `gateway_mode`: `distributed_anycast` (every participating leaf hosts the anycast gateway) or `centralized_anycast` (a leaf pair named in `gateway_leafs`).
 
 Full guide: **[VXLAN_SERVICE_TYPES.md](VXLAN_SERVICE_TYPES.md)**.
 
@@ -52,7 +54,7 @@ Full guide: **[VXLAN_SERVICE_TYPES.md](VXLAN_SERVICE_TYPES.md)**.
 
 **Playbook:** `playbooks/core/discover_vlan.yml`
 
-Collects VLAN, MAC, SVI, ARP, trunks, and (on L3-capable devices) VRF/HSRP/BGP/statics. Writes reports under `reports/<dc>/<vlan_name>/`.
+Collects VLAN, MAC, SVI, ARP, trunks, LLDP/CDP neighbors, spanning tree, and (on L3-capable devices) VRF, HSRP/VRRP/VARP/anycast, DHCP relay, ACL, PBR, OSPF, BGP, statics, prefix-lists, and route-maps. Writes reports under `reports/<dc>/<vlan_name>/`. What each command feeds is in [WORKFLOWS.md § Discovery](WORKFLOWS.md#discovery--what-it-collects).
 
 ### Required extra vars
 
@@ -64,14 +66,15 @@ Collects VLAN, MAC, SVI, ARP, trunks, and (on L3-capable devices) VRF/HSRP/BGP/s
 
 | Variable | Default | Description |
 |---|---|---|
-| `manual_vlan_id` | all VLANs in DB | Discover a single VLAN ID |
-| `target_vlan_ids` | — | Discover multiple VLANs: `[100,200]` or `100,200` |
+| `manual_vlan_id` | all VLANs in DB | Discover a single VLAN ID (a range such as `100-110` also works) |
+| `target_vlan_ids` | — | Discover multiple VLANs: `[100,200]`, `100,200`, or ranges `100-110,200` |
 | `manual_service_id` | — | Load `vars/services/<dc>/<id>.yml` (multi-VLAN seed + `prune.retain`) |
 | `discovery_prune_retain` | `{}` | Inline retain keep-list when no service file is used |
 | `discovery_allow_probe` | `true` in discover playbook | Allow discovering a VLAN **not yet** in the DC database |
-| `discovery_probe_service_type` | `l3` | `service_type` assigned to synthetic probe records |
+| `discovery_probe_service_type` | empty | Empty lets discovery choose `l2`/`l3` for probe records. Set it to force a type |
 | `vlan_discovery_backup_enabled` | `false` | Capture config backup before discovery |
-| `discovery_collect_prune_context` | `true` | Collect static routes + BGP (EOS and NXOS) as **L3 discovery** (not prune actions) |
+| `discovery_collect_prune_context` | `true` | Collect static routes, BGP, OSPF, prefix-lists, and route-maps (EOS and NXOS) as **L3 discovery** (not prune actions) |
+| `migration_tier` (inventory host var) | EOS `fabric`, others `legacy` | Marks a switch as `legacy` (MLS / core / access) or `fabric`. Decides whether a gateway is reported as legacy or fabric |
 | `discovery_write_prune_plan` | `true` | Write the separate prune report (trunk/SVI/VLAN + EOS session text; never applies deletes) |
 | `prune_commit_timer` | `00:10:00` | EOS `commit timer` value printed in the prune report and used when prune apply is approved |
 | `prune_apply` | `false` | `playbooks/core/prune_vlan.yml` only. `true` sends CLI to prune-eligible switches |
@@ -106,6 +109,13 @@ ansible-playbook -i inventory/hosts.yml playbooks/core/discover_vlan.yml \
   -e 'target_vlan_ids=[100,200]' \
   --limit dc_lisle
 
+# Probe a range; VLANs not in the DB become probe records
+ansible-playbook -i inventory/hosts.yml playbooks/core/discover_vlan.yml \
+  -e manual_data_center=lisle \
+  -e target_vlan_ids=300-310 \
+  -e discovery_allow_probe=true \
+  --limit dc_lisle
+
 # Discover every VLAN declared under vars/vlans/lisle/
 ansible-playbook -i inventory/hosts.yml playbooks/core/discover_vlan.yml \
   -e manual_data_center=lisle \
@@ -116,7 +126,8 @@ ansible-playbook -i inventory/hosts.yml playbooks/core/discover_vlan.yml \
 
 | File | Contents |
 |---|---|
-| `<vlan>_discovery_<ts>.md` | Short report: migration type, participating leaves, prune-eligible leaves, gateway leaves, source gateways |
+| `<vlan>_discovery_<ts>.md` | Short report: summary, action items, switch table, gateway objects to rebuild, routing objects, active endpoints, prune order |
+| `<vlan>_endpoints_<ts>.csv` | Endpoint baseline: one row per active IP (ARP) or MAC-only endpoint, with its edge switch and port. Use it for pre/post-migration tests |
 | `<vlan>_discovery_<ts>.csv` | One row per switch, including `placement` |
 | `<vlan>_discovery_<ts>.yml` | Deployable VLAN model (routing, EVPN, placement) |
 | `<vlan>_discovery_<ts>.json` | LLM analysis payload: the model, placement evidence, and discovery facts |
@@ -126,11 +137,19 @@ ansible-playbook -i inventory/hosts.yml playbooks/core/discover_vlan.yml \
 
 Key **discovery** fields:
 
+- `action_items` — everything an engineer must resolve: switches not discovered (unreachable or failed), failed commands, gateway warnings, `review` switches, STP root outside scope, VNI collisions, endpoints that could not be located
+- `gateway_assessment` — where the gateway lives today (`legacy`, `fabric`, `mixed`, `external`), subnets and VIPs, redundancy (HSRP / VRRP / VARP / anycast), what moves with it (DHCP relay, ACL, PBR, IPv6, OSPF, multicast, NAT, uRPF, and any SVI line not understood), firewall/router ports (`external_exits`), and the recommended migration type
+- `endpoint_table` — active IPs from ARP joined to the MAC table edge port (`edge`, `uplink_only`, `not_in_mac_table`), plus MAC-only endpoints. Gateway and FHRP addresses are flagged
+- `spanning_tree` — root bridge resolved to a discovered switch, or flagged as outside discovery scope
+- `not_discovered` — switches in the play that never reported back
+
 - `endpoint_inventory` / `compute_inventory` — MACs and ports on compute links (servers, IBM Z, Nutanix, UCS, HCI). Switch-to-switch MAC learning is omitted.
 - `uplink_inventory` — trunks toward other switches (context only; does not make a leaf participating)
 - `unknown_inventory` — ports that could not be classified. A non-gateway switch with those ports is `review`. A source gateway stays prune-eligible; the unclassified ports are called out on the dry-run
+- Port roles come from LLDP/CDP first (`switch_uplink` for an inventory switch, `downstream_switch` for a switch outside the inventory, `network_service` for a firewall / load balancer / router, `compute`), then from the description. A `network_service` port is a local endpoint: the switch is participating until that device is re-homed. A `downstream_switch` port with MACs is participating; without MACs the switch is `review`, never auto-pruned
 - `deployment_model.placement` — `participating_leafs`, `gateway_leafs`, `prune_eligible_leafs`, `source_gateway_devices`
-- `routing.associated` — statics whose next hop is in the VLAN prefix, whose prefix is the VLAN prefix, or whose `name` equals an optional `static_route_tags` entry (case-insensitive). Also BGP networks or aggregates of that prefix, `redistribute connected`/`static` on the source gateway, and BGP peers that sit on the VLAN. Review items, not prune actions
+- `routing.associated` — statics whose next hop is in the VLAN prefix, that exit via `Vlan<id>`, whose prefix is the VLAN prefix, Null0 discards that cover it, or whose `name` equals an optional `static_route_tags` entry (case-insensitive). Also BGP networks or aggregates of that prefix, `redistribute connected`/`direct`/`static` on the source gateway with the route-map verdict for the VLAN prefix, BGP peers that sit on the VLAN, `bgp_exports` (each peer's outbound route-map verdict), `bgp_live` (`show ip bgp <prefix>`: in the table, and advertised to which peers), and `ospf`. Review items, not prune actions
+- Route-map verdicts walk prefix-lists in sequence order: `permit`, `deny`, `unknown` (a clause matches on something discovery cannot evaluate, such as a community), or `missing` (route-map not defined)
 
 Key **prune** fields (separate files):
 
@@ -366,6 +385,9 @@ Limit each template to the appropriate inventory group (`dc_lisle`, `dc_omaha`).
 |---|---|---|
 | Wrong VLANs in report | Missing `manual_vlan_id` filter | Pass `-e manual_vlan_id=<id>` |
 | No switches in report | Host not in `discovery_switches` / inventory | Use `discovery_allow_probe=true` or update VLAN DB |
+| Action item "was not discovered" | Host unreachable or failed before discovery finished | Fix reachability and re-run; placement and prune lists are incomplete until then |
+| Action item "`<command>` failed" | Command timed out or is not supported on that platform/version | Re-run; if it persists, check the command on the device |
+| Ports classified by description only | LLDP/CDP disabled or the neighbor does not advertise | Enable LLDP, or fix the port description |
 | Deploy fails “VLAN not in DB” | Record missing from `vars/vlans/<dc>/` | Run discovery; copy snippet to `{vid}_{slug}.yml`; fill VNI/VRF |
 | CVP push skipped | `cvp_apply_configlets=false` | Set to `true` after reviewing generated files |
 | Empty trunk section | Trunk parse mismatch | Check raw output in `.md` report; file an issue with sample CLI |

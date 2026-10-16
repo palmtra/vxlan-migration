@@ -174,6 +174,38 @@ class PlacementTests(unittest.TestCase):
         )
         self.assertEqual(placement["by_hostname"]["agg01"]["role"], "prune_eligible")
 
+    def test_macs_behind_out_of_scope_switch_match_across_name_forms(self):
+        attachment = {
+            "interface": "port-channel20",
+            "role": "downstream_switch",
+            "neighbor": "acc-sw-12 Gi1/0/48",
+        }
+        mac = {"mac": "0050.56ab.0001", "interface": "Po20", "attachment_role": "downstream_switch"}
+        placement = build_vlan_placement(
+            {"id": 1, "name": "app", "service_type": "l2"},
+            [
+                _device(
+                    "mls02",
+                    downstream_switch_ports=["port-channel20"],
+                    port_attachments=[attachment],
+                    mac_entries=[mac],
+                    endpoint_mac_entries=[mac],
+                ),
+                _device(
+                    "mls03",
+                    downstream_switch_ports=["port-channel20"],
+                    port_attachments=[attachment],
+                ),
+            ],
+        )
+        mls02 = placement["by_hostname"]["mls02"]
+        self.assertEqual(mls02["role"], "participating")
+        self.assertIn(
+            "MACs behind a switch outside discovery scope: port-channel20 (acc-sw-12 Gi1/0/48)",
+            mls02["evidence"],
+        )
+        self.assertEqual(placement["by_hostname"]["mls03"]["role"], "review")
+
     def test_protected_vlan_is_not_prune_eligible(self):
         placement = build_vlan_placement(
             {"id": 1, "name": "keep", "service_type": "l2", "protected_vlan": True},

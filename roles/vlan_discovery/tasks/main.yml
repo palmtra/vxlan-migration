@@ -28,6 +28,13 @@
     - network_os_family == 'ios'
     - discovery_enable_ios | default(false) | bool
 
+- name: Mark parked IOS hosts as skipped on purpose (not unreachable)
+  ansible.builtin.set_fact:
+    _discovery_skipped: true
+  when:
+    - network_os_family == 'ios'
+    - not (discovery_enable_ios | default(false) | bool)
+
 - name: Skip parked IOS hosts when discovery_enable_ios is false
   ansible.builtin.debug:
     msg: >-
@@ -51,7 +58,10 @@
 
 - name: Build VLAN-centric discovery reports
   ansible.builtin.set_fact:
-    _vlan_discovery_reports: "{{ _effective_vlans_for_reports | build_vlan_discovery_reports(ansible_play_hosts, hostvars) | map('combine', {'data_center': _report_data_center}) | list }}"
+    _vlan_discovery_reports: >-
+      {{ _effective_vlans_for_reports
+         | build_vlan_discovery_reports(ansible_play_hosts, hostvars, ansible_play_hosts_all)
+         | map('combine', {'data_center': _report_data_center}) | list }}
   vars:
     _effective_vlans_for_reports: "{{ hostvars['localhost']['_effective_vlans'] | default(_effective_vlans | default([])) }}"
     _report_data_center: "{{ hostvars['localhost']['_vlan_db_data_center'] }}"
@@ -252,6 +262,22 @@
   ansible.builtin.template:
     src: vlan_discovery_report.csv.j2
     dest: "{{ discovery_reports_dir }}/{{ report.data_center | default('unknown') }}/{{ report.vlan_slug }}/{{ report.vlan_slug }}_discovery_{{ _report_timestamp_ms }}.csv"
+    mode: '0644'
+  delegate_to: localhost
+  become: false
+  run_once: true
+  loop: "{{ _vlan_discovery_reports | default([]) }}"
+  loop_control:
+    loop_var: report
+    label: "{{ report.vlan_name }}"
+  when:
+    - discovery_write_vlan_reports | bool
+    - discovery_write_csv | bool
+
+- name: Write VLAN endpoint baseline CSV (active IPs and MAC-only endpoints)
+  ansible.builtin.template:
+    src: vlan_endpoints.csv.j2
+    dest: "{{ discovery_reports_dir }}/{{ report.data_center | default('unknown') }}/{{ report.vlan_slug }}/{{ report.vlan_slug }}_endpoints_{{ _report_timestamp_ms }}.csv"
     mode: '0644'
   delegate_to: localhost
   become: false

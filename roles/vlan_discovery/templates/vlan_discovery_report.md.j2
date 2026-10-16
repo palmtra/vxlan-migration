@@ -1,107 +1,171 @@
-# VLAN {{ report.vlan_name }} ({{ report.vlan_id }})
+{%- macro cell(value) -%}{{ (value | default('') | string) | replace('|', '/') | replace('\n', ' ') }}{%- endmacro -%}
+{%- macro short_list(items, limit=6) -%}{%- set items = items | default([]) | list -%}{{ items[:limit] | join(', ') }}{% if items | length > limit %} +{{ items | length - limit }} more{% endif %}{%- endmacro -%}
+{%- set gw = report.gateway_assessment | default({}) -%}
+{%- set model = report.deployment_model | default({}) -%}
+{%- set placement = model.placement | default({}) -%}
+{%- set analysis = report.placement_analysis.switches | default([]) -%}
+{%- set et = report.endpoint_table | default({}) -%}
+{%- set et_summary = et.summary | default({}) -%}
+{%- set stp = report.spanning_tree | default({}) -%}
+{%- set present = report.devices | selectattr('vlan_present') | list + (report.devices | rejectattr('vlan_present') | selectattr('svi_present') | list) -%}
+{%- set absent = report.devices | rejectattr('vlan_present') | rejectattr('svi_present') | map(attribute='hostname') | list -%}
+# VLAN {{ report.vlan_id }} {{ report.vlan_name }} - discovery
 
-Generated: {{ _report_timestamp_ms }}
-Data center: {{ report.data_center | default('unknown') }}
-Migration type: **{{ report.migration_type | default(report.service_type) | upper }}**
-{{ report.migration_reason | default('') }}
+{{ report.data_center | default('unknown') }} | generated {{ _report_timestamp_ms }} | {{ report.switches_scanned | default([]) | length }} switches scanned{% if report.not_discovered | default([]) | length > 0 %} | **{{ report.not_discovered | length }} not discovered: {{ report.not_discovered | join(', ') }}**{% endif %}
 
-Gateway: {{ report.gateway | default('(none)') }}
-Prefixes: {{ report.prefixes | default([]) | join(', ') if report.prefixes | default([]) else '(none)' }}
-VRF: {{ report.vrf | default('default') }}
-Protected VLAN: {{ 'yes' if report.deployment_model.migration.protected_vlan | default(false) else 'no' }}
 
-Participating leaves are where the VNI is deployed. Prune-eligible leaves still carry the VLAN and have no local endpoints. A discovered SVI is a source gateway, not a fabric gateway, and that source gateway is prune-eligible unless it also has local endpoints.
+## Summary
 
-## Participating leaves
+| Item | Value |
+|------|-------|
+| VLAN name | {{ cell(report.vlan_name_on_box or report.vlan_name) }}{% if report.name_candidates | default([]) | length > 1 %} (not agreed: {{ report.name_candidates | join(', ') }}){% elif report.needs_vlan_name %} (no name found on the switches){% endif %} |
+{% if gw.location == 'external' %}
+| Gateway | External{% if gw.external_exits | default([]) | length > 0 %}: firewall/router via {% for item in gw.external_exits %}{{ item.hostname }} {{ item.interface }}{% if item.neighbor or item.description %} ({{ cell(item.neighbor or item.description) }}){% endif %}{{ ', ' if not loop.last }}{% endfor %}{% else %}: not found on discovered switches{% endif %} |
+{% else %}
+| Gateway | {{ {'legacy': 'Legacy MLS', 'fabric': 'Fabric', 'mixed': 'Legacy and fabric'}[gw.location] | default(gw.location) }}: {{ gw.source_devices | default([]) | join(', ') }} ({{ gw.redundancy | default([]) | join(', ') | upper }} {{ gw.virtual_ip | default('') }}) |
+{% endif %}
+| Subnets | {% for item in gw.subnets | default([]) %}{{ item.prefix }}{% if item.gateway_ip %} gw {{ item.gateway_ip }}{% endif %}{% if item.secondary %} (secondary){% endif %}{{ '; ' if not loop.last }}{% else %}{{ report.prefixes | default([]) | join(', ') or '(none found)' }}{% endfor %} |
+| VRF | {{ gw.vrf or report.vrf | default('default') }} |
+| Migration type | **{{ report.migration_type | upper }}** - {{ cell(report.migration_reason) }} |
+{% if report.migration_type == 'l3' %}
+| Gateway mode | {{ gw.mode if gw.mode else '**not set** (distributed_anycast or centralized_anycast)' }}{% if placement.gateway_leafs | default([]) | length > 0 %}; gateway leaves {{ placement.gateway_leafs | map(attribute='hostname') | join(', ') }}{% endif %} |
+{% endif %}
+| VLAN present on | {{ report.switches_vlan_defined | default([]) | length }} switches |
+| Local endpoints on | {{ short_list(placement.participating_leafs | default([]) | map(attribute='hostname') | list) or 'none' }} |
+| Prune | {{ placement.prune_eligible_leafs | default([]) | length }} switch{{ 'es' if placement.prune_eligible_leafs | default([]) | length != 1 }}{% if placement.prune_eligible_leafs | default([]) | length > 0 %}: {{ short_list(placement.prune_eligible_leafs | map(attribute='hostname') | list) }}{% endif %} |
+| Active IP endpoints | {{ et_summary.active_ips | default(0) }}{% if et_summary.mac_only | default(0) %} (+{{ et_summary.mac_only }} MAC only){% endif %}{% if not et_summary.arp_available | default(false) %} (no SVI on a discovered switch, so no ARP; MACs only){% endif %} |
+{% if stp.present | default(false) %}
+| STP root | {{ stp.root_hostname or '**outside discovery scope**' }} ({{ stp.root_address }}, priority {{ stp.root_priority }}) |
+{% endif %}
 
-{% set participating = report.deployment_model.placement.participating_leafs | default([]) %}
-{% if participating | length == 0 %}
+## Action items
+
+{% for item in report.action_items | default([]) %}
+- {{ item }}
+{% else %}
 None.
+{% endfor %}
+
+## Switches
+
+| Switch | Tier | Role | Local endpoints | VLAN trunks | SVI | Notes |
+|--------|------|------|-----------------|-------------|-----|-------|
+{% for device in present %}
+{% set decision = analysis | selectattr('hostname', 'equalto', device.hostname) | list | first | default({}) %}
+{% set endpoints = (device.compute_ports | default([])) + (device.service_ports | default([]) | map('regex_replace', '$', ' (fw/lb/router)') | list) + (device.downstream_switch_ports | default([]) | map('regex_replace', '$', ' (switch)') | list) + (device.unknown_ports | default([]) | map('regex_replace', '$', ' (unknown)') | list) %}
+{% set trunks = (device.switch_uplink_ports | default([])) + (device.peer_link_ports | default([]) | map('regex_replace', '$', ' (peer)') | list) %}
+| {{ device.hostname }} | {{ device.migration_tier | default('') }} | {{ device.placement_role | default(decision.role | default('')) }} | {{ short_list(endpoints) }}{% if device.endpoint_mac_entries | default([]) | length > 0 %} [{{ device.endpoint_mac_entries | length }} MAC]{% endif %} | {{ short_list(trunks) }} | {% if device.svi_present %}{{ device.svi_details.primary_ip | default('') or 'no IP' }}{% if device.svi_details.shutdown | default(false) %} shut{% endif %}{% endif %} | {{ cell((decision.evidence | default([]) if decision.role | default('') == 'participating' else decision.nonqualifying | default([])) | join('; ')) }} |
+{% endfor %}
+
+{% if absent | length > 0 %}
+Not present on: {{ absent | join(', ') }}.
+{% endif %}
+{% if gw.svis | default([]) | length > 0 %}
+
+## Gateway objects to rebuild in the fabric
+
+{% for svi in gw.svis %}
+**{{ svi.hostname }}** Vlan{{ report.vlan_id }}, VRF {{ svi.vrf }}{% if svi.mtu %}, MTU {{ svi.mtu }}{% endif %}{% if svi.description %}, "{{ svi.description }}"{% endif %}
+
+- Addresses: {{ svi.ip_addresses | join(', ') }}{% for group in svi.fhrp_groups | default([]) %}; {{ group.protocol | upper }} {{ group.group }}{% if group.family == 'ipv6' %} ipv6{% endif %} VIP {{ ([group.ip] + group.secondary_ips | default([])) | select | join(', ') or '(none)' }}{% if group.priority %} prio {{ group.priority }}{% endif %}{% if group.preempt %} preempt{% endif %}{% endfor %}
+
+{% if svi.dhcp_relay | length > 0 %}
+- DHCP relay: {% for item in svi.dhcp_relay %}{{ item.server }}{% if item.vrf %} (vrf {{ item.vrf }}){% endif %}{{ ', ' if not loop.last }}{% endfor %}
+
+{% endif %}
+{% if svi.acls | length > 0 %}
+- ACL: {% for item in svi.acls %}{{ item.name }} {{ item.direction }}{{ ', ' if not loop.last }}{% endfor %}
+
+{% endif %}
+{% if svi.pbr | length > 0 %}
+- PBR: {{ svi.pbr | join(', ') }}
+{% endif %}
+{% if svi.ipv6_addresses | length > 0 %}
+- IPv6: {{ svi.ipv6_addresses | join(', ') }}
+{% endif %}
+{% for key, label in [('ospf', 'OSPF'), ('multicast', 'Multicast'), ('nat', 'NAT'), ('urpf', 'uRPF')] %}
+{% if svi[key] | length > 0 %}
+- {{ label }}: {{ svi[key] | join('; ') }}
+{% endif %}
+{% endfor %}
+{% if svi.other_lines | length > 0 %}
+- Other SVI lines (review): {{ svi.other_lines | map('regex_replace', '^(.*)$', '`\\1`') | join(', ') }}
+{% endif %}
+
+{% endfor %}
+{% endif %}
+{% if gw.inactive_svis | default([]) | length > 0 %}
+Inactive SVIs (remove with the VLAN): {% for svi in gw.inactive_svis %}{{ svi.hostname }}{{ ', ' if not loop.last }}{% endfor %}.
+
+{% endif %}
+{% set assoc = model.routing.associated | default({}) %}
+{% set route_rows = (assoc.static_routes | default([])) + (assoc.bgp_networks | default([])) + (assoc.bgp_neighbors | default([])) + (assoc.ospf | default([])) %}
+
+## Routing objects tied to the VLAN
+
+{% if route_rows | length == 0 and assoc.bgp_exports | default([]) | length == 0 and assoc.bgp_live | default([]) | length == 0 %}
+None found{% if report.migration_type == 'l2' %} (expected for an external gateway){% endif %}.
 {% else %}
-| Hostname | Why |
-|----------|-----|
-{% for leaf in participating %}
-{% set decision = report.placement_analysis.switches | selectattr('hostname', 'equalto', leaf.hostname) | list %}
-| {{ leaf.hostname }} | {{ decision[0].evidence | join('; ') if decision and decision[0].evidence else 'participating' }} |
+| Switch | VRF | Object | Detail | Why |
+|--------|-----|--------|--------|-----|
+{% for route in assoc.static_routes | default([]) %}
+| {{ route.hostname }} | {{ route.vrf }} | static | {{ route.prefix }} via {{ route.next_hop }}{% if route.interface and route.interface != route.next_hop %} ({{ route.interface }}){% endif %}{% if route.name %} name {{ route.name }}{% endif %}{% if route.tag %} tag {{ route.tag }}{% endif %}{% if route.distance %} ad {{ route.distance }}{% endif %} | {{ cell(route.reason) }} |
+{% endfor %}
+{% for item in assoc.bgp_networks | default([]) %}
+| {{ item.hostname }} | {{ item.vrf }} | bgp {{ item.kind }} | {{ item.prefix if item.prefix else item.method }} | {{ cell(item.reason) }} |
+{% endfor %}
+{% for peer in assoc.bgp_neighbors | default([]) %}
+| {{ peer.hostname }} | {{ peer.vrf }} | bgp peer on VLAN | {{ peer.neighbor }} AS {{ peer.remote_as }}{% if peer.description %} ({{ cell(peer.description) }}){% endif %} | {{ cell(peer.reason) }} |
+{% endfor %}
+{% for item in assoc.bgp_exports | default([]) %}
+| {{ item.hostname }} | {{ item.vrf }} | bgp export | {{ item.prefix }} to {{ item.neighbor }}{% if item.description %} ({{ cell(item.description) }}){% endif %}: **{{ item.verdict }}** | {{ cell(item.reason) }} |
+{% endfor %}
+{% for item in assoc.bgp_live | default([]) %}
+| {{ item.hostname }} | {{ item.vrf }} | bgp table | {{ item.prefix }}{% if not item.present %} not in BGP{% elif item.advertised_to %} advertised to {{ item.advertised_to | join(', ') }}{% else %} in BGP, not advertised{% endif %} | live `show ip bgp`{% if item.local %}, originated here{% endif %} |
+{% endfor %}
+{% for item in assoc.ospf | default([]) %}
+| {{ item.hostname }} | {{ item.vrf }} | ospf{% if item.process %} {{ item.process }}{% endif %} | {{ cell(item.detail) }} | {{ cell(item.reason) }} |
 {% endfor %}
 {% endif %}
 
-## Prune-eligible leaves
+## Active endpoints ({{ et_summary.active_ips | default(0) }})
 
-{% set prune = report.deployment_model.placement.prune_eligible_leafs | default([]) %}
-{% if prune | length == 0 %}
-None.
+{% if et.endpoints | default([]) | length == 0 %}
+{% if et_summary.arp_available | default(false) %}No ARP entries on the SVI.{% else %}No SVI on a discovered switch, so there is no ARP. MAC-only endpoints are listed below.{% endif %}
+
 {% else %}
-| Hostname | Why |
-|----------|-----|
-{% for leaf in prune %}
-{% set decision = report.placement_analysis.switches | selectattr('hostname', 'equalto', leaf.hostname) | list %}
-| {{ leaf.hostname }} | {{ decision[0].nonqualifying | join('; ') if decision and decision[0].nonqualifying else 'VLAN present, no local endpoints' }} |
+IP from ARP on the SVI owners, located by the MAC table edge port. Use this list as the pre-migration test baseline.
+
+| IP | MAC | Switch | Port | Port faces | Notes |
+|----|-----|--------|------|------------|-------|
+{% for row in et.endpoints %}
+| {{ row.ip }} | {{ row.mac }} | {{ row.hostname }} | {{ row.interface }} | {{ cell(row.port_label) }} | {{ (row.flags + (['also on ' ~ (row.also_on | join(', '))] if row.also_on else []) + (['only seen on trunks of ' ~ (row.uplink_seen_on | join(', '))] if row.location == 'uplink_only' else []) + (['not in MAC table'] if row.location == 'not_in_mac_table' else [])) | join('; ') }} |
 {% endfor %}
+
 {% endif %}
+{% if et.mac_only | default([]) | length > 0 %}
+MAC only, no ARP entry ({{ et.mac_only | length }}):
 
-{% set review = report.placement_analysis.switches | selectattr('role', 'equalto', 'review') | list %}
-{% if review | length > 0 %}
-## Needs review
-
-These switches carry the VLAN on ports that could not be classified. They are not participating and they are not prune-eligible.
-
-{% for item in review %}
-- {{ item.hostname }}: {{ item.nonqualifying | join('; ') }}
+| MAC | Switch | Port | Port faces |
+|-----|--------|------|------------|
+{% for row in et.mac_only %}
+| {{ row.mac }} | {{ row.hostname }} | {{ row.interface }} | {{ cell(row.port_label) }} |
 {% endfor %}
+
 {% endif %}
+## Prune order
 
-## Gateway leaves
+{% for leaf in placement.prune_eligible_leafs | default([]) %}
+{% set device = report.devices | selectattr('hostname', 'equalto', leaf.hostname) | list | first | default({}) %}
+{{ loop.index }}. {{ leaf.hostname }}{% if device.svi_present %} - source gateway: remove Vlan{{ report.vlan_id }} SVI{% endif %}{% if device.switch_uplink_ports | default([]) | length > 0 %}; trunks {{ short_list(device.switch_uplink_ports) }}{% endif %}
 
-{% set gateways = report.deployment_model.placement.gateway_leafs | default([]) %}
-{% if gateways | length == 0 %}
-None. For an L3 migration, add `gateway_leafs` on the VLAN record. Discovery will not fill this from the legacy SVI.
 {% else %}
-{% for leaf in gateways %}
-- {{ leaf.hostname }}
+Nothing is prune-eligible.
 {% endfor %}
+{% set withheld = analysis | rejectattr('role', 'in', ['prune_eligible', 'absent']) | list %}
+{% if withheld | length > 0 %}
+
+Kept: {% for item in withheld %}{{ item.hostname }} ({{ item.role }}){{ ', ' if not loop.last }}{% endfor %}.
 {% endif %}
 
-## Source gateways
-
-These devices own the legacy SVI. They are the root of the legacy L2 and are listed first under prune-eligible, unless they also have local endpoints or the engineer named them in gateway_leafs.
-
-{% set sources = report.deployment_model.placement.source_gateway_devices | default([]) %}
-{% if sources | length == 0 %}
-None.
-{% else %}
-| Hostname | VRF | Gateway |
-|----------|-----|---------|
-{% for leaf in sources %}
-{% set svi = report.svi_inventory | selectattr('hostname', 'equalto', leaf.hostname) | list %}
-| {{ leaf.hostname }} | {{ svi[0].vrf if svi else '' }} | {{ ((svi[0].virtual_router_addresses | default([])) + (svi[0].hsrp_addresses | default([]))) | join(', ') if svi else '' }} |
-{% endfor %}
-{% endif %}
-
-## Associated routes
-
-Statics and BGP tied to this VLAN. A static is also included when an engineer tag equals its name. Review these before migration. They are not prune actions.
-
-{% set route_tags = report.deployment_model.routing.static_route_tags | default([]) %}
-{% if route_tags | length > 0 %}
-Static route name tags: {{ route_tags | join(', ') }}
-{% endif %}
-
-{% set associated = report.deployment_model.routing.associated | default({}) %}
-{% if (associated.static_routes | default([])) | length == 0 and (associated.bgp_networks | default([])) | length == 0 and (associated.bgp_neighbors | default([])) | length == 0 %}
-None.
-{% else %}
-{% for route in associated.static_routes | default([]) %}
-- static {{ route.hostname }}: {{ route.prefix }} via {{ route.next_hop }}{% if route.name %} ({{ route.name }}){% endif %} - {{ route.reason }}
-{% endfor %}
-{% for item in associated.bgp_networks | default([]) %}
-- bgp {{ item.kind }} {{ item.hostname }}: {{ item.prefix if item.prefix else item.method }} - {{ item.reason }}
-{% endfor %}
-{% for peer in associated.bgp_neighbors | default([]) %}
-- bgp peer {{ peer.hostname }}: {{ peer.neighbor }}{% if peer.description %} ({{ peer.description }}){% endif %} - {{ peer.reason }}
-{% endfor %}
-{% endif %}
-
-Deployment model: `{{ report.vlan_slug }}_discovery_{{ _report_timestamp_ms }}.yml`
-Analysis payload: `{{ report.vlan_slug }}_discovery_{{ _report_timestamp_ms }}.json`
-Prune plan: `{{ report.vlan_slug }}_prune_{{ _report_timestamp_ms }}.md`
+Files: `{{ report.vlan_slug }}_discovery_{{ _report_timestamp_ms }}.yml` (deployable model), `.json` (full analysis and raw output), `{{ report.vlan_slug }}_endpoints_{{ _report_timestamp_ms }}.csv` (endpoint baseline), `{{ report.vlan_slug }}_prune_{{ _report_timestamp_ms }}.md` (prune CLI).

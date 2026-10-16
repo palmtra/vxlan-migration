@@ -1,0 +1,10 @@
+----------------------------------------
+Device ID:lis-asa01
+Interface address(es):
+    IPv4 Address: 10.30.0.254
+Platform: ASA5585, Capabilities: Router
+Interface: Ethernet1/20, Port ID (outgoing port): TenGigabitEthernet0/8
+Holdtime: 150 sec
+
+Version:
+Cisco Adaptive Security Appliance Software Version 9.12(4)

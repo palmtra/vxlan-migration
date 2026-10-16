@@ -1,0 +1,14 @@
+Interface Ethernet3 detected 1 LLDP neighbors:
+
+  Neighbor 0050.56ab.3010/vmnic2, age 12 seconds
+  - System Name: "esx-web-01"
+  - System Description: "VMware ESX Releasebuild-21495797"
+  - System Capabilities : Bridge
+    Enabled Capabilities: Bridge
+
+Interface Ethernet49 detected 1 LLDP neighbors:
+
+  Neighbor 0023.04ee.be01/Ethernet1/10, age 4 seconds
+  - Port ID        : "Ethernet1/10"
+  - System Name: "nxos-mls-01.example.net"
+  - System Description: "Cisco Nexus Operating System (NX-OS) Software 9.3(8)"

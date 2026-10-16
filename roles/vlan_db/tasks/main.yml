@@ -60,37 +60,42 @@
     - (hostvars['localhost']['_service_record'] | service_probe_vlan_records(hostvars['localhost']['_effective_vlans'] | default([])) | length) > 0
   delegate_facts: true
 
-- name: Resolve probe VLAN ID for discovery-only runs
+- name: Collect the VLAN IDs to probe (requested IDs plus discovery_probe_vlan_id)
   ansible.builtin.set_fact:
-    _probe_vlan_id: "{{ (discovery_probe_vlan_id | default(manual_vlan_id | default(hostvars['localhost'].target_vlan_id | default(none), true), true)) | int }}"
-  when:
-    - discovery_allow_probe | default(false) | bool
-    - discovery_probe_vlan_id is defined or manual_vlan_id is defined or hostvars['localhost'].target_vlan_id is defined
+    _probe_vlan_ids: "{{ (_requested + _extra) | unique | list }}"
+  vars:
+    _requested: "{{ hostvars['localhost']['_vlan_db_target_vlan_ids'] }}"
+    _extra: "{{ [discovery_probe_vlan_id | int] if discovery_probe_vlan_id is defined else [] }}"
+  when: discovery_allow_probe | default(false) | bool
   delegate_facts: true
 
-- name: Build synthetic VLAN record when probing an ID not yet in the DC database
+- name: Build synthetic records for requested VLANs not yet in the DC database
   ansible.builtin.set_fact:
-    _effective_vlans:
-      - id: "{{ hostvars['localhost']['_probe_vlan_id'] }}"
-        name: "vlan_{{ hostvars['localhost']['_probe_vlan_id'] }}"
-        action: migrate
-        service_type: "{{ discovery_probe_service_type | default('l3') }}"
-        vrf: default
-        data_center: "{{ hostvars['localhost']['_vlan_db_data_center'] }}"
-    _target_vlan_record:
-      id: "{{ hostvars['localhost']['_probe_vlan_id'] }}"
-      name: "vlan_{{ hostvars['localhost']['_probe_vlan_id'] }}"
-      action: migrate
-      service_type: "{{ discovery_probe_service_type | default('l3') }}"
-      data_center: "{{ hostvars['localhost']['_vlan_db_data_center'] }}"
-      target_switches: []
+    _probe_records: "{{ hostvars['localhost']['_probe_vlan_ids'] | probe_vlan_records(_known, _dc, discovery_probe_service_type | default('')) }}"
+  vars:
+    _known: "{{ hostvars['localhost']['_vlan_db'].vlans + hostvars['localhost']['_effective_vlans'] }}"
+    _dc: "{{ hostvars['localhost']['_vlan_db_data_center'] }}"
+  when: discovery_allow_probe | default(false) | bool
+  delegate_facts: true
+
+- name: Add probe records and scan every switch
+  ansible.builtin.set_fact:
+    _effective_vlans: "{{ hostvars['localhost']['_effective_vlans'] + hostvars['localhost']['_probe_records'] }}"
     _workflow_discovery_hosts: []
     _discovery_probe_mode: true
     _discovery_scan_all_switches: true
   when:
     - discovery_allow_probe | default(false) | bool
-    - hostvars['localhost']['_probe_vlan_id'] is defined
-    - hostvars['localhost']['_vlan_db'].vlans | selectattr('id', 'equalto', hostvars['localhost']['_probe_vlan_id'] | int) | list | length == 0
+    - hostvars['localhost']['_probe_records'] | default([]) | length > 0
+  delegate_facts: true
+
+- name: Use the probe record as the workflow target when one VLAN was requested
+  ansible.builtin.set_fact:
+    _target_vlan_record: "{{ hostvars['localhost']['_probe_records'][0] }}"
+  when:
+    - discovery_allow_probe | default(false) | bool
+    - hostvars['localhost']['_probe_records'] | default([]) | length == 1
+    - hostvars['localhost']['_effective_vlans'] | length == 1
   delegate_facts: true
 
 - name: Fail if no VLANs matched the current run filters

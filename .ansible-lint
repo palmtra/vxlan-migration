@@ -13,6 +13,8 @@ exclude_paths:
   - reports/
   - .github/
   - .molecule/
+  # Test-only shadow collection; not a publishable collection.
+  - tests/mock_cli/ansible_collections/
 
 warn_list:
   - experimental

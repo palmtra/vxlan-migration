@@ -51,6 +51,36 @@
   changed_when: false
   failed_when: false
 
+- name: "NXOS - show spanning-tree vlan {{ _disc_vlan.id }}"
+  ansible.netcommon.cli_command:
+    command: "show spanning-tree vlan {{ _disc_vlan.id }}"
+  register: _nxos_stp_show
+  check_mode: false
+  changed_when: false
+  failed_when: false
+
+- name: "NXOS - show ip bgp for each SVI prefix of VLAN {{ _disc_vlan.id }}"
+  ansible.netcommon.cli_command:
+    command: "show ip bgp {{ item }} vrf {{ _disc_svi_vrf }}"
+  register: _nxos_bgp_prefix_show
+  loop: "{{ _nxos_svi_show.stdout | default('') | svi_prefixes('nxos') }}"
+  when:
+    - _disc_svi_present | bool
+    - _nxos_bgp_as | default('') | string | length > 0
+  check_mode: false
+  changed_when: false
+  failed_when: false
+
+- name: "NXOS - show the ACLs applied to SVI {{ _disc_vlan.id }}"
+  ansible.netcommon.cli_command:
+    command: "show ip access-lists {{ item }}"
+  register: _nxos_acl_show
+  loop: "{{ (_nxos_svi_show.stdout | default('') | parse_svi_details('nxos')).acls | default([]) | map(attribute='name') | list }}"
+  when: _disc_svi_present | bool
+  check_mode: false
+  changed_when: false
+  failed_when: false
+
 - name: "NXOS - parse VLAN ports and MAC table for interface-config fetch"
   ansible.builtin.set_fact:
     _nxos_member_run_results:
@@ -86,6 +116,12 @@
   ansible.builtin.set_fact:
     _nxos_per_vlan_results: "{{ _nxos_per_vlan_results | default([]) + [_nxos_vlan_record] }}"
   vars:
+    _nxos_vlan_command_results: "{{ {
+      'show vlan id ' ~ _disc_vlan.id: _nxos_vlan_id_show,
+      'show running-config interface vlan' ~ _disc_vlan.id: _nxos_svi_show,
+      'show mac address-table dynamic vlan ' ~ _disc_vlan.id: _nxos_mac_show,
+      'show ip arp (Vlan' ~ _disc_vlan.id ~ ')': _nxos_arp_show
+    } }}"
     _nxos_vlan_record: "{{ _disc_vlan | extract_vlan_targeted_discovery({
       'platform': 'nxos',
       'vlan_id_output': _nxos_vlan_id_show.stdout | default(''),
@@ -97,5 +133,12 @@
       'trunk_summaries': _nxos_trunk_summaries | default([]),
       'interface_configs': (_interface_config_entries | default([])) + (_nxos_member_run_results.results | default([]) | interface_config_entries_from_cli_results('nxos')),
       'switch_hostnames': ansible_play_hosts,
+      'inventory_hostnames': groups['network_devices'] | default(ansible_play_hosts),
+      'neighbors': _disc_neighbors | default([]),
+      'port_channels': _disc_port_channels | default({}),
+      'stp_output': _nxos_stp_show.stdout | default(''),
+      'bgp_prefix_outputs': _nxos_bgp_prefix_show.results | default([]),
+      'acl_outputs': _nxos_acl_show.results | default([]),
+      'errors': _nxos_vlan_command_results | collect_command_errors,
       'target_vrf': target_vrf | default('')
     }) }}"

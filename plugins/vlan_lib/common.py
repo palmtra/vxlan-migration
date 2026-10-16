@@ -71,7 +71,10 @@ _VLAN_STATUS_RE = re.compile(
     re.I,
 )
 
+# The lookbehind keeps EOS MLAG peer ports (PEt10, PPo1 in show vlan) from
+# matching as local Et10 / Po1.
 _PORT_NAME_RE = re.compile(
+    r"(?<![A-Za-z0-9])"
     r"(?:"
     r"Ethernet[\w./-]+|Et[\d./-]+|"
     r"Port-Channel[\d./-]+|Po[\d./-]+|"
@@ -84,25 +87,6 @@ _PORT_NAME_RE = re.compile(
 )
 
 _SVI_DESC_RE = re.compile(r"^\s*description\s+(.+?)\s*$", re.I | re.M)
-
-_SVI_MTU_RE = re.compile(r"^\s*mtu\s+(\d+)\s*$", re.I | re.M)
-
-_SVI_IP_RE = re.compile(
-    r"^\s*ip\s+address\s+(\d+\.\d+\.\d+\.\d+/\d+)(?:\s+secondary)?\s*$",
-    re.I | re.M,
-)
-
-_SVI_VR_ADDR_RE = re.compile(
-    r"^\s*ip\s+virtual-router\s+address\s+(\S+)\s*$",
-    re.I | re.M,
-)
-
-_IP_ROUTE_RE = re.compile(
-    r"^\s*ip\s+route(?:\s+vrf\s+(?P<vrf>\S+))?\s+"
-    r"(?P<prefix>\S+)\s+(?P<nexthop>\S+)"
-    r"(?:.*?\s+name\s+(?P<name>\S+))?",
-    re.I | re.M,
-)
 
 _BGP_ROUTER_RE = re.compile(r"^\s*router\s+bgp\s+(\d+(?:\.\d+)?)\b", re.I)
 
@@ -145,17 +129,6 @@ _BGP_NEIGHBOR_ATTR_RE = re.compile(
 
 _VRF_CONTEXT_RE = re.compile(r"^\s*vrf\s+context\s+(\S+)", re.I)
 
-_IP_ROUTE_LINE_RE = re.compile(
-    r"^\s*ip\s+route(?:\s+vrf\s+(?P<vrf>\S+))?\s+"
-    r"(?:"
-    r"(?P<network>\d+\.\d+\.\d+\.\d+)\s+(?P<mask>\d+\.\d+\.\d+\.\d+)\s+(?P<nexthop_mask>\S+)"
-    r"|"
-    r"(?P<prefix>\S+)\s+(?P<nexthop>\S+)"
-    r")"
-    r"(?:.*?\s+name\s+(?P<name>\S+))?",
-    re.I,
-)
-
 _VLAN_DB_SKIP_FILENAMES = frozenset({"_example.yml", "example.yml"})
 
 
@@ -173,6 +146,9 @@ def _str_equal(a, b):
 
 def _vlan_present(vlan_id, output):
     """Legacy helper - prefer vlan_id_command_indicates_present for discovery."""
+    # Local import: parsers imports this module.
+    from vlan_lib.parsers import vlan_id_command_indicates_present
+
     return vlan_id_command_indicates_present(output, vlan_id)
 
 
@@ -277,35 +253,65 @@ def resolve_data_center(manual_data_center="", target_data_center="", data_cente
     return coalesce_trimmed(manual_data_center, target_data_center, data_center)
 
 
+def _expand_vlan_tokens(value):
+    """Expand ``100``, ``"100-105"``, ``"100,200-202"`` into VLAN IDs."""
+    if isinstance(value, bool):
+        raise AnsibleFilterError("VLAN id must be a number, got %r" % value)
+    if isinstance(value, int):
+        return [value]
+    ids = []
+    for token in str(value).replace(" ", "").split(","):
+        if not token:
+            continue
+        if "-" in token:
+            start, end = token.split("-", 1)
+            low, high = int(start), int(end)
+            if low > high:
+                low, high = high, low
+            if high - low > 4093:
+                raise AnsibleFilterError("VLAN range %s is too wide" % token)
+            ids.extend(range(low, high + 1))
+        else:
+            ids.append(int(token))
+    return ids
+
+
 def normalize_target_vlan_ids(target_vlan_ids=None, manual_vlan_id=None):
-    """Normalize CLI extra vars into a list of integer VLAN IDs."""
+    """Normalize CLI extra vars into a de-duplicated list of integer VLAN IDs.
+
+    Accepts a single id, a list, a JSON list, comma lists, and ranges:
+    ``100``, ``[100, 200]``, ``"100,200"``, ``"100-110,200"``, ``["100-105", 300]``.
+    """
     if manual_vlan_id is not None and str(manual_vlan_id).strip() != "":
-        return [int(manual_vlan_id)]
-
-    if target_vlan_ids is None:
+        raw = [manual_vlan_id]
+    elif target_vlan_ids is None:
         return []
+    elif isinstance(target_vlan_ids, list):
+        raw = list(target_vlan_ids)
+    else:
+        text = str(target_vlan_ids).strip()
+        if not text:
+            return []
+        if text.startswith("["):
+            import json
 
-    if isinstance(target_vlan_ids, list):
-        return [int(vid) for vid in target_vlan_ids]
+            parsed = json.loads(text)
+            if not isinstance(parsed, list):
+                raise AnsibleFilterError(
+                    "target_vlan_ids JSON must be a list, got %s" % type(parsed)
+                )
+            raw = parsed
+        else:
+            raw = [text]
 
-    text = str(target_vlan_ids).strip()
-    if not text:
-        return []
-
-    if text.startswith("["):
-        import json
-
-        parsed = json.loads(text)
-        if not isinstance(parsed, list):
-            raise AnsibleFilterError(
-                "target_vlan_ids JSON must be a list, got %s" % type(parsed)
-            )
-        return [int(vid) for vid in parsed]
-
-    if "," in text:
-        return [int(part.strip()) for part in text.split(",") if part.strip()]
-
-    return [int(text)]
+    ids = []
+    for item in raw:
+        for vid in _expand_vlan_tokens(item):
+            if not 1 <= vid <= 4094:
+                raise AnsibleFilterError("VLAN id %s is outside 1-4094" % vid)
+            if vid not in ids:
+                ids.append(vid)
+    return ids
 
 
 def select_vlans_for_run(vlans, target_vlan_ids=None, target_actions=None):

@@ -46,6 +46,17 @@ Open features and planned work. Completed items are kept for context.
 - [x] Human-only prune report: trunk / SVI / VLAN candidates with compute-endpoint blockers
 - [x] Discovery SSOT snippet fills VRF, gateway, prefixes, `service_type`, switch lists from facts
 
+- [x] LLDP/CDP neighbor classification (switch in inventory, switch outside scope, firewall/LB/router, server) with port-channel members
+- [x] Firewall/router ports are local endpoints, never switch uplinks (no prune of the switch holding the external gateway)
+- [x] Gateway assessment: legacy MLS / fabric / mixed / external, VIPs per subnet, redundancy, objects that move with it (DHCP relay, ACL, PBR, IPv6, OSPF, multicast, NAT, uRPF, unrecognised SVI lines)
+- [x] `gateway_mode` (`distributed_anycast` / `centralized_anycast`) and `gateway_location` in the VLAN model
+- [x] Route-map / prefix-list evaluation for redistribution and peer export; live `show ip bgp <prefix>`; OSPF
+- [x] Active endpoint baseline (ARP joined to edge port) in the report and `<vlan>_endpoints_<ts>.csv`
+- [x] Unreachable switches and failed commands reported as action items
+- [x] STP root resolution; VXLAN VLAN-to-VNI collisions
+- [x] VLAN ranges (`100-110`) and multi-VLAN probing
+- [x] End-to-end mock run of `discover_vlan.yml` in CI (`make mock`)
+
 ### Parked / hold (do not implement until there is a use-case)
 
 - [ ] Default-VRF static route + BGP neighbor **prune candidates** (shown as L3 review only; not actions)

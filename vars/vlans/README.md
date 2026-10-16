@@ -40,6 +40,7 @@ name: legacy_web
 action: migrate
 service_type: l3          # l2 | l3 - see docs/VXLAN_SERVICE_TYPES.md
 gateway_leafs: []         # L3: fabric leaves that will host the gateway (never inferred)
+gateway_mode: ""          # L3: distributed_anycast | centralized_anycast
 vni: 50100
 vrf: default
 gateway: 10.10.100.1      # optional; discovery fills from VR / HSRP
@@ -62,6 +63,8 @@ Records are validated against [`schemas/vlan_record.schema.json`](../../schemas/
 | `prefixes` | no | Subnets from SVI CIDRs |
 | `static_route_tags` | no | Name tags. A static is associated when a tag equals `ip route ... name`, ignoring case |
 | `gateway_leafs` | L3 | Fabric gateway leaves. Engineer-supplied |
+| `gateway_mode` | L3 | `distributed_anycast` or `centralized_anycast`. Engineer-supplied |
+| `gateway_location` | no | Filled by discovery: `legacy`, `fabric`, `mixed`, `external` |
 | `target_switches` | yes (migrate) | EOS hosts for CVP. A nested discovery model uses participating leaves |
 | `mcast_group` | no | Omit. BUM is head-end replication already on the fabric |
 

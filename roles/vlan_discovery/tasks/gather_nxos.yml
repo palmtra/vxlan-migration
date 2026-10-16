@@ -17,16 +17,19 @@
 - name: NXOS - collect trunk interface names for port classification
   ansible.builtin.include_tasks: gather_nxos_trunks.yml
 
+- name: NXOS - collect neighbors, port-channels, routing policy
+  ansible.builtin.include_tasks: gather_nxos_topology.yml
+
+- name: NXOS - collect L3 discovery context (statics + BGP)
+  ansible.builtin.include_tasks: gather_nxos_l3_context.yml
+  when: discovery_collect_prune_context | default(true) | bool
+
 - name: NXOS - targeted discovery per VLAN
   ansible.builtin.include_tasks: gather_nxos_vlan.yml
   loop: "{{ _effective_vlans }}"
   loop_control:
     loop_var: _disc_vlan
     label: "{{ _disc_vlan.id }}"
-
-- name: NXOS - collect L3 discovery context (statics + BGP)
-  ansible.builtin.include_tasks: gather_nxos_l3_context.yml
-  when: discovery_collect_prune_context | default(true) | bool
 
 - name: NXOS - build retain-aware prune plan candidates (VLAN/SVI/trunk)
   ansible.builtin.set_fact:
@@ -49,7 +52,15 @@
       hostname: "{{ inventory_hostname }}"
       data_center: "{{ data_center | default('unknown') }}"
       os_family: "{{ network_os_family }}"
+      migration_tier: "{{ migration_tier | default('') }}"
       timestamp: "{{ ansible_date_time.iso8601 }}"
+      errors: "{{ {'show interface trunk': _nxos_trunk_show | default({})} | collect_command_errors }}"
+      neighbors: "{{ _disc_neighbors | default([]) }}"
+      port_channels: "{{ _disc_port_channels | default({}) }}"
+      prefix_lists: "{{ _disc_prefix_lists | default({}) }}"
+      route_maps: "{{ _disc_route_maps | default({}) }}"
+      ospf: "{{ _disc_ospf | default([]) }}"
+      vxlan_mappings: "{{ _disc_vxlan_mappings | default([]) }}"
       static_routes: "{{ _nxos_static_routes | default([]) }}"
       bgp_neighbors: "{{ _nxos_bgp_neighbors | default([]) }}"
       bgp_vlan_blocks: "{{ _nxos_bgp_vlan_blocks | default([]) }}"

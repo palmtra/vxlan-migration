@@ -8,7 +8,7 @@ Ansible automation to **migrate legacy VLANs to VXLAN/EVPN** on Arista EOS via C
 - **Cleanup / trunk pruning** is a **separate playbook** (`playbooks/core/prune_vlan.yml`). Discovery only classifies prune-eligible switches and writes the session text. Apply is dry-run unless `-e prune_apply=true -e prune_approval=approve`. See [docs/examples/prune-vlan.md](docs/examples/prune-vlan.md).
 - **NetBox export** is a standalone utility, not part of the migration run.
 - **Safety:** CVP generate-only by default; deploy goes through CloudVision, not a direct device push; auto-rollback off; secrets tasks use `no_log`.
-- **CI:** `.github/workflows/ci.yml` runs yamllint, unit tests, Molecule (`vlan_db`/`service_db`), syntax-check, ansible-lint (`make ci`).
+- **CI:** `.github/workflows/ci.yml` runs yamllint, unit tests, an end-to-end discovery run against canned CLI output (`make mock`), Molecule (`vlan_db`/`service_db`), syntax-check, ansible-lint (`make ci`).
 
 ## Documentation
 
@@ -75,7 +75,8 @@ ansible-playbook -i inventory/hosts.yml playbooks/core/discover_vlan.yml \
   --ask-vault-pass
 ```
 
-Reports are written under `reports/<dc>/<vlan_name>/` (auto-created, gitignored).
+Reports are written under `reports/<dc>/<vlan_name>/` (auto-created, gitignored). `target_vlan_ids` accepts ranges (`300-310,400`).
+The Markdown report opens with a summary and **Action items**; `<vlan>_endpoints_<ts>.csv` is the endpoint test baseline.
 Copy the generated snippet into `vars/vlans/<dc>/{vid}_{slug}.yml` and fill in `vni`, `vrf`, and `target_switches`.
 
 More discovery examples: [docs/examples/discover-vlan.md](docs/examples/discover-vlan.md)
@@ -181,6 +182,7 @@ name: legacy_web
 action: migrate
 service_type: l3          # l2 | l3 - see docs/VXLAN_SERVICE_TYPES.md
 gateway_leafs: []         # L3 only; name the fabric gateway leaves, do not infer them
+gateway_mode: ""          # L3 only; distributed_anycast | centralized_anycast
 vni: 50100
 vrf: default
 gateway: 10.10.100.1     # optional; filled from SVI VR / HSRP by discovery

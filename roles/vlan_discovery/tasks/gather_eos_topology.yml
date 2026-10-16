@@ -1,0 +1,68 @@
+---
+# -----------------------------------------------------------------------------
+# EOS - neighbors, port-channels, routing policy, VXLAN map (once per device)
+# -----------------------------------------------------------------------------
+# LLDP classifies switch-to-switch trunks, firewalls, and switches outside the
+# inventory more reliably than port descriptions. Policy is collected so the
+# report can say whether the VLAN prefix is advertised.
+# -----------------------------------------------------------------------------
+
+- name: EOS - show lldp neighbors detail
+  ansible.netcommon.cli_command:
+    command: show lldp neighbors detail
+  register: _eos_lldp_show
+  check_mode: false
+  changed_when: false
+  failed_when: false
+
+- name: EOS - show running-config section channel-group
+  ansible.netcommon.cli_command:
+    command: show running-config section channel-group
+  register: _eos_channel_group_show
+  check_mode: false
+  changed_when: false
+  failed_when: false
+
+- name: EOS - show running-config section prefix-list
+  ansible.netcommon.cli_command:
+    command: show running-config section prefix-list
+  register: _eos_prefix_list_show
+  check_mode: false
+  changed_when: false
+  failed_when: false
+  when: discovery_collect_prune_context | default(true) | bool
+
+- name: EOS - show running-config section route-map
+  ansible.netcommon.cli_command:
+    command: show running-config section route-map
+  register: _eos_route_map_show
+  check_mode: false
+  changed_when: false
+  failed_when: false
+  when: discovery_collect_prune_context | default(true) | bool
+
+- name: EOS - show running-config section router ospf
+  ansible.netcommon.cli_command:
+    command: show running-config section router ospf
+  register: _eos_ospf_show
+  check_mode: false
+  changed_when: false
+  failed_when: false
+  when: discovery_collect_prune_context | default(true) | bool
+
+- name: EOS - show vxlan vlan-to-vni
+  ansible.netcommon.cli_command:
+    command: show vxlan vlan-to-vni
+  register: _eos_show_vxlan
+  check_mode: false
+  changed_when: false
+  failed_when: false
+
+- name: EOS - parse neighbors, port-channels, policy, and VXLAN map
+  ansible.builtin.set_fact:
+    _disc_neighbors: "{{ _eos_lldp_show.stdout | default('') | parse_lldp_neighbors('eos') }}"
+    _disc_port_channels: "{{ _eos_channel_group_show.stdout | default('') | parse_port_channel_members('eos') }}"
+    _disc_prefix_lists: "{{ _eos_prefix_list_show.stdout | default('') | parse_prefix_lists }}"
+    _disc_route_maps: "{{ _eos_route_map_show.stdout | default('') | parse_route_maps }}"
+    _disc_ospf: "{{ _eos_ospf_show.stdout | default('') | parse_ospf_context }}"
+    _disc_vxlan_mappings: "{{ _eos_show_vxlan.stdout | default('') | parse_vxlan_vlan_to_vni }}"

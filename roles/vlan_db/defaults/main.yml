@@ -19,5 +19,6 @@ vlan_db_validate_target_switches: true
 # When true, discovery can run for a VLAN ID not yet present in the DC database.
 discovery_allow_probe: false
 
-# Default service_type for probe (not-yet-in-DB) VLAN records.
-discovery_probe_service_type: l3
+# service_type for probe (not-yet-in-DB) VLAN records. Empty lets discovery
+# decide: an active SVI on a discovered switch means l3, otherwise l2.
+discovery_probe_service_type: ""
