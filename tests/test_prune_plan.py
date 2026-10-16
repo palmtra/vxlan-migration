@@ -113,7 +113,7 @@ class PrunePlanParserTests(unittest.TestCase):
 
     def test_l3_review_skipped_without_svi(self):
         plan = build_device_prune_plan(
-            "nxos-spine-lis-01",
+            "nxos-mls-lis-01",
             [
                 {
                     "vlan_id": 100,

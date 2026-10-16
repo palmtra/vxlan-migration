@@ -346,6 +346,74 @@ def _vni_findings(vlan, devices):
     return already, conflicts
 
 
+def fabric_readiness(report):
+    """Is every fabric leaf that will carry the VLAN a ready HER VTEP?
+
+    The fabric is Arista EOS built by AVD. BUM is head-end replication with
+    an EVPN flood list, sourced from the VTEP loopback. For an L3 migration
+    the gateway VRF must already have an L3 VNI on the fabric.
+    """
+    devices = {device.get("hostname"): device for device in report.get("devices") or []}
+    placement = (report.get("deployment_model") or {}).get("placement") or {}
+    wanted = []
+    for key in ("gateway_leafs", "participating_leafs"):
+        for leaf in placement.get(key) or []:
+            hostname = leaf.get("hostname") if isinstance(leaf, dict) else leaf
+            if hostname and hostname not in wanted:
+                wanted.append(hostname)
+    gateway = report.get("gateway_assessment") or {}
+    vrf = gateway.get("vrf") or ""
+    l3 = report.get("migration_type") == "l3" and vrf not in ("", "default")
+    checked = []
+    issues = []
+    missing_vrf = []
+    for hostname in wanted:
+        device = devices.get(hostname)
+        if device is None:
+            issues.append("%s is a fabric leaf for this VLAN but was not discovered; its VTEP is unchecked." % hostname)
+            continue
+        if device_tier(device) != "fabric":
+            continue
+        vxlan = device.get("vxlan_interface") or {}
+        expected = device.get("expected_vtep_source") or "Loopback1"
+        row = {
+            "hostname": hostname,
+            "present": bool(vxlan.get("present")),
+            "source_interface": vxlan.get("source_interface") or "",
+            "source_ip": vxlan.get("source_ip") or "",
+            "replication_mode": vxlan.get("replication_mode") or "",
+            "flood_list_source": vxlan.get("flood_list_source") or "",
+            "l3_vni": (vxlan.get("vrf_vni") or {}).get(vrf) if vrf else None,
+        }
+        checked.append(row)
+        if not row["present"]:
+            issues.append("%s has no Vxlan interface; it is not a VTEP yet." % hostname)
+            continue
+        if row["replication_mode"] != "headend":
+            issues.append(
+                "%s floods BUM with %s, not head-end replication."
+                % (hostname, row["replication_mode"] or "an unknown mode")
+            )
+        if row["flood_list_source"].upper() != "EVPN":
+            issues.append(
+                "%s builds its head-end flood list from %s, not EVPN type-3 routes."
+                % (hostname, row["flood_list_source"] or "an unknown source")
+            )
+        if row["source_interface"].lower() != expected.lower():
+            issues.append(
+                "%s VTEP source is %s, expected %s."
+                % (hostname, row["source_interface"] or "unset", expected)
+            )
+        if l3 and row["l3_vni"] is None:
+            missing_vrf.append(hostname)
+    if missing_vrf:
+        issues.append(
+            "VRF %s has no L3 VNI on %s. Define the VRF in AVD before the gateway moves."
+            % (vrf, ", ".join(missing_vrf))
+        )
+    return {"checked": checked, "issues": issues, "vrf": vrf if l3 else ""}
+
+
 def build_action_items(report):
     """Everything an engineer must resolve before this VLAN can migrate."""
     items = []
@@ -361,6 +429,7 @@ def build_action_items(report):
         )
         return items
     items.extend((report.get("gateway_assessment") or {}).get("warnings") or [])
+    items.extend((report.get("fabric_readiness") or {}).get("issues") or [])
     for item in (report.get("placement_analysis") or {}).get("switches") or []:
         if item.get("role") == "review":
             items.append("%s needs review: %s" % (item.get("hostname"), "; ".join(item.get("nonqualifying") or [])))
@@ -469,6 +538,8 @@ def build_vlan_discovery_reports(vlans, play_hosts, hostvars, all_hosts=None):
                     "route_maps": discovery.get("route_maps", {}),
                     "ospf": discovery.get("ospf", []),
                     "vxlan_mappings": discovery.get("vxlan_mappings", []),
+                    "vxlan_interface": discovery.get("vxlan_interface", {}),
+                    "expected_vtep_source": discovery.get("expected_vtep_source", ""),
                     "acl_configs": per_vlan.get("acl_configs", {}),
                     "port_attachments": per_vlan.get("port_attachments", []),
                     "trunk_allowed": per_vlan.get("trunk_allowed", []),
@@ -792,6 +863,7 @@ def build_vlan_discovery_reports(vlans, play_hosts, hostvars, all_hosts=None):
             "not_discovered": list(not_discovered),
             "switches_scanned": [device["hostname"] for device in devices],
         }
+        report["fabric_readiness"] = fabric_readiness(report)
         report["action_items"] = build_action_items(report)
         report["deployment_model"]["site"]["data_center"] = (
             report["deployment_model"]["site"].get("data_center")

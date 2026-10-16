@@ -61,6 +61,8 @@
       route_maps: "{{ _disc_route_maps | default({}) }}"
       ospf: "{{ _disc_ospf | default([]) }}"
       vxlan_mappings: "{{ _disc_vxlan_mappings | default([]) }}"
+      vxlan_interface: "{{ _disc_vxlan_interface | default({}) }}"
+      expected_vtep_source: "{{ vtep_source_interface | default('Loopback1') }}"
       static_routes: "{{ _nxos_static_routes | default([]) }}"
       bgp_neighbors: "{{ _nxos_bgp_neighbors | default([]) }}"
       bgp_vlan_blocks: "{{ _nxos_bgp_vlan_blocks | default([]) }}"

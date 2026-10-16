@@ -5,6 +5,9 @@
 ansible_network_os: nxos
 network_os_family: nxos
 
+# Legacy MLS / core: the migration source, not part of the fabric.
+migration_tier: legacy
+
 network_config_module: cisco.nxos.nxos_config
 network_vlans_module: cisco.nxos.nxos_vlans
 network_facts_module: cisco.nxos.nxos_facts

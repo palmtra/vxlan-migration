@@ -25,21 +25,18 @@ network_backup_enabled: true
 # Gateway SVI on the border leaves uses this jumbo MTU.
 eos_svi_mtu: 9214
 
-# VXLAN fabric defaults used by the migration role
-vtep_loopback_id: 0
+# VXLAN fabric defaults. The fabric is Arista EOS built by AVD: Loopback0 is
+# the router-id / EVPN peering address and Loopback1 is the VTEP source.
+vtep_loopback_id: 1
 vtep_source_interface: "Loopback{{ vtep_loopback_id }}"
 
-# BUM is head-end replication, already deployed on the fabric. Leave this empty.
-# A per-VLAN mcast_group is emitted only when set. Placeholder 239.1.1.1 is rejected
-# unless allow_placeholder_fabric_defaults=true.
-vxlan_default_mcast_group: ""
+# BUM is head-end replication with EVPN type-3 (IMET) flood lists, already on
+# the fabric. There is no multicast underlay: a VLAN record with mcast_group is
+# rejected, and discovery flags a fabric VTEP that is not in headend mode.
+vxlan_replication_mode: headend
+vxlan_flood_list_source: EVPN
 
-# When true, allow lab placeholder fabric values (mcast 239.1.1.1, empty ASN).
-# Keep false for production.
-allow_placeholder_fabric_defaults: false
-
-# Optional EVPN control-plane knobs on the VNI. Head-end replication is already
-# on the fabric, so a VLAN migration does not add a multicast group.
+# Optional EVPN control-plane knobs on the VNI.
 # The BGP VLAN block (rd <router-id>:<vlan>, route-target from the L3 VNI)
 # is rendered from the VLAN record. This flag does not gate it.
 evpn_enabled: false

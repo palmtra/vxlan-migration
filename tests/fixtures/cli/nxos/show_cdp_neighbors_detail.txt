@@ -1,6 +1,6 @@
 ----------------------------------------
-Device ID:nxos-spine-lis-02(FOX1234ABCD)
-System Name: nxos-spine-lis-02
+Device ID:nxos-mls-lis-02(FOX1234ABCD)
+System Name: nxos-mls-lis-02
 
 Interface address(es):
     IPv4 Address: 10.1.0.22

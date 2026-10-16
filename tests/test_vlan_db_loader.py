@@ -156,6 +156,13 @@ class VlanDbLoaderTests(unittest.TestCase):
         self.assertEqual(record["name"], "FNTS-LAB-EXTERNAL")
         self.assertEqual(record["gateway_leafs"], ["oma01-blf01"])
 
+    def test_schema_rejects_a_multicast_group(self):
+        with self.assertRaises(Exception):
+            parse_vlan_record(
+                {"id": 1, "name": "x", "action": "migrate", "service_type": "l2", "mcast_group": "239.1.1.1"},
+                "bad.yml",
+            )
+
     def test_schema_rejects_invalid_service_type(self):
         with self.assertRaises(Exception):
             parse_vlan_record(

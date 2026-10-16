@@ -52,17 +52,13 @@
   become: false
   run_once: true
 
-- name: Fail if a multicast group is the repo placeholder
+- name: Refuse a multicast BUM group (the fabric uses head-end replication only)
   ansible.builtin.fail:
     msg: >-
-      VLAN {{ target_vlan_id }} has mcast_group 239.1.1.1, which is a placeholder.
-      BUM uses head-end replication already on the fabric. Omit mcast_group.
-      Set allow_placeholder_fabric_defaults=true only for a lab.
-  vars:
-    _effective_mcast: "{{ _vlan_to_migrate.mcast_group | default(vxlan_default_mcast_group | default(''), true) | string }}"
-  when:
-    - not (allow_placeholder_fabric_defaults | default(false) | bool)
-    - _effective_mcast == '239.1.1.1'
+      VLAN {{ target_vlan_id }} sets mcast_group {{ _vlan_to_migrate.mcast_group }}.
+      The fabric floods BUM with head-end replication (EVPN type-3 flood lists),
+      not multicast. Remove mcast_group from the VLAN record.
+  when: _vlan_to_migrate.mcast_group | default('') | string | length > 0
   delegate_to: localhost
   become: false
   run_once: true

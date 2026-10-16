@@ -29,10 +29,6 @@ interface Vlan{{ target_vlan_id }}
 {% endif %}
 interface {{ eos_vxlan_interface | default('Vxlan1') }}
  vxlan vlan {{ target_vlan_id }} vni {{ _vni }}
-{% set _mcast = _vlan_to_migrate.mcast_group | default(vxlan_default_mcast_group | default(''), true) %}
-{% if _mcast | length > 0 %}
- vxlan vlan {{ target_vlan_id }} multicast group {{ _mcast }}
-{% endif %}
 !
 {% set _bgp = _vlan_to_migrate | bgp_vlan_evpn(_device_hostname, _device_bgp_asn | default('', true), _device_loopback_ip | default('', true)) %}
 {% if _bgp and (_bgp.missing | default([]) | length == 0) %}

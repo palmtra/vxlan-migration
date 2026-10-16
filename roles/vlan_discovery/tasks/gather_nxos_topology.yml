@@ -56,3 +56,4 @@
     _disc_route_maps: "{{ _nxos_rpm_show.stdout | default('') | parse_route_maps }}"
     _disc_ospf: "{{ _nxos_ospf_show.stdout | default('') | parse_ospf_context }}"
     _disc_vxlan_mappings: []
+    _disc_vxlan_interface: {}

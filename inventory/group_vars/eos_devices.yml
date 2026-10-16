@@ -5,6 +5,9 @@
 ansible_network_os: eos
 network_os_family: eos
 
+# Arista VXLAN/EVPN fabric (AVD + CVaaS).
+migration_tier: fabric
+
 network_config_module: arista.eos.eos_config
 network_vlans_module: arista.eos.eos_vlans
 network_facts_module: arista.eos.eos_facts

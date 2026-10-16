@@ -12,5 +12,5 @@ target_switches:
 discovery_switches:
   - eos-leaf-oma-01
   - eos-leaf-oma-02
-  - nxos-spine-oma-01
-  - nxos-spine-oma-02
+  - nxos-mls-oma-01
+  - nxos-mls-oma-02

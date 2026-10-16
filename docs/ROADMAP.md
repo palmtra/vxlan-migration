@@ -56,6 +56,9 @@ Open features and planned work. Completed items are kept for context.
 - [x] STP root resolution; VXLAN VLAN-to-VNI collisions
 - [x] VLAN ranges (`100-110`) and multi-VLAN probing
 - [x] End-to-end mock run of `discover_vlan.yml` in CI (`make mock`)
+- [x] Fabric VTEP readiness from `show interfaces Vxlan1` (headend + EVPN flood list on Loopback1, gateway VRF L3 VNI)
+- [x] Head-end replication only: multicast BUM groups removed from config generation and rejected in the VLAN schema
+- [x] VTEP source defaults to Loopback1 (AVD); sample inventory names the NXOS hosts as legacy MLS
 
 ### Parked / hold (do not implement until there is a use-case)
 

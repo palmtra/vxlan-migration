@@ -74,7 +74,8 @@ Collects VLAN, MAC, SVI, ARP, trunks, LLDP/CDP neighbors, spanning tree, and (on
 | `discovery_probe_service_type` | empty | Empty lets discovery choose `l2`/`l3` for probe records. Set it to force a type |
 | `vlan_discovery_backup_enabled` | `false` | Capture config backup before discovery |
 | `discovery_collect_prune_context` | `true` | Collect static routes, BGP, OSPF, prefix-lists, and route-maps (EOS and NXOS) as **L3 discovery** (not prune actions) |
-| `migration_tier` (inventory host var) | EOS `fabric`, others `legacy` | Marks a switch as `legacy` (MLS / core / access) or `fabric`. Decides whether a gateway is reported as legacy or fabric |
+| `migration_tier` (inventory group/host var) | `eos_devices`: `fabric`; `nxos_devices`, `ios_devices`: `legacy` | Marks a switch as `legacy` (MLS / core / access) or `fabric`. Decides whether a gateway is reported as legacy or fabric, and which switches get the VTEP readiness check |
+| `vtep_source_interface` | `Loopback1` | Expected VTEP source on fabric leaves (AVD default). Also the source for underlay pings in verify |
 | `discovery_write_prune_plan` | `true` | Write the separate prune report (trunk/SVI/VLAN + EOS session text; never applies deletes) |
 | `prune_commit_timer` | `00:10:00` | EOS `commit timer` value printed in the prune report and used when prune apply is approved |
 | `prune_apply` | `false` | `playbooks/core/prune_vlan.yml` only. `true` sends CLI to prune-eligible switches |
@@ -141,6 +142,7 @@ Key **discovery** fields:
 - `gateway_assessment` — where the gateway lives today (`legacy`, `fabric`, `mixed`, `external`), subnets and VIPs, redundancy (HSRP / VRRP / VARP / anycast), what moves with it (DHCP relay, ACL, PBR, IPv6, OSPF, multicast, NAT, uRPF, and any SVI line not understood), firewall/router ports (`external_exits`), and the recommended migration type
 - `endpoint_table` — active IPs from ARP joined to the MAC table edge port (`edge`, `uplink_only`, `not_in_mac_table`), plus MAC-only endpoints. Gateway and FHRP addresses are flagged
 - `spanning_tree` — root bridge resolved to a discovered switch, or flagged as outside discovery scope
+- `fabric_readiness` — `show interfaces Vxlan1` on each fabric leaf that will carry the VLAN: VTEP source, replication mode, flood list source, and the gateway VRF's L3 VNI. The fabric uses head-end replication with EVPN flood lists only; anything else is an action item
 - `not_discovered` — switches in the play that never reported back
 
 - `endpoint_inventory` / `compute_inventory` — MACs and ports on compute links (servers, IBM Z, Nutanix, UCS, HCI). Switch-to-switch MAC learning is omitted.
@@ -190,7 +192,6 @@ Detailed generate-only walkthrough: [examples/generate-config-without-cvp-push.m
 | `cvp_change_control_auto_execute_allowed` | `false` | Must stay `false` unless explicitly overriding after review |
 | `cvp_build_borderleaf_config` | `false` | Border-leaf VRF/L3 VNI configlet. Off: do not create or rebind an existing VRF |
 | `avd_default_bgp_as` | `""` | Inventory fallback ASN when the VLAN record has no per-leaf `asn` |
-| `allow_placeholder_fabric_defaults` | `false` | Allow lab placeholder mcast `239.1.1.1` / empty ASN. Empty mcast means head-end replication |
 | `auto_rollback_on_verification_failure` | `false` | Attempt CVP rollback on verify failure (off by default) |
 | `cvp_rollback_allow_destructive_no_vlan` | `false` | Allow rollback to emit `no vlan` / VRF teardown |
 | `artifacts_dir` / `ARTIFACTS_DIR` | project root | Root for `reports/` and `backups/` (AAP EE mount) |

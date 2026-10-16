@@ -323,3 +323,80 @@ def parse_vxlan_vlan_to_vni(text):
         seen.add((vlan_id, vni))
         mappings.append({"vlan_id": vlan_id, "vni": vni})
     return mappings
+
+
+def _bracket_pairs(text):
+    """``[10, 10010]  [20, 10020]`` -> ``[('10', '10010'), ('20', '10020')]``."""
+    return re.findall(r"\[\s*([^,\]]+?)\s*,\s*(\d+)\s*\]", text or "")
+
+
+def parse_vxlan_interface(text):
+    """Parse EOS ``show interfaces Vxlan1``: is this switch a ready HER VTEP?
+
+    Returns source interface and address, UDP port, replication mode
+    (``headend`` or ``multicast``), flood list source (``EVPN``, static,
+    CVX), static VLAN-to-VNI and VRF-to-VNI maps, and the static headend
+    flood list.
+    """
+    body = str(text or "")
+    result = {
+        "present": False,
+        "source_interface": "",
+        "source_ip": "",
+        "udp_port": None,
+        "replication_mode": "",
+        "flood_list_source": "",
+        "vlan_vni": [],
+        "vrf_vni": {},
+        "flood_vteps": [],
+    }
+    if not re.search(r"(?im)^\s*Vxlan\d+ is ", body):
+        return result
+    result["present"] = True
+    source = re.search(
+        r"(?i)Source interface is\s+(\S+)(?:\s+and is \S+\s+with\s+(\d+\.\d+\.\d+\.\d+))?", body
+    )
+    if source:
+        result["source_interface"] = source.group(1)
+        result["source_ip"] = source.group(2) or ""
+    port = re.search(r"(?i)Listening on UDP port\s+(\d+)", body)
+    if port:
+        result["udp_port"] = int(port.group(1))
+    mode = re.search(
+        r"(?i)Replication/Flood Mode is\s+(\S+)(?:\s+with Flood List Source:\s*(.+?))?\s*$",
+        body,
+        re.M,
+    )
+    if mode:
+        result["replication_mode"] = mode.group(1).strip().lower()
+        result["flood_list_source"] = (mode.group(2) or "").strip()
+    section = None
+    for line in body.splitlines():
+        lower = line.strip().lower()
+        if lower.startswith("static vlan to vni mapping") or lower.startswith("dynamic vlan to vni"):
+            section = "vlan"
+            continue
+        if lower.startswith("static vrf to vni mapping") or lower.startswith("dynamic vrf to vni"):
+            section = "vrf"
+            continue
+        if lower.startswith("headend replication flood vtep list"):
+            section = "flood"
+            continue
+        if section in ("vlan", "vrf") and "[" not in line:
+            section = None
+        if section == "vlan":
+            for vlan, vni in _bracket_pairs(line):
+                if vlan.strip().isdigit():
+                    result["vlan_vni"].append({"vlan_id": int(vlan), "vni": int(vni)})
+        elif section == "vrf":
+            for vrf, vni in _bracket_pairs(line):
+                result["vrf_vni"][vrf.strip()] = int(vni)
+        elif section == "flood":
+            addresses = re.findall(r"\b\d+\.\d+\.\d+\.\d+\b", line)
+            if not addresses:
+                section = None
+                continue
+            for address in addresses:
+                if address not in result["flood_vteps"]:
+                    result["flood_vteps"].append(address)
+    return result

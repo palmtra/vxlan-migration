@@ -47,7 +47,10 @@
       "maximum": 16777215
     },
     "vrf": { "type": "string" },
-    "mcast_group": { "type": "string" },
+    "mcast_group": {
+      "not": {},
+      "description": "Not supported. The fabric floods BUM with head-end replication (EVPN flood lists), not multicast."
+    },
     "gateway": { "type": "string" },
     "prefixes": {
       "type": "array",

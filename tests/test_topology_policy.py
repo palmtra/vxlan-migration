@@ -45,10 +45,11 @@ from vlan_lib.topology import (  # noqa: E402
     parse_lldp_neighbors,
     parse_port_channel_members,
     parse_spanning_tree_vlan,
+    parse_vxlan_interface,
     parse_vxlan_vlan_to_vni,
 )
 
-INVENTORY = ["eos-leaf-lis-01", "eos-leaf-lis-02", "nxos-spine-lis-01", "nxos-spine-lis-02"]
+INVENTORY = ["eos-leaf-lis-01", "eos-leaf-lis-02", "nxos-mls-lis-01", "nxos-mls-lis-02"]
 
 
 def _read(*parts):
@@ -147,7 +148,7 @@ class TopologyTests(unittest.TestCase):
     def test_eos_lldp_detail(self):
         neighbors = parse_lldp_neighbors(_read("eos", "show_lldp_neighbors_detail.txt"), "eos")
         self.assertEqual([n["local_interface"] for n in neighbors], ["Ethernet1", "Ethernet3", "Ethernet7"])
-        self.assertEqual(neighbors[0]["neighbor_name"], "nxos-spine-lis-01.example.net")
+        self.assertEqual(neighbors[0]["neighbor_name"], "nxos-mls-lis-01.example.net")
         self.assertEqual(neighbors[0]["neighbor_port"], "Ethernet1/49")
         self.assertEqual(neighbors[0]["capabilities"], ["bridge", "router"])
         roles = [classify_neighbor(n, INVENTORY) for n in neighbors]
@@ -161,7 +162,7 @@ class TopologyTests(unittest.TestCase):
         )
         cdp = parse_cdp_neighbors(_read("nxos", "show_cdp_neighbors_detail.txt"))
         self.assertEqual([n["local_interface"] for n in cdp], ["Ethernet1/53", "Ethernet1/20"])
-        self.assertEqual(cdp[0]["neighbor_name"], "nxos-spine-lis-02")
+        self.assertEqual(cdp[0]["neighbor_name"], "nxos-mls-lis-02")
         self.assertEqual(
             [classify_neighbor(n, INVENTORY) for n in cdp], ["switch", "network_service"]
         )
@@ -192,6 +193,20 @@ class TopologyTests(unittest.TestCase):
         }
         self.assertTrue(build_vlan_verification(200, outputs)["vni_mapped"])
         self.assertFalse(build_vlan_verification(300, outputs)["vni_mapped"])
+
+    def test_vxlan_interface_her_evpn(self):
+        vxlan = parse_vxlan_interface(_read("eos", "show_interfaces_vxlan1.txt"))
+        self.assertEqual((vxlan["source_interface"], vxlan["source_ip"]), ("Loopback1", "10.1.1.11"))
+        self.assertEqual((vxlan["replication_mode"], vxlan["flood_list_source"]), ("headend", "EVPN"))
+        self.assertEqual(vxlan["udp_port"], 4789)
+        self.assertEqual(vxlan["vrf_vni"], {"TENANT1": 50001, "TENANT2": 50002})
+        self.assertIn({"vlan_id": 200, "vni": 10200}, vxlan["vlan_vni"])
+
+    def test_vxlan_interface_static_flood_list(self):
+        vxlan = parse_vxlan_interface(_read("eos", "show_interfaces_vxlan1_static_flood.txt"))
+        self.assertEqual(vxlan["flood_list_source"], "CLI")
+        self.assertEqual(vxlan["flood_vteps"], ["10.1.1.11", "10.1.1.13"])
+        self.assertFalse(parse_vxlan_interface("% Interface does not exist")["present"])
 
     def test_vxlan_vlan_to_vni(self):
         self.assertEqual(

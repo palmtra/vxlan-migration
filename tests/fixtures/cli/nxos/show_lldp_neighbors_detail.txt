@@ -6,7 +6,7 @@ Device ID            Local Intf      Hold-time  Capability  Port ID
 Chassis id: 001c.7300.0011
 Port id: Ethernet1
 Local Port id: Eth1/1
-Port Description: to nxos-spine-lis-01
+Port Description: to nxos-mls-lis-01
 System Name: eos-leaf-lis-01
 System Description: Arista Networks EOS version 4.28.3M running on an Arista Networks DCS-7050SX3-48YC8
 Time remaining: 101 seconds

@@ -1,6 +1,7 @@
 # Classic VLAN to VXLAN EVPN Migration
 
-Ansible automation to **migrate legacy VLANs to VXLAN/EVPN** on Arista EOS via CloudVision (CVP).
+Ansible automation to **migrate legacy VLANs to VXLAN/EVPN** on Arista EOS via CloudVision (CVaaS).
+The fabric is all Arista, built with AVD; BUM is head-end replication (EVPN flood lists), never multicast.
 
 - **Core workflow:** discover → local VLAN SSOT → AVD/Jinja config → CVP (pending change control). No ServiceNow.
 - **Advanced workflow:** Core + ServiceNow intake and ticket closure.
@@ -193,7 +194,7 @@ target_switches:          # CVP configlet targets
   - eos-leaf-lis-02
 discovery_switches:       # optional; defaults to target_switches
   - eos-leaf-lis-01
-  - nxos-spine-lis-01
+  - nxos-mls-lis-01
 ```
 
 ## Safety controls

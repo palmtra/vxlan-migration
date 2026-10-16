@@ -127,6 +127,8 @@
       route_maps: "{{ _disc_route_maps | default({}) }}"
       ospf: "{{ _disc_ospf | default([]) }}"
       vxlan_mappings: "{{ _disc_vxlan_mappings | default([]) }}"
+      vxlan_interface: "{{ _disc_vxlan_interface | default({}) }}"
+      expected_vtep_source: "{{ vtep_source_interface | default('Loopback1') }}"
       vxlan_raw: "{{ _eos_show_vxlan.stdout | default('') }}"
       static_routes: "{{ _eos_static_routes | default([]) }}"
       bgp_neighbors: "{{ _eos_bgp_neighbors | default([]) }}"

@@ -8,7 +8,7 @@ Interface Ethernet1 detected 1 LLDP neighbors:
     Port ID        : "Ethernet1/49"
   - Time To Live: 120 seconds
   - Port Description: "to eos-leaf-lis-01"
-  - System Name: "nxos-spine-lis-01.example.net"
+  - System Name: "nxos-mls-lis-01.example.net"
   - System Description: "Cisco Nexus Operating System (NX-OS) Software 9.3(8)"
   - System Capabilities : Bridge, Router
     Enabled Capabilities: Bridge, Router

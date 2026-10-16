@@ -1,6 +1,6 @@
 ---
 # -----------------------------------------------------------------------------
-# EOS - neighbors, port-channels, routing policy, VXLAN map (once per device)
+# EOS - neighbors, port-channels, routing policy, VXLAN/VTEP state (once per device)
 # -----------------------------------------------------------------------------
 # LLDP classifies switch-to-switch trunks, firewalls, and switches outside the
 # inventory more reliably than port descriptions. Policy is collected so the
@@ -58,6 +58,14 @@
   changed_when: false
   failed_when: false
 
+- name: EOS - show interfaces Vxlan1 (VTEP source, HER flood mode, VRF L3 VNIs)
+  ansible.netcommon.cli_command:
+    command: "show interfaces {{ eos_vxlan_interface | default('Vxlan1') }}"
+  register: _eos_vxlan_interface_show
+  check_mode: false
+  changed_when: false
+  failed_when: false
+
 - name: EOS - parse neighbors, port-channels, policy, and VXLAN map
   ansible.builtin.set_fact:
     _disc_neighbors: "{{ _eos_lldp_show.stdout | default('') | parse_lldp_neighbors('eos') }}"
@@ -66,3 +74,4 @@
     _disc_route_maps: "{{ _eos_route_map_show.stdout | default('') | parse_route_maps }}"
     _disc_ospf: "{{ _eos_ospf_show.stdout | default('') | parse_ospf_context }}"
     _disc_vxlan_mappings: "{{ _eos_show_vxlan.stdout | default('') | parse_vxlan_vlan_to_vni }}"
+    _disc_vxlan_interface: "{{ _eos_vxlan_interface_show.stdout | default('') | parse_vxlan_interface }}"

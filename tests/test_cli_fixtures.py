@@ -414,10 +414,10 @@ class DiscoveryReportSsotTests(unittest.TestCase):
                     "prune_plan": eos_plan,
                 },
             },
-            "nxos-spine-lis-01": {
+            "nxos-mls-lis-01": {
                 "data_center": "lisle",
                 "_vlan_discovery": {
-                    "hostname": "nxos-spine-lis-01",
+                    "hostname": "nxos-mls-lis-01",
                     "data_center": "lisle",
                     "os_family": "nxos",
                     "per_vlan": [nxos],
@@ -440,7 +440,7 @@ class DiscoveryReportSsotTests(unittest.TestCase):
             "target_switches": ["eos-leaf-lis-01"],
         }
         reports = build_vlan_discovery_reports(
-            [vlan], ["eos-leaf-lis-01", "nxos-spine-lis-01"], hostvars
+            [vlan], ["eos-leaf-lis-01", "nxos-mls-lis-01"], hostvars
         )
         report = reports[0]
         self.assertEqual(report["gateway"], "10.10.100.1")
@@ -455,7 +455,7 @@ class DiscoveryReportSsotTests(unittest.TestCase):
             report["deployment_model"]["site"]["vlan"]["description"], "legacy_web"
         )
         self.assertIn("eos-leaf-lis-01", report["snippet_target_switches"])
-        self.assertNotIn("nxos-spine-lis-01", report["snippet_target_switches"])
+        self.assertNotIn("nxos-mls-lis-01", report["snippet_target_switches"])
         model = report["deployment_model"]
         self.assertEqual(model["migration"]["type"], "l3")
         self.assertEqual(model["placement"]["gateway_leafs"], [])
@@ -467,12 +467,12 @@ class DiscoveryReportSsotTests(unittest.TestCase):
             item["hostname"] for item in model["placement"]["source_gateway_devices"]
         ]
         self.assertIn("eos-leaf-lis-01", sources)
-        self.assertIn("nxos-spine-lis-01", sources)
+        self.assertIn("nxos-mls-lis-01", sources)
         prune_hosts = [
             item["hostname"] for item in model["placement"]["prune_eligible_leafs"]
         ]
         self.assertNotIn("eos-leaf-lis-01", prune_hosts)
-        self.assertEqual(prune_hosts, ["nxos-spine-lis-01"])
+        self.assertEqual(prune_hosts, ["nxos-mls-lis-01"])
         self.assertEqual(model["routing"]["gateway_ip"], "10.10.100.1")
         eos_plan_row = next(
             plan for plan in report["prune_plans"] if plan["hostname"] == "eos-leaf-lis-01"
@@ -484,7 +484,7 @@ class DiscoveryReportSsotTests(unittest.TestCase):
         l3_ops = {item["op"] for item in eos_plan_row.get("l3_review") or []}
         self.assertIn("no_ip_route", l3_ops)
         nxos_plan_row = next(
-            plan for plan in report["prune_plans"] if plan["hostname"] == "nxos-spine-lis-01"
+            plan for plan in report["prune_plans"] if plan["hostname"] == "nxos-mls-lis-01"
         )
         self.assertEqual(nxos_plan_row["placement_role"], "prune_eligible")
         self.assertTrue(nxos_plan_row["source_gateway"])
@@ -506,11 +506,11 @@ class DiscoveryReportSsotTests(unittest.TestCase):
             item["hostname"]: item for item in report["l3_discovery"]["devices"]
         }
         self.assertIn("eos-leaf-lis-01", l3_by_host)
-        self.assertIn("nxos-spine-lis-01", l3_by_host)
+        self.assertIn("nxos-mls-lis-01", l3_by_host)
         eos_l3 = l3_by_host["eos-leaf-lis-01"]
         self.assertEqual(eos_l3["vrf"], "default")
         self.assertTrue(any(block["vlan_id"] == 100 for block in eos_l3["bgp_vlan"]))
-        nxos_l3 = l3_by_host["nxos-spine-lis-01"]
+        nxos_l3 = l3_by_host["nxos-mls-lis-01"]
         self.assertEqual(nxos_l3["vrf"], "TENANT1")
         self.assertEqual(nxos_l3["svi"]["hsrp_addresses"], ["10.10.100.1"])
         self.assertEqual(

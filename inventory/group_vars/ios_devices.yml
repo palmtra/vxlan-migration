@@ -8,6 +8,9 @@
 ansible_network_os: ios
 network_os_family: ios
 
+# Legacy access: the migration source, not part of the fabric.
+migration_tier: legacy
+
 # Mapping of platform-specific command templates / modules used by roles.
 network_config_module: cisco.ios.ios_config
 network_vlans_module: cisco.ios.ios_vlans

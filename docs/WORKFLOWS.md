@@ -1,6 +1,9 @@
 # Workflows — Core vs Advanced
 
-This repository automates **legacy VLAN → VXLAN/EVPN migration** on Arista EOS via CloudVision (CVP).
+This repository automates **legacy VLAN → VXLAN/EVPN migration** on Arista EOS via CloudVision (CVaaS).
+The fabric is **all Arista EOS**, built with **AVD**. BUM is **head-end replication** with EVPN type-3
+flood lists; there is no multicast underlay. Loopback0 is the router-id / EVPN peering address and
+Loopback1 the VTEP source. NXOS (and parked IOS) switches are the **legacy** source only.
 On **`main`**, discovery targets **NXOS** (legacy) and **EOS** (fabric); deploy/verify are **EOS only**.
 IOS discovery is parked — see [OS_SUPPORT.md](OS_SUPPORT.md).
 
@@ -142,6 +145,7 @@ Per switch, per VLAN (read-only):
 | Routing policy | EOS `section prefix-list` / `section route-map`; NXOS `show running-config rpm`. Used to evaluate redistribution and peer export for the VLAN prefix |
 | OSPF | EOS `section router ospf`; NXOS `show running-config ospf` |
 | VXLAN map (EOS) | `show vxlan vlan-to-vni`: VLAN already mapped, VNI collisions |
+| Fabric VTEP readiness (EOS) | `show interfaces Vxlan1`: VTEP source and address, replication mode, flood list source, VRF-to-VNI map. Every fabric leaf that will carry the VLAN must be `headend` with an `EVPN` flood list on `vtep_source_interface` (Loopback1); for L3 the gateway VRF must already have an L3 VNI. Anything else is an action item |
 | Retain keep-list | Service `prune.retain` or `discovery_prune_retain` → `blocked_by_retain` |
 
 Every critical command that fails, and every switch that never reports back, is listed under **Action items** in the report. A switch missing from discovery is never shown as "VLAN absent".
@@ -200,7 +204,7 @@ Pass `-e manual_service_id=<id>` on discovery to seed VLAN IDs and apply `prune.
 | `vlan_name` | no | On-box / post-migration VLAN name |
 | `gateway` | no | Anycast / HSRP / VR address discovered on the SVI |
 | `prefixes` | no | Subnets derived from SVI CIDRs |
-| `mcast_group` | no | Omit. BUM is head-end replication. Set only to emit `vxlan vlan <id> multicast group` |
+| `mcast_group` | never | Rejected. BUM is head-end replication with EVPN flood lists |
 
 ---
 

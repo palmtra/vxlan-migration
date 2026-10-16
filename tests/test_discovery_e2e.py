@@ -3,13 +3,13 @@
 
 Topology for VLAN 100 (TENANT1, 10.10.100.0/24):
 
-* nxos-spine-lis-01 / -02: legacy MLS pair, HSRP VIP .1, vPC peer-link Po1.
+* nxos-mls-lis-01 / -02: legacy MLS pair, HSRP VIP .1, vPC peer-link Po1.
   -01 trunks Po10 to eos-leaf-lis-01 and Po11 to eos-leaf-lis-02.
   -02 trunks Po20 to acc-sw-12, a switch outside the inventory with no MACs.
   -01 redistributes the SVI into BGP and peers with the firewall 10.10.1.1.
 * eos-leaf-lis-01: server on Et3 (LLDP: ESXi), uplink Po1 to the MLS.
 * eos-leaf-lis-02: VLAN on its uplink only (transit).
-* nxos-spine-lis-99: in the play, never reported back (unreachable).
+* nxos-mls-lis-99: in the play, never reported back (unreachable).
 """
 
 import os
@@ -42,14 +42,14 @@ from vlan_lib.parsers import (  # noqa: E402
 )
 from vlan_lib.policy import parse_prefix_lists, parse_route_maps  # noqa: E402
 from vlan_lib.reports import build_vlan_discovery_reports  # noqa: E402
-from vlan_lib.topology import parse_lldp_neighbors  # noqa: E402
+from vlan_lib.topology import parse_lldp_neighbors, parse_vxlan_interface  # noqa: E402
 
 INVENTORY = [
-    "nxos-spine-lis-01",
-    "nxos-spine-lis-02",
+    "nxos-mls-lis-01",
+    "nxos-mls-lis-02",
     "eos-leaf-lis-01",
     "eos-leaf-lis-02",
-    "nxos-spine-lis-99",
+    "nxos-mls-lis-99",
 ]
 
 MLS_SVI = """interface Vlan100
@@ -139,7 +139,7 @@ class DiscoveryEndToEndTests(unittest.TestCase):
         mls1 = extract_vlan_targeted_discovery(
             vlan,
             dict(
-                _mls("nxos-spine-lis-01", "10.10.100.2", ["Po10", "Po11"], "eos-leaf-lis-01", mls1_arp),
+                _mls("nxos-mls-lis-01", "10.10.100.2", ["Po10", "Po11"], "eos-leaf-lis-01", mls1_arp),
                 mac_output=(
                     "* 100    0050.56ab.1001   dynamic   0   F   F   Po10\n"
                 ),
@@ -149,7 +149,7 @@ class DiscoveryEndToEndTests(unittest.TestCase):
         mls2 = extract_vlan_targeted_discovery(
             vlan,
             _mls(
-                "nxos-spine-lis-02",
+                "nxos-mls-lis-02",
                 "10.10.100.3",
                 ["Po20"],
                 "acc-sw-12",
@@ -180,7 +180,7 @@ class DiscoveryEndToEndTests(unittest.TestCase):
                     '  - System Description: "VMware ESX Releasebuild-21495797"\n'
                     "Interface Ethernet49 detected 1 LLDP neighbors:\n\n"
                     "  Neighbor 0023.04ee.be01/Ethernet1/10, age 3 seconds\n"
-                    '  - System Name: "nxos-spine-lis-01"\n',
+                    '  - System Name: "nxos-mls-lis-01"\n',
                     "eos",
                 ),
                 "port_channels": {"po1": ["Ethernet49"]},
@@ -193,7 +193,7 @@ class DiscoveryEndToEndTests(unittest.TestCase):
                 "vlan_id_output": "100   WEB_VXLAN active    Po1\n",
                 "trunk_interface_names": ["Port-Channel1"],
                 "interface_configs": [
-                    {"interface": "Port-Channel1", "description": "uplink to nxos-spine-lis-01", "raw": "x"}
+                    {"interface": "Port-Channel1", "description": "uplink to nxos-mls-lis-01", "raw": "x"}
                 ],
                 "switch_hostnames": INVENTORY,
                 "inventory_hostnames": INVENTORY,
@@ -201,9 +201,9 @@ class DiscoveryEndToEndTests(unittest.TestCase):
         )
         bgp = parse_bgp_context(MLS1_BGP)
         hostvars = {
-            "nxos-spine-lis-01": {
+            "nxos-mls-lis-01": {
                 "_vlan_discovery": {
-                    "hostname": "nxos-spine-lis-01",
+                    "hostname": "nxos-mls-lis-01",
                     "os_family": "nxos",
                     "per_vlan": [mls1],
                     "bgp_as": bgp["bgp_as"],
@@ -214,27 +214,39 @@ class DiscoveryEndToEndTests(unittest.TestCase):
                     "route_maps": parse_route_maps(MLS1_RPM),
                 }
             },
-            "nxos-spine-lis-02": {
-                "_vlan_discovery": {"hostname": "nxos-spine-lis-02", "os_family": "nxos", "per_vlan": [mls2]}
+            "nxos-mls-lis-02": {
+                "_vlan_discovery": {"hostname": "nxos-mls-lis-02", "os_family": "nxos", "per_vlan": [mls2]}
             },
             "eos-leaf-lis-01": {
-                "_vlan_discovery": {"hostname": "eos-leaf-lis-01", "os_family": "eos", "per_vlan": [leaf1]}
+                "_vlan_discovery": {
+                    "hostname": "eos-leaf-lis-01",
+                    "os_family": "eos",
+                    "per_vlan": [leaf1],
+                    "expected_vtep_source": "Loopback1",
+                    "vxlan_interface": parse_vxlan_interface(
+                        "Vxlan1 is up, line protocol is up (connected)\n"
+                        "  Source interface is Loopback0 and is active with 10.1.0.11\n"
+                        "  Replication/Flood Mode is headend with Flood List Source: CLI\n"
+                        "  Static VRF to VNI mapping is\n"
+                        "   [TENANT2, 50002]\n"
+                    ),
+                }
             },
             "eos-leaf-lis-02": {
                 "_vlan_discovery": {"hostname": "eos-leaf-lis-02", "os_family": "eos", "per_vlan": [leaf2]}
             },
-            "nxos-spine-lis-99": {},
+            "nxos-mls-lis-99": {},
             "ios-leaf-lis-01": {"_discovery_skipped": True},
         }
         play_hosts = INVENTORY[:4]
         cls.report = build_vlan_discovery_reports(
-            [vlan], play_hosts, hostvars, play_hosts + ["nxos-spine-lis-99", "ios-leaf-lis-01"]
+            [vlan], play_hosts, hostvars, play_hosts + ["nxos-mls-lis-99", "ios-leaf-lis-01"]
         )[0]
 
     def test_probe_record_takes_l3_from_the_legacy_gateway(self):
         gateway = self.report["gateway_assessment"]
         self.assertEqual(gateway["location"], "legacy")
-        self.assertEqual(gateway["source_devices"], ["nxos-spine-lis-01", "nxos-spine-lis-02"])
+        self.assertEqual(gateway["source_devices"], ["nxos-mls-lis-01", "nxos-mls-lis-02"])
         self.assertEqual(gateway["virtual_ip"], "10.10.100.1")
         self.assertEqual(gateway["services"]["dhcp_relay"], [{"server": "10.99.0.10", "vrf": ""}])
         self.assertEqual(self.report["migration_type"], "l3")
@@ -247,10 +259,10 @@ class DiscoveryEndToEndTests(unittest.TestCase):
         )
         self.assertEqual(
             [leaf["hostname"] for leaf in placement["prune_eligible_leafs"]],
-            ["nxos-spine-lis-01", "eos-leaf-lis-02"],
+            ["nxos-mls-lis-01", "eos-leaf-lis-02"],
         )
         roles = {item["hostname"]: item["role"] for item in self.report["placement_analysis"]["switches"]}
-        self.assertEqual(roles["nxos-spine-lis-02"], "review")
+        self.assertEqual(roles["nxos-mls-lis-02"], "review")
 
     def test_lldp_overrides_missing_descriptions(self):
         leaf1 = next(d for d in self.report["devices"] if d["hostname"] == "eos-leaf-lis-01")
@@ -290,11 +302,21 @@ class DiscoveryEndToEndTests(unittest.TestCase):
         self.assertEqual(record["gateway_location"], "legacy")
         self.assertEqual(record["vrf"], "TENANT1")
 
+    def test_fabric_readiness_flags_a_leaf_that_is_not_her_evpn(self):
+        readiness = self.report["fabric_readiness"]
+        self.assertEqual([row["hostname"] for row in readiness["checked"]], ["eos-leaf-lis-01"])
+        issues = " | ".join(readiness["issues"])
+        self.assertIn("eos-leaf-lis-01 builds its head-end flood list from CLI, not EVPN", issues)
+        self.assertIn("eos-leaf-lis-01 VTEP source is Loopback0, expected Loopback1", issues)
+        self.assertIn("VRF TENANT1 has no L3 VNI on eos-leaf-lis-01", issues)
+        self.assertNotIn("floods BUM with", issues)
+        self.assertIn(readiness["issues"][0], self.report["action_items"])
+
     def test_unreachable_and_action_items(self):
-        self.assertEqual(self.report["not_discovered"], ["nxos-spine-lis-99"])
+        self.assertEqual(self.report["not_discovered"], ["nxos-mls-lis-99"])
         items = " | ".join(self.report["action_items"])
-        self.assertIn("nxos-spine-lis-99 was not discovered", items)
-        self.assertIn("nxos-spine-lis-02 needs review", items)
+        self.assertIn("nxos-mls-lis-99 was not discovered", items)
+        self.assertIn("nxos-mls-lis-02 needs review", items)
         self.assertIn("Choose gateway_mode", items)
         self.assertIn("Assign evpn.l2.vni", items)
 
