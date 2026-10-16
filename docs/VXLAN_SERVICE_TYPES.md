@@ -58,7 +58,8 @@ Set `vrf` to the target VRF. The VLAN VNI is `evpn.l2.vni`, or `evpn.l3.vni` whe
 
 | List | Meaning |
 |---|---|
-| `participating_leafs` | Deploy the VNI here. Gateway leaves, plus any switch with local endpoint attachment. |
+| `participating_leafs` | Deploy the VNI here. VTEPs only: gateway leaves, VTEPs with local endpoints, and VTEPs a non-VTEP switch with endpoints uplinks to. |
+| `l2_attached_switches` | Non-VTEP switches that keep the VLAN as plain L2 behind a VTEP. No VNI. Their MLS links are link prunes. |
 | `gateway_leafs` | Subset of participating leaves that will host the gateway. Explicit only. |
 | `prune_eligible_leafs` | VLAN exists today and there are no local endpoints. Source gateways are included and listed first. |
 | `source_gateway_devices` | Current SVI owners. The same host is also prune-eligible when it has no local endpoints. |

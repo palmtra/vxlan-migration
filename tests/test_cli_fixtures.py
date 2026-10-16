@@ -46,6 +46,19 @@ def _read(*parts):
 
 
 class EosCliFixtureTests(unittest.TestCase):
+    def test_eos_trunk_sections_and_physical_ports(self):
+        trunks = parse_trunk_interfaces(_read("eos", "show_interfaces_trunk_sections.txt"), "eos")
+        self.assertEqual(
+            trunks,
+            [
+                {"interface": "Et49/1", "allowed_summary": "All"},
+                {"interface": "Po1", "allowed_summary": "100,200-210"},
+            ],
+        )
+        single = parse_trunk_interfaces(_read("eos", "show_interfaces_trunk.txt"), "eos")
+        self.assertEqual([t["interface"] for t in single], ["Et1", "Po1", "Po3"])
+        self.assertEqual(single[1]["allowed_summary"], "100,200-210")
+
     def test_vlan_id_ports_and_name(self):
         result = parse_vlan_id_ports(
             _read("eos", "show_vlan_id_100.txt"),

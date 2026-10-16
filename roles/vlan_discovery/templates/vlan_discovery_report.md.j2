@@ -31,7 +31,11 @@
 | Gateway mode | {{ gw.mode if gw.mode else '**not set** (distributed_anycast or centralized_anycast)' }}{% if placement.gateway_leafs | default([]) | length > 0 %}; gateway leaves {{ placement.gateway_leafs | map(attribute='hostname') | join(', ') }}{% endif %} |
 {% endif %}
 | VLAN present on | {{ report.switches_vlan_defined | default([]) | length }} switches |
-| Local endpoints on | {{ short_list(placement.participating_leafs | default([]) | map(attribute='hostname') | list) or 'none' }} |
+| VNI targets (VTEPs) | {{ short_list(placement.participating_leafs | default([]) | map(attribute='hostname') | list) or 'none' }} |
+{% set kept_l2 = analysis | selectattr('role', 'in', ['l2_attached', 'legacy_retained']) | list %}
+{% if kept_l2 | length > 0 %}
+| Keep VLAN, no VNI | {% for item in kept_l2 %}{{ item.hostname }} ({{ 'non-VTEP' if item.role == 'l2_attached' else 'MLS, until endpoints move' }}){{ ', ' if not loop.last }}{% endfor %} |
+{% endif %}
 | Prune | {{ placement.prune_eligible_leafs | default([]) | length }} switch{{ 'es' if placement.prune_eligible_leafs | default([]) | length != 1 }}{% if placement.prune_eligible_leafs | default([]) | length > 0 %}: {{ short_list(placement.prune_eligible_leafs | map(attribute='hostname') | list) }}{% endif %} |
 | Active IP endpoints | {{ et_summary.active_ips | default(0) }}{% if et_summary.mac_only | default(0) %} (+{{ et_summary.mac_only }} MAC only){% endif %}{% if not et_summary.arp_available | default(false) %} (no SVI on a discovered switch, so no ARP; MACs only){% endif %} |
 {% set fr = report.fabric_readiness | default({}) %}
@@ -52,17 +56,37 @@ None.
 
 ## Switches
 
-| Switch | Tier | Role | Local endpoints | VLAN trunks | SVI | Notes |
+| Switch | Type | Role | Local endpoints | VLAN trunks | SVI | Notes |
 |--------|------|------|-----------------|-------------|-----|-------|
 {% for device in present %}
 {% set decision = analysis | selectattr('hostname', 'equalto', device.hostname) | list | first | default({}) %}
 {% set endpoints = (device.compute_ports | default([])) + (device.service_ports | default([]) | map('regex_replace', '$', ' (fw/lb/router)') | list) + (device.downstream_switch_ports | default([]) | map('regex_replace', '$', ' (switch)') | list) + (device.unknown_ports | default([]) | map('regex_replace', '$', ' (unknown)') | list) %}
 {% set trunks = (device.switch_uplink_ports | default([])) + (device.peer_link_ports | default([]) | map('regex_replace', '$', ' (peer)') | list) %}
-| {{ device.hostname }} | {{ device.migration_tier | default('') }} | {{ device.placement_role | default(decision.role | default('')) }} | {{ short_list(endpoints) }}{% if device.endpoint_mac_entries | default([]) | length > 0 %} [{{ device.endpoint_mac_entries | length }} MAC]{% endif %} | {{ short_list(trunks) }} | {% if device.svi_present %}{{ device.svi_details.primary_ip | default('') or 'no IP' }}{% if device.svi_details.shutdown | default(false) %} shut{% endif %}{% endif %} | {{ cell((decision.evidence | default([]) if decision.role | default('') == 'participating' else decision.nonqualifying | default([])) | join('; ')) }} |
+| {{ device.hostname }} | {{ {'vtep': 'VTEP', 'l2_switch': 'non-VTEP', 'mls': 'legacy'}[decision.switch_role | default('')] | default(device.migration_tier | default('')) }} | {{ device.placement_role | default(decision.role | default('')) }} | {{ short_list(endpoints) }}{% if device.endpoint_mac_entries | default([]) | length > 0 %} [{{ device.endpoint_mac_entries | length }} MAC]{% endif %} | {{ short_list(trunks) }} | {% if device.svi_present %}{{ device.svi_details.primary_ip | default('') or 'no IP' }}{% if device.svi_details.shutdown | default(false) %} shut{% endif %}{% endif %} | {{ cell((decision.evidence | default([]) if decision.role | default('') in ['participating', 'l2_attached', 'legacy_retained'] else decision.nonqualifying | default([])) | join('; ')) }} |
 {% endfor %}
 
 {% if absent | length > 0 %}
 Not present on: {{ absent | join(', ') }}.
+{% endif %}
+{% set l2a = report.l2_attachment | default({}) %}
+{% set l2_groups = l2a.groups | default([]) | selectattr('has_endpoints') | list %}
+{% if l2_groups | length > 0 or l2a.interconnects | default([]) | length > 0 %}
+
+## Non-VTEP switches
+
+Non-VTEP switches keep the VLAN as plain L2 and must reach it through a VTEP only. A link to the MLS as well bridges EVPN and legacy L2; that link is pruned at cutover.
+
+{% if l2_groups | length > 0 %}
+| Switches | VTEP uplinks | MLS links | Status |
+|----------|--------------|-----------|--------|
+{% for group in l2_groups %}
+| {{ group.members | join(', ') }} | {% for l in group.vtep_links %}{{ l.member }} {{ l.member_if }} - {{ l.peer }} {{ l.peer_if }}{{ '; ' if not loop.last }}{% else %}**none**{% endfor %} | {% for l in group.mls_links %}{{ l.member }} {{ l.member_if }} - {{ l.peer }} {{ l.peer_if }}{{ '; ' if not loop.last }}{% else %}none{% endfor %} | {{ {'dual_attached': '**prune MLS links**' ~ (' (blocked: VNI not live on ' ~ group.vteps_not_live | join(', ') ~ ')' if group.vteps_not_live else ' (ready)'), 'vtep_only': 'ok', 'no_vtep_uplink': '**no VTEP uplink**'}[group.status] | default(group.status) }} |
+{% endfor %}
+{% endif %}
+{% if l2a.interconnects | default([]) | length > 0 %}
+
+Fabric-legacy interconnects for this VLAN: {% for i in l2a.interconnects %}{{ i.vtep }} {{ i.vtep_if }} - {{ i.mls }} {{ i.mls_if }}{{ '; ' if not loop.last }}{% endfor %}.
+{% endif %}
 {% endif %}
 {% if gw.svis | default([]) | length > 0 %}
 
@@ -159,6 +183,10 @@ MAC only, no ARP entry ({{ et.mac_only | length }}):
 {% endif %}
 ## Prune order
 
+{% for plan in report.link_prune_plans | default([]) %}
+- Link prune on {{ plan.hostname }} ({{ plan.status }}): {% for action in (plan.actions | default([])) + (plan.blocked_actions | default([])) %}{{ action.interface }} toward {{ action.peer }}{{ ', ' if not loop.last }}{% endfor %}
+
+{% endfor %}
 {% for leaf in placement.prune_eligible_leafs | default([]) %}
 {% set device = report.devices | selectattr('hostname', 'equalto', leaf.hostname) | list | first | default({}) %}
 {{ loop.index }}. {{ leaf.hostname }}{% if device.svi_present %} - source gateway: remove Vlan{{ report.vlan_id }} SVI{% endif %}{% if device.switch_uplink_ports | default([]) | length > 0 %}; trunks {{ short_list(device.switch_uplink_ports) }}{% endif %}

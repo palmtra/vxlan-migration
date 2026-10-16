@@ -74,7 +74,7 @@ Collects VLAN, MAC, SVI, ARP, trunks, LLDP/CDP neighbors, spanning tree, and (on
 | `discovery_probe_service_type` | empty | Empty lets discovery choose `l2`/`l3` for probe records. Set it to force a type |
 | `vlan_discovery_backup_enabled` | `false` | Capture config backup before discovery |
 | `discovery_collect_prune_context` | `true` | Collect static routes, BGP, OSPF, prefix-lists, and route-maps (EOS and NXOS) as **L3 discovery** (not prune actions) |
-| `migration_tier` (inventory group/host var) | `eos_devices`: `fabric`; `nxos_devices`, `ios_devices`: `legacy` | Marks a switch as `legacy` (MLS / core / access) or `fabric`. Decides whether a gateway is reported as legacy or fabric, and which switches get the VTEP readiness check |
+| `migration_tier` (inventory group/host var) | `eos_devices`: `fabric`; `nxos_devices`: `legacy`; `ios_devices`: `access` | `fabric`: Arista leaf (a VTEP when Vxlan1 exists, otherwise a non-VTEP switch). `legacy`: the MLS / core being retired. `access`: a non-VTEP L2 switch that stays and must attach through a VTEP. Set `access` per host for any switch in the discovery list that is not a VTEP |
 | `vtep_source_interface` | `Loopback1` | Expected VTEP source on fabric leaves (AVD default). Also the source for underlay pings in verify |
 | `discovery_write_prune_plan` | `true` | Write the separate prune report (trunk/SVI/VLAN + EOS session text; never applies deletes) |
 | `prune_commit_timer` | `00:10:00` | EOS `commit timer` value printed in the prune report and used when prune apply is approved |
@@ -144,12 +144,14 @@ Key **discovery** fields:
 - `spanning_tree` — root bridge resolved to a discovered switch, or flagged as outside discovery scope
 - `fabric_readiness` — `show interfaces Vxlan1` on each fabric leaf that will carry the VLAN: VTEP source, replication mode, flood list source, and the gateway VRF's L3 VNI. The fabric uses head-end replication with EVPN flood lists only; anything else is an action item
 - `not_discovered` — switches in the play that never reported back
+- `l2_attachment` — switch roles (`vtep`, `mls`, `l2_switch`), non-VTEP groups with their VTEP uplinks and MLS links (`vtep_only`, `dual_attached`, `no_vtep_uplink`, `no_endpoints`), link prunes, and fabric-legacy interconnects
+- `link_prune_plans` — per switch, the MLS-facing trunk to drop the VLAN from. `ready`, `blocked_until_vni_live`, or `blocked_until_gateway_in_fabric`. Ready plans are applied by `prune_vlan.yml` like prune-eligible plans
 
 - `endpoint_inventory` / `compute_inventory` — MACs and ports on compute links (servers, IBM Z, Nutanix, UCS, HCI). Switch-to-switch MAC learning is omitted.
 - `uplink_inventory` — trunks toward other switches (context only; does not make a leaf participating)
 - `unknown_inventory` — ports that could not be classified. A non-gateway switch with those ports is `review`. A source gateway stays prune-eligible; the unclassified ports are called out on the dry-run
 - Port roles come from LLDP/CDP first (`switch_uplink` for an inventory switch, `downstream_switch` for a switch outside the inventory, `network_service` for a firewall / load balancer / router, `compute`), then from the description. A `network_service` port is a local endpoint: the switch is participating until that device is re-homed. A `downstream_switch` port with MACs is participating; without MACs the switch is `review`, never auto-pruned
-- `deployment_model.placement` — `participating_leafs`, `gateway_leafs`, `prune_eligible_leafs`, `source_gateway_devices`
+- `deployment_model.placement` — `participating_leafs` (VTEPs only; these become `target_switches`), `gateway_leafs`, `l2_attached_switches` (non-VTEP switches that keep the VLAN, with their VTEP uplinks; never `target_switches`), `prune_eligible_leafs`, `source_gateway_devices`
 - `routing.associated` — statics whose next hop is in the VLAN prefix, that exit via `Vlan<id>`, whose prefix is the VLAN prefix, Null0 discards that cover it, or whose `name` equals an optional `static_route_tags` entry (case-insensitive). Also BGP networks or aggregates of that prefix, `redistribute connected`/`direct`/`static` on the source gateway with the route-map verdict for the VLAN prefix, BGP peers that sit on the VLAN, `bgp_exports` (each peer's outbound route-map verdict), `bgp_live` (`show ip bgp <prefix>`: in the table, and advertised to which peers), and `ospf`. Review items, not prune actions
 - Route-map verdicts walk prefix-lists in sequence order: `permit`, `deny`, `unknown` (a clause matches on something discovery cannot evaluate, such as a community), or `missing` (route-map not defined)
 

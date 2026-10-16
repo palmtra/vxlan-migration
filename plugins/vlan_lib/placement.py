@@ -16,6 +16,7 @@ listed first, because it is the root of the legacy L2.
 from ansible.errors import AnsibleFilterError
 from collections.abc import Mapping
 
+from vlan_lib.l2_domain import analyze_l2_domains, device_tier  # noqa: F401
 from vlan_lib.parsers import _normalize_interface_name, network_prefix, normalize_mac_address
 from vlan_lib.policy import evaluate_route_map
 
@@ -33,6 +34,9 @@ _PLACEMENT_RULES = [
     "prune_eligible_leafs carry the VLAN today and have no local endpoints. Source gateways are included and listed first: they are the root of the legacy L2.",
     "A source gateway that also has local endpoints, or that the engineer named in gateway_leafs, stays participating and is not pruned.",
     "gateway_leafs are explicit. Discovery never infers fabric gateway ownership from an SVI.",
+    "A switch that is not a VTEP keeps the VLAN as l2_attached when it, or a non-VTEP switch linked to it, has endpoints. It is never a VNI target. The VTEP it uplinks to is participating.",
+    "A non-VTEP switch linked to both a VTEP and the MLS bridges EVPN and legacy L2. Its MLS links are link prunes, ready once the VLAN is VNI-mapped on its VTEPs.",
+    "Only VTEPs are participating (VNI targets). A legacy MLS with local endpoints, or that is the only path for a non-VTEP switch, is legacy_retained: kept until the endpoints are re-homed, never pruned or configured with a VNI.",
     "source_gateway_devices names the current SVI owners. An SVI with no local endpoints is prune-eligible.",
     "Endpoint VLAN presence on additional leaves is normal EVPN placement, not an L2-stretch type.",
 ]
@@ -85,21 +89,6 @@ def _protected_vlan(vlan):
 
 
 GATEWAY_MODES = ("distributed_anycast", "centralized_anycast")
-
-_FABRIC_TIERS = frozenset({"fabric", "leaf", "border", "border_leaf", "spine"})
-_LEGACY_TIERS = frozenset({"legacy", "mls", "core", "aggregation", "access"})
-
-
-def device_tier(device):
-    """``legacy`` or ``fabric``. Inventory ``migration_tier`` wins; EOS defaults to fabric."""
-    device = device or {}
-    tier = str(device.get("migration_tier") or "").strip().lower()
-    if tier in _FABRIC_TIERS:
-        return "fabric"
-    if tier in _LEGACY_TIERS:
-        return "legacy"
-    return "fabric" if str(device.get("os_family") or "").lower() == "eos" else "legacy"
-
 
 def _unique(items):
     found = []
@@ -1334,6 +1323,19 @@ def build_deployment_model(vlan, devices, placement):
         "placement": {
             "participating_leafs": participating,
             "gateway_leafs": gateway_leafs,
+            "l2_attached_switches": [
+                {
+                    "hostname": hostname,
+                    "vtep_uplinks": [
+                        ("%s %s" % (link["peer"], link["peer_if"])).strip()
+                        for group in (placement.get("l2") or {}).get("groups") or []
+                        if hostname in group["members"]
+                        for link in group["vtep_links"]
+                        if link["member"] == hostname
+                    ],
+                }
+                for hostname in placement.get("l2_attached_order") or []
+            ],
             "prune_eligible_leafs": prune_eligible,
             "source_gateway_devices": source_gateways,
         },
@@ -1392,6 +1394,7 @@ def build_vlan_placement(vlan, devices):
 
     by_hostname = {}
     participating_order = []
+    l2_attached_order = []
     source_prune_order = []
     other_prune_order = []
     source_gateway_order = []
@@ -1404,13 +1407,35 @@ def build_vlan_placement(vlan, devices):
     for hostname in gateway_declared:
         _add_participating(hostname)
 
+    evidence_by_host = {}
+    for device in devices:
+        if isinstance(device, dict) and device.get("hostname"):
+            evidence_by_host[device["hostname"]] = local_endpoint_evidence(device)
+    l2 = analyze_l2_domains(
+        vlan.get("id"),
+        devices,
+        {host for host, (qualifying, _non) in evidence_by_host.items() if qualifying},
+    )
+    l2_groups_by_host = {
+        host: group for group in l2["groups"] for host in group["members"]
+    }
+
     for device in devices:
         if not isinstance(device, dict):
             continue
         hostname = device.get("hostname") or ""
         if not hostname:
             continue
-        qualifying, nonqualifying = local_endpoint_evidence(device)
+        qualifying, nonqualifying = evidence_by_host[hostname]
+        qualifying = list(qualifying)
+        nonqualifying = list(nonqualifying)
+        switch_role = l2["roles"].get(hostname, "vtep")
+        if switch_role == "vtep":
+            # A VTEP that a non-VTEP switch with endpoints hangs off must keep the VLAN.
+            qualifying.extend(l2["vtep_attach"].get(hostname) or [])
+        elif switch_role == "mls":
+            # The MLS is the only path for a non-VTEP group with no VTEP uplink.
+            qualifying.extend(l2["mls_attach"].get(hostname) or [])
         is_gateway = hostname in gateway_declared
         has_endpoints = bool(qualifying)
         is_source_gateway = bool(device.get("svi_present"))
@@ -1429,7 +1454,21 @@ def build_vlan_placement(vlan, devices):
 
         silent_downstream = silent_downstream_switch_ports(device)
 
-        if is_gateway or has_endpoints:
+        if switch_role == "l2_switch" and hostname in l2["attached_hosts"]:
+            # Not a VTEP: keep the VLAN as plain L2 behind a VTEP, never a VNI target.
+            role = "l2_attached"
+            l2_attached_order.append(hostname)
+            if not qualifying:
+                group = l2_groups_by_host.get(hostname) or {}
+                others = [h for h in group.get("members") or [] if h != hostname]
+                qualifying.append(
+                    "carries the VLAN between non-VTEP switches %s" % ", ".join(others)
+                )
+        elif switch_role == "mls" and has_endpoints and not is_gateway:
+            # Endpoints still hang off the legacy MLS. Keep the VLAN there until
+            # they are re-homed; the MLS is never a VNI target.
+            role = "legacy_retained"
+        elif is_gateway or has_endpoints:
             role = "participating"
             _add_participating(hostname)
         elif is_protected and vlan_present:
@@ -1472,6 +1511,7 @@ def build_vlan_placement(vlan, devices):
         record = {
             "hostname": hostname,
             "role": role,
+            "switch_role": switch_role,
             "participating": role == "participating",
             "prune_eligible": role == "prune_eligible",
             "gateway_leaf": is_gateway,
@@ -1508,6 +1548,8 @@ def build_vlan_placement(vlan, devices):
         "gateway_declared": gateway_declared,
         "gateway_order": list(gateway_declared.keys()),
         "participating_order": participating_order,
+        "l2_attached_order": l2_attached_order,
+        "l2": l2,
         "prune_order": source_prune_order + other_prune_order,
         "source_gateway_order": source_gateway_order,
         "by_hostname": by_hostname,
@@ -1562,6 +1604,7 @@ def flatten_deployment_model(document):
     discovery = []
     for key in (
         "participating_leafs",
+        "l2_attached_switches",
         "prune_eligible_leafs",
         "source_gateway_devices",
         "gateway_leafs",
@@ -1626,6 +1669,8 @@ def flatten_deployment_model(document):
 
 PRUNE_STATUS_BY_ROLE = {
     "participating": "retained_participating",
+    "l2_attached": "retained_l2_attached",
+    "legacy_retained": "retained_until_rehomed",
     "protected": "protected",
     "review": "needs_review",
     "absent": "none",

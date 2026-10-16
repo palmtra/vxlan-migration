@@ -21,6 +21,7 @@ from vlan_lib.parsers import (
 from vlan_lib.policy import parse_bgp_prefix_detail
 from vlan_lib.topology import (
     classify_neighbor,
+    short_hostname,
     neighbors_for_interface,
     parse_spanning_tree_vlan,
     parse_vxlan_vlan_to_vni,
@@ -41,8 +42,32 @@ _NEIGHBOR_ROLE_RANK = (
 )
 
 
+def _inventory_peers(neighbors, description, inventory):
+    """Inventory switches on the far end: ``[{hostname, port}]``.
+
+    LLDP/CDP names are matched on the short hostname. Without a neighbor, an
+    inventory hostname in the port description is the peer (port unknown).
+    """
+    by_short = {short_hostname(name): name for name in inventory or [] if name}
+    by_short.pop("", None)
+    peers = []
+    for item in neighbors or []:
+        hostname = by_short.get(short_hostname(item.get("neighbor_name")))
+        if hostname:
+            peer = {"hostname": hostname, "port": item.get("neighbor_port") or ""}
+            if peer not in peers:
+                peers.append(peer)
+    if not peers and description:
+        desc = str(description).lower()
+        for short, hostname in by_short.items():
+            # Word boundaries: leaf-1 must not match inside leaf-10.
+            if len(short) >= 4 and re.search(r"(?<![\w-])%s(?!\w)" % re.escape(short), desc):
+                peers.append({"hostname": hostname, "port": ""})
+    return peers
+
+
 def _port_neighbor(iface, topology, platform):
-    """Return ``(role, label)`` for the neighbor(s) seen on *iface*."""
+    """Return ``(role, label, neighbors)`` for the neighbor(s) seen on *iface*."""
     neighbors = neighbors_for_interface(
         iface,
         topology.get("neighbors") or [],
@@ -50,7 +75,7 @@ def _port_neighbor(iface, topology, platform):
         platform,
     )
     if not neighbors:
-        return "", ""
+        return "", "", []
     inventory = topology.get("inventory_hostnames") or []
     roles = [classify_neighbor(item, inventory) for item in neighbors]
     role = ""
@@ -66,7 +91,7 @@ def _port_neighbor(iface, topology, platform):
             }
         )
     )
-    return role, label
+    return role, label, neighbors
 
 
 def _attachment_for_port(
@@ -81,7 +106,8 @@ def _attachment_for_port(
     topology=None,
 ):
     parsed = config_by_norm.get(_normalize_interface_name(iface, platform), {})
-    neighbor_role, neighbor = _port_neighbor(iface, topology or {}, platform)
+    topology = topology or {}
+    neighbor_role, neighbor, neighbors = _port_neighbor(iface, topology, platform)
     role = classify_attachment_role(
         iface,
         parsed,
@@ -97,6 +123,9 @@ def _attachment_for_port(
         "description": parsed.get("description") or "",
         "neighbor": neighbor,
         "neighbor_role": neighbor_role,
+        "peers": _inventory_peers(
+            neighbors, parsed.get("description") or "", topology.get("inventory_hostnames")
+        ),
         "mode": parsed.get("mode") or "",
         "raw": parsed.get("raw") or "",
         "mac_count": mac_count,

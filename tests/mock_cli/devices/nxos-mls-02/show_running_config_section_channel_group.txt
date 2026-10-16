@@ -1,2 +1,4 @@
 interface Ethernet1/30
   channel-group 20 mode active
+interface Ethernet1/31
+  channel-group 30 mode active

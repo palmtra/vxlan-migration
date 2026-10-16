@@ -1,7 +1,7 @@
 ---
 - name: Load prune-eligible plans from this discovery run
   ansible.builtin.set_fact:
-    _prune_eligible_plans: "{{ _reports | map(attribute='prune_plans') | flatten | selectattr('placement_role', 'defined') | selectattr('placement_role', 'equalto', 'prune_eligible') | selectattr('actions') | list }}"
+    _prune_eligible_plans: "{{ _reports | map(attribute='prune_plans') | flatten | selectattr('placement_role', 'defined') | selectattr('placement_role', 'in', ['prune_eligible', 'link_prune']) | selectattr('actions') | list }}"
   vars:
     _reports: "{{ hostvars[ansible_play_hosts[0]]['_vlan_discovery_reports'] | default(_vlan_discovery_reports | default([])) }}"
   delegate_to: localhost
@@ -27,7 +27,7 @@
 - name: Show prune-eligible switches
   ansible.builtin.debug:
     msg: >-
-      Prune-eligible: {{ _prune_eligible_hosts | default([]) | join(', ') if _prune_eligible_hosts | default([]) else 'none' }}.
+      Switches with prune plans (prune-eligible or link prune): {{ _prune_eligible_hosts | default([]) | join(', ') if _prune_eligible_hosts | default([]) else 'none' }}.
       Mode: {{ 'apply' if (prune_apply | bool and (prune_approval | default('')) == 'approve') else 'dry-run' }}.
   run_once: true
 

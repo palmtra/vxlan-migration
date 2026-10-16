@@ -42,15 +42,26 @@ Do **not** put prune CLI in the discovery report. Keep this file for operators.
 
 {% if report.prune_plans | default([]) | length > 0 %}
 {% for plan in report.prune_plans %}
-## {{ plan.hostname }} ({{ plan.os_family | default('eos') }})
+## {{ plan.hostname }} ({{ plan.os_family | default('eos') }}){% if plan.placement_role | default('') == 'link_prune' %} - link prune{% endif %}
 
 - Status: `{{ plan.status | default('candidate') }}`
 - Human required: yes. Apply automated: no.
+{% if plan.placement_role | default('') == 'link_prune' %}
+- This switch keeps the VLAN. Only the MLS-facing link drops it, so the VLAN reaches this switch through a VTEP only (no EVPN-legacy L2 loop).
+{% for action in (plan.actions | default([])) + (plan.blocked_actions | default([])) %}
+- {{ action.interface }} toward {{ action.peer }}{% if action.peer_interface %} {{ action.peer_interface }}{% endif %}: {{ action.reason }}
+{% endfor %}
+{% if plan.blocked_reason | default('') %}
+- **Blocked:** {{ plan.blocked_reason }}. Deploy the VNI, re-run discovery, then apply.
+{% endif %}
+{% endif %}
 {% if plan.endpoint_ports | default([]) | length > 0 %}
 - **Blocked:** compute / unknown ports still attached: {{ plan.endpoint_ports | join(', ') }}
 {% endif %}
 
+{% if plan.placement_role | default('') != 'link_prune' %}
 **Order:** (1) rehome compute endpoints (2) remove VLAN from switch-to-switch trunks (3) `no interface Vlan{{ report.vlan_id }}` (4) `no vlan {{ report.vlan_id }}`.
+{% endif %}
 
 {% if plan.svi_inventory | default([]) | length > 0 %}
 SVI / gateway to remove after overlay is live:
@@ -64,7 +75,11 @@ SVI / gateway to remove after overlay is live:
 
 {% set exec = plan.execution | default({}) %}
 {% if exec.full_cli | default('') %}
+{% if plan.blocked_reason | default('') %}
+### Session for later (do not paste until the block above is cleared)
+{% else %}
 ### Copy-paste session
+{% endif %}
 
 ```
 {{ exec.full_cli | trim }}

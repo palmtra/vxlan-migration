@@ -59,6 +59,9 @@ Open features and planned work. Completed items are kept for context.
 - [x] Fabric VTEP readiness from `show interfaces Vxlan1` (headend + EVPN flood list on Loopback1, gateway VRF L3 VNI)
 - [x] Head-end replication only: multicast BUM groups removed from config generation and rejected in the VLAN schema
 - [x] VTEP source defaults to Loopback1 (AVD); sample inventory names the NXOS hosts as legacy MLS
+- [x] Non-VTEP switches: `l2_attached` (keep VLAN, no VNI), VTEP attachment points, MLS link prunes gated on VNI live and gateway reachable, EVPN-legacy bridge and interconnect loop warnings
+- [x] Only VTEPs are VNI targets; an MLS with endpoints is `legacy_retained`
+- [x] EOS `show interfaces trunk`: physical `Et` trunks recognised; allowed list from the `Vlans allowed` section
 
 ### Parked / hold (do not implement until there is a use-case)
 

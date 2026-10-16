@@ -4,3 +4,9 @@ Local Port id: Eth1/30
 System Name: acc-sw-12.example.net
 System Description: Cisco IOS Software, C2960X Software
 Enabled Capabilities: B
+Chassis id: 001c.7300.0101
+Port id: Ethernet48
+Local Port id: Eth1/31
+System Name: acc-sw-01
+System Description: Arista Networks EOS version 4.31.2F
+Enabled Capabilities: B, R

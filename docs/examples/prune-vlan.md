@@ -4,6 +4,22 @@ Remove a VLAN from switches that carry it and have no local endpoints. Source ga
 
 The playbook discovers first, then prunes from that classification. It does not read an old report file.
 
+## Link prunes (non-VTEP switches)
+
+A switch that is not a VTEP (an access switch, or an EOS switch without Vxlan1) keeps the VLAN as plain L2 and must reach it through a VTEP only. If it is linked to a VTEP **and** to the MLS, it bridges the EVPN and legacy L2 domains for that VLAN. That is a loop. Discovery turns each of those MLS links into a **link prune**: `switchport trunk allowed vlan remove <id>` on the non-VTEP switch's port and on the MLS port (the MLS side is skipped when the whole MLS is prune-eligible). The switch itself keeps the VLAN.
+
+A link prune is applied only when it is ready:
+
+| Status | Meaning |
+|---|---|
+| `ready` | The VLAN is VNI-mapped on every VTEP the switch uplinks to, and the gateway is reachable from the fabric |
+| `blocked_until_vni_live` | Deploy the VNI on those VTEPs first, then re-run. Pruning now would cut the endpoints off |
+| `blocked_until_gateway_in_fabric` | The gateway (MLS SVI or firewall) is still only on the legacy side and no fabric-legacy interconnect carries the VLAN |
+
+Blocked link prunes are listed in the prune report with their CLI under "do not paste" and are never sent. A non-VTEP switch with endpoints and **no** VTEP uplink is an action item; its MLS links are kept and the MLS is `legacy_retained`.
+
+Typical cutover order: deploy the VNI (and the anycast gateway for L3) → re-run discovery → link prunes become `ready` → apply → move or retire the MLS.
+
 ## Dry-run (default)
 
 ```bash

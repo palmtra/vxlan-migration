@@ -1689,6 +1689,8 @@ def parse_trunk_interfaces(show_trunk_output, platform="eos"):
     plat = str(platform).lower()
     if plat == "nxos":
         return _parse_nxos_trunk_interfaces(text)
+    if plat == "eos":
+        return _parse_eos_trunk_interfaces(text)
     pattern = _TRUNK_INTERFACE_NAME_RES.get(plat)
     if not pattern:
         return []
@@ -1709,6 +1711,53 @@ def parse_trunk_interfaces(show_trunk_output, platform="eos"):
                 "allowed_summary": allowed,
             }
         )
+    return interfaces
+
+
+_EOS_TRUNK_ROW_RE = re.compile(r"^(?P<iface>(?:Et|Ethernet|Po|Port-Channel)\d[\w/.:]*)\s+(?P<rest>\S.*)$")
+
+
+def _parse_eos_trunk_interfaces(text):
+    """Parse EOS ``show interfaces trunk``.
+
+    EOS prints a mode/status table, then ``Vlans allowed``, then
+    ``Vlans allowed and active...`` and ``...forwarding state``. The allowed
+    list comes from the ``Vlans allowed`` section. An older one-table layout
+    (``Port Native vlan Status Allowed vlans``) is also accepted. Interface
+    names need a digit, so the ``Port`` header is never read as a port.
+    """
+    interfaces = []
+    index = {}
+    section = None
+    for raw_line in str(text or "").splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        lower = line.lower()
+        if lower.startswith("port"):
+            if re.search(r"vlans allowed\s*$", lower):
+                section = "allowed"
+            elif "allowed vlans" in lower:
+                section = "single"
+            elif "vlans" in lower:
+                section = "other"
+            else:
+                section = "status"
+            continue
+        match = _EOS_TRUNK_ROW_RE.match(line)
+        if not match:
+            continue
+        iface = match.group("iface")
+        key = iface.lower()
+        if key not in index:
+            index[key] = {"interface": iface, "allowed_summary": ""}
+            interfaces.append(index[key])
+        if section == "allowed":
+            index[key]["allowed_summary"] = match.group("rest").strip()
+        elif section == "single":
+            parts = re.split(r"\s+", match.group("rest").strip(), maxsplit=2)
+            if len(parts) == 3:
+                index[key]["allowed_summary"] = parts[2].strip()
     return interfaces
 
 

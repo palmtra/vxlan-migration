@@ -8,8 +8,9 @@
 ansible_network_os: ios
 network_os_family: ios
 
-# Legacy access: the migration source, not part of the fabric.
-migration_tier: legacy
+# Legacy access switches are not VTEPs. They keep the VLAN as plain L2 and
+# must reach it through a VTEP only (discovery prunes their MLS links).
+migration_tier: access
 
 # Mapping of platform-specific command templates / modules used by roles.
 network_config_module: cisco.ios.ios_config

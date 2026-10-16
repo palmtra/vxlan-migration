@@ -13,7 +13,7 @@ from vlan_lib.placement import (
     build_vlan_placement,
     device_tier,
 )
-from vlan_lib.prune import build_device_prune_plan, build_prune_execution
+from vlan_lib.prune import _trunk_remove_cli, build_device_prune_plan, build_prune_execution
 
 _PLACEHOLDER_VLAN_NAME = re.compile(r"^vlan[_-]?\d+$", re.I)
 
@@ -346,6 +346,99 @@ def _vni_findings(vlan, devices):
     return already, conflicts
 
 
+def gateway_reachable_from_fabric(gateway, interconnects):
+    """Empty when endpoints keep their gateway after leaving the MLS, else why not.
+
+    The gateway is reachable when an active SVI is on a fabric switch, a
+    firewall/router faces a fabric switch, or a fabric-legacy interconnect
+    still carries the VLAN to the MLS.
+    """
+    gateway = gateway or {}
+    if interconnects:
+        return ""
+    if any(item.get("tier") == "fabric" for item in gateway.get("svis") or []):
+        return ""
+    if any(item.get("tier") == "fabric" for item in gateway.get("external_exits") or []):
+        return ""
+    where = "the legacy MLS" if gateway.get("svis") else "a firewall/router on the legacy side"
+    return (
+        "the gateway is still only on %s and no fabric-legacy interconnect carries the VLAN; "
+        "the endpoints would lose their gateway" % where
+    )
+
+
+def build_link_prune_plans(vlan_id, devices, link_prunes, roles_by_host, extra_block=""):
+    """One plan per switch for the MLS links a non-VTEP switch must drop.
+
+    The MLS side is skipped when that MLS is prune-eligible: its own plan
+    already removes the VLAN from every switch-to-switch trunk. A plan has
+    actions only when ready (the VLAN is VNI-mapped on the VTEPs the non-VTEP
+    switch uplinks to); otherwise the CLI is kept under ``blocked_actions``.
+    """
+    os_by_host = {d.get("hostname"): d.get("os_family") or "eos" for d in devices or []}
+    plans = {}
+    for item in link_prunes or []:
+        host = item.get("hostname")
+        if not host or not item.get("interface"):
+            continue
+        if item.get("side") == "mls" and roles_by_host.get(host) == "prune_eligible":
+            continue
+        os_family = os_by_host.get(host, "eos")
+        action = {
+            "op": "trunk_remove_vlans",
+            "scope": "link",
+            "interface": item["interface"],
+            "vlans": [int(vlan_id)],
+            "peer": item.get("peer") or "",
+            "peer_interface": item.get("peer_interface") or "",
+            "reason": item.get("reason") or "",
+            "cli": _trunk_remove_cli(item["interface"], [int(vlan_id)], os_family),
+            "human_required": True,
+        }
+        plan = plans.setdefault(
+            host,
+            {
+                "hostname": host,
+                "os_family": os_family,
+                "vlan_ids": [int(vlan_id)],
+                "placement_role": "link_prune",
+                "status": "ready",
+                "actions": [],
+                "blocked_actions": [],
+                "blocked_reason": "",
+                "destructive": False,
+                "human_required": True,
+                "apply_automated": False,
+                "order": [
+                    "Confirm the VLAN is VNI-mapped and forwarding on the VTEP uplinks",
+                    "Remove the VLAN from the MLS-facing trunk on both ends",
+                    "Check the endpoints from the baseline CSV",
+                ],
+            },
+        )
+        if item.get("ready") and not extra_block:
+            plan["actions"].append(action)
+        else:
+            plan["blocked_actions"].append(action)
+            plan["status"] = (
+                "blocked_until_vni_live" if not item.get("ready") else "blocked_until_gateway_in_fabric"
+            )
+            plan["blocked_reason"] = "; ".join(
+                reason for reason in (item.get("blocked_reason") or "", extra_block) if reason
+            )
+    result = []
+    for plan in plans.values():
+        if plan["blocked_actions"]:
+            # All or nothing per switch: never prune half of a dual attachment.
+            plan["blocked_actions"] = plan["blocked_actions"] + plan["actions"]
+            plan["actions"] = []
+        plan["execution"] = build_prune_execution(
+            plan["os_family"], plan["vlan_ids"], plan["actions"] or plan["blocked_actions"]
+        )
+        result.append(plan)
+    return result
+
+
 def fabric_readiness(report):
     """Is every fabric leaf that will carry the VLAN a ready HER VTEP?
 
@@ -430,6 +523,12 @@ def build_action_items(report):
         return items
     items.extend((report.get("gateway_assessment") or {}).get("warnings") or [])
     items.extend((report.get("fabric_readiness") or {}).get("issues") or [])
+    items.extend((report.get("l2_attachment") or {}).get("issues") or [])
+    for plan in report.get("link_prune_plans") or []:
+        if str(plan.get("status") or "").startswith("blocked"):
+            items.append(
+                "Link prune on %s is blocked: %s." % (plan["hostname"], plan.get("blocked_reason") or "")
+            )
     for item in (report.get("placement_analysis") or {}).get("switches") or []:
         if item.get("role") == "review":
             items.append("%s needs review: %s" % (item.get("hostname"), "; ".join(item.get("nonqualifying") or [])))
@@ -759,6 +858,15 @@ def build_vlan_discovery_reports(vlans, play_hosts, hostvars, all_hosts=None):
         prune_plans.sort(
             key=lambda plan: prune_rank.get(plan.get("hostname"), len(prune_rank))
         )
+        # Link prunes cut the EVPN-legacy bridge at cutover, before the MLS goes.
+        link_prune_plans = build_link_prune_plans(
+            vlan_id,
+            devices,
+            placement["l2"]["link_prunes"],
+            {host: item.get("role") for host, item in by_placement.items()},
+            gateway_reachable_from_fabric(placement["gateway"], placement["l2"]["interconnects"]),
+        )
+        prune_plans = link_prune_plans + prune_plans
 
         ssot = _ssot_from_discovery(vlan, devices)
         ssot["inferred_service_type"] = placement["migration_type"]
@@ -856,6 +964,8 @@ def build_vlan_discovery_reports(vlans, play_hosts, hostvars, all_hosts=None):
             "deployment_model": placement["deployment_model"],
             "placement_analysis": placement["analysis"],
             "gateway_assessment": gateway,
+            "l2_attachment": placement["l2"],
+            "link_prune_plans": link_prune_plans,
             "endpoint_table": endpoint_table,
             "spanning_tree": summarize_spanning_tree(devices),
             "vxlan_already_mapped": already_mapped,
@@ -923,6 +1033,8 @@ def _prune_export(report):
         "l3_discovery": report.get("l3_discovery"),
         "trunk_cleanup_candidates": report.get("trunk_cleanup_candidates"),
         "prune_plans": report.get("prune_plans"),
+        "link_prune_plans": report.get("link_prune_plans"),
+        "l2_attachment": report.get("l2_attachment"),
         "placement": (report.get("deployment_model") or {}).get("placement") or {},
         "withheld": [
             {
