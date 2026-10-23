@@ -115,6 +115,25 @@ Output: `reports/cvp_configlets/` (Jinja) or `reports/cvp_configlets/avd/` (AVD 
 
 More generate-only options: [docs/examples/generate-config-without-cvp-push.md](docs/examples/generate-config-without-cvp-push.md)
 
+**AVD services repo (target path):** the migration's services live in
+[palmtra/avd-vxlan-repo](https://github.com/palmtra/avd-vxlan-repo), one SVI or
+l2vlan per migrated VLAN, rendered by AVD into one configlet per leaf and sent to
+CVaaS as a change control left pending approval. Write the VLAN into a clone of
+that repo, then build and open a PR there:
+
+```bash
+ansible-playbook -i inventory/hosts.yml playbooks/core/export_avd_services.yml \
+  -e manual_data_center=lisle \
+  -e manual_vlan_id=810 \
+  -e avd_repo_dir=../avd-vxlan-repo
+cd ../avd-vxlan-repo && python -m avd_services build   # commit services + intended/, open PR
+```
+
+The export stops without writing when the VLAN cannot be placed. That happens
+when the VLAN has no VNI, when a leaf is not in any leaf pair, when there is no
+anycast address, or when the router-id or ASN found on a switch differs from the
+AVD repo's fabric facts.
+
 ### 3. Deploy (push to CVP)
 
 After reviewing generated files, push to CloudVision (creates a **pending** change control):

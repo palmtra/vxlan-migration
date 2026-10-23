@@ -1,0 +1,83 @@
+---
+# -----------------------------------------------------------------------------
+# Core workflow - write VLAN records into the AVD services repo
+# -----------------------------------------------------------------------------
+# Turns each requested VLAN record (vars/vlans/<dc>/) into an AVD SVI or
+# l2vlan and writes it to <avd_repo_dir>/group_vars/<DC>_SERVICES.yml in a
+# local clone of palmtra/avd-vxlan-repo. Re-running replaces the VLAN's
+# entries. No device and no CVaaS object is touched.
+#
+#   ansible-playbook -i inventory/hosts.yml playbooks/core/export_avd_services.yml \
+#     -e manual_data_center=lisle \
+#     -e manual_vlan_id=100 \
+#     -e avd_repo_dir=../avd-vxlan-repo
+#
+# Then, in the AVD repo: `python -m avd_services build`, commit the services
+# file and intended/, open a PR. CI there checks VNI ranges, leaf pairs and
+# the gateway rules again and shows the per-leaf CLI in the diff.
+#
+# Stops without writing when a record cannot be placed: no VNI, a leaf not in
+# any leaf pair, no anycast address, or a router-id/ASN that differs between
+# the switch (discovery) and the AVD repo's fabric facts.
+# -----------------------------------------------------------------------------
+
+- name: Export VLAN records to the AVD services repo
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars:
+    avd_repo_dir: ""
+    _dc_upper: "{{ target_data_center | upper }}"
+    _fabric_file: "{{ avd_repo_dir }}/group_vars/{{ _dc_upper }}_FABRIC.yml"
+    _services_file: "{{ avd_repo_dir }}/group_vars/{{ _dc_upper }}_SERVICES.yml"
+
+  pre_tasks:
+    - name: Require the AVD repo clone
+      ansible.builtin.assert:
+        that: avd_repo_dir | length > 0
+        fail_msg: "Pass -e avd_repo_dir=<path to a clone of palmtra/avd-vxlan-repo>"
+
+    - name: Load the per-DC VLAN database
+      ansible.builtin.include_role:
+        name: vlan_db
+
+  tasks:
+    - name: Read the AVD repo fabric and services files
+      ansible.builtin.set_fact:
+        _avd_fabric: "{{ lookup('ansible.builtin.file', _fabric_file) | from_yaml }}"
+        _avd_services_text: "{{ lookup('ansible.builtin.file', _services_file) }}"
+
+    - name: Build the AVD entries for the requested VLANs
+      ansible.builtin.set_fact:
+        _avd_entries: "{{ _avd_entries | default([]) + [item | avd_service_entries(_avd_fabric, eos_svi_mtu | default(9214))] }}"
+      loop: "{{ _effective_vlans | selectattr('action', 'equalto', 'migrate') | list }}"
+      loop_control:
+        label: "VLAN {{ item.id }}"
+
+    - name: Merge the entries into the services file
+      ansible.builtin.set_fact:
+        _avd_merge: "{{ (_avd_services_text | from_yaml) | merge_avd_services(target_data_center, _avd_entries | default([])) }}"
+
+    - name: Stop when a VLAN cannot be placed
+      ansible.builtin.fail:
+        msg: "Nothing written. {{ _avd_merge.problems | join(' | ') }}"
+      when: _avd_merge.problems | length > 0
+
+    - name: Write the services file for {{ _dc_upper }}
+      ansible.builtin.copy:
+        content: "{{ _avd_services_text | avd_services_file_text(_avd_merge.services) }}"
+        dest: "{{ _services_file }}"
+        mode: "0644"
+
+    - name: Show what was exported and what to do next
+      ansible.builtin.debug:
+        msg: "{{ _summary + _notes + _next }}"
+      vars:
+        _summary: >-
+          {{ _avd_entries | default([]) | map(attribute='vlan_id')
+             | map('regex_replace', '^(.*)$', 'exported VLAN \1') | list }}
+        _notes: "{{ _avd_entries | default([]) | map(attribute='notes') | flatten }}"
+        _next:
+          - "cd {{ avd_repo_dir }} && python -m avd_services build"
+          - "commit group_vars/{{ _dc_upper }}_SERVICES.yml and intended/, then open a PR"

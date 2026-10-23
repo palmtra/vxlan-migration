@@ -69,10 +69,15 @@ Open features and planned work. Completed items are kept for context.
 - [x] VNI proposal from per-DC internal/customer ranges (ranges still placeholders)
 - [x] Legacy SVI MTU carried (capped at 9214); secondary subnets flagged, not migrated; DHCP relay not migrated
 - [x] Verify pings every baseline endpoint from a gateway leaf
+- [x] AVD services repo (palmtra/avd-vxlan-repo): services-only, per-DC tenants, rendered with pyavd, CVaaS Static Configuration Studio manifest with change control left pending approval
+- [x] `export_avd_services.yml`: VLAN record to AVD SVI / l2vlan (distributed and centralized anycast, external gateway), router-id/ASN drift check against the AVD repo
 
 ### Pending decisions (see the open-questions doc)
 
-- [ ] F6 / E1 / F2: AVD-owned full config with `cv_deploy` vs migration configlets; AVD repo location
+- [ ] Production fabric facts in the AVD repo (leaf pairs, ASN, Loopback0 per leaf); EVPN VLAN RD/RT scheme in use
+- [ ] CVaaS: fabric config in Static Configuration Studio? `hostname:` tag query, or serial numbers per leaf
+- [ ] Open the AVD repo PR from the migration automatically (today: export + manual commit/PR)
+- [ ] Retire the legacy `cv_configlet_v3` deploy path once the AVD repo path is proven
 - [ ] Real VNI ranges per DC and how a VLAN is marked internal vs customer
 - [ ] Sample outputs from the N7K and an EOS leaf (B9) for parser fixtures
 - [ ] Teams / email notification on change control (J4)

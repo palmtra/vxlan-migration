@@ -18,6 +18,12 @@ if _PLUGINS_DIR not in sys.path:
     sys.path.insert(0, _PLUGINS_DIR)
 
 from vlan_lib.placement import bgp_vlan_evpn, host_vtep_bgp, virtual_gateway_address  # noqa: E402
+from vlan_lib.avd_services import (  # noqa: E402
+    avd_leaf_pairs,
+    avd_service_entries,
+    avd_services_file_text,
+    merge_avd_services,
+)
 from vlan_lib import (  # noqa: E402,F401
     analyze_trunk_vlan_carriage,
     arp_discovery_command,
@@ -87,6 +93,10 @@ from vlan_lib import (  # noqa: E402,F401
 class FilterModule(object):
     def filters(self):
         return {
+            "avd_leaf_pairs": avd_leaf_pairs,
+            "avd_service_entries": avd_service_entries,
+            "avd_services_file_text": avd_services_file_text,
+            "merge_avd_services": merge_avd_services,
             "select_vlans_for_run": select_vlans_for_run,
             "extract_vlan_discovery": extract_vlan_discovery,
             "extract_vlan_targeted_discovery": extract_vlan_targeted_discovery,
