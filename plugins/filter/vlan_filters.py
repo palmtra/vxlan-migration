@@ -61,6 +61,8 @@ from vlan_lib import (  # noqa: E402,F401
     parse_vxlan_vlan_to_vni,
     probe_vlan_records,
     svi_prefixes,
+    endpoint_reachability,
+    parse_endpoint_baseline,
     parse_l2_interface_config,
     interface_config_entries_from_cli_results,
     ports_needing_interface_config,
@@ -147,4 +149,6 @@ class FilterModule(object):
             "parse_vxlan_vlan_to_vni": parse_vxlan_vlan_to_vni,
             "probe_vlan_records": probe_vlan_records,
             "svi_prefixes": svi_prefixes,
+            "endpoint_reachability": endpoint_reachability,
+            "parse_endpoint_baseline": parse_endpoint_baseline,
         }

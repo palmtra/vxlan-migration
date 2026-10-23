@@ -13,6 +13,18 @@ verify_vtep_reachability: true
 verify_vni_mapping: true
 verify_mac_arp_learning: true
 
+# Ping every host IP in the discovery endpoint baseline from one gateway leaf,
+# in the VLAN's VRF. Pass = every baseline host answers. Skipped (and passed)
+# when no baseline CSV exists for the VLAN.
+verify_endpoint_reachability: true
+# Baseline CSV; empty = the newest <vlan>_endpoints_*.csv under reports_dir.
+verify_endpoint_baseline_csv: ""
+# Leaf that sends the pings; empty = first gateway leaf in this play, else the
+# first host in the play.
+verify_ping_host: ""
+# EOS ping options per endpoint.
+verify_ping_options: "repeat 2 timeout 1"
+
 # When true (default), the VNI mapping check expects the VLAN<->VNI mapping
 # to be PRESENT (forward-migration semantics). Set to false when reusing this
 # same checklist to re-verify a rollback, where the mapping is expected to

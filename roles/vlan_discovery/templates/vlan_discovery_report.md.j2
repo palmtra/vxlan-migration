@@ -98,7 +98,7 @@ Fabric-legacy interconnects for this VLAN: {% for i in l2a.interconnects %}{{ i.
 - Addresses: {{ svi.ip_addresses | join(', ') }}{% for group in svi.fhrp_groups | default([]) %}; {{ group.protocol | upper }} {{ group.group }}{% if group.family == 'ipv6' %} ipv6{% endif %} VIP {{ ([group.ip] + group.secondary_ips | default([])) | select | join(', ') or '(none)' }}{% if group.priority %} prio {{ group.priority }}{% endif %}{% if group.preempt %} preempt{% endif %}{% endfor %}
 
 {% if svi.dhcp_relay | length > 0 %}
-- DHCP relay: {% for item in svi.dhcp_relay %}{{ item.server }}{% if item.vrf %} (vrf {{ item.vrf }}){% endif %}{{ ', ' if not loop.last }}{% endfor %}
+- DHCP relay (not migrated): {% for item in svi.dhcp_relay %}{{ item.server }}{% if item.vrf %} (vrf {{ item.vrf }}){% endif %}{{ ', ' if not loop.last }}{% endfor %}
 
 {% endif %}
 {% if svi.acls | length > 0 %}
@@ -183,17 +183,19 @@ MAC only, no ARP entry ({{ et.mac_only | length }}):
 {% endif %}
 ## Prune order
 
-{% for plan in report.link_prune_plans | default([]) %}
-- Link prune on {{ plan.hostname }} ({{ plan.status }}): {% for action in (plan.actions | default([])) + (plan.blocked_actions | default([])) %}{{ action.interface }} toward {{ action.peer }}{{ ', ' if not loop.last }}{% endfor %}
+Deploy the VNI first. Then, per VLAN: phase 1, re-run discovery, phase 2, move the gateway, phase 3.
 
+{% set prune_rows = report.prune_plans | default([]) | selectattr('placement_role', 'in', ['link_prune', 'prune_eligible']) | list %}
+{% if prune_rows | length > 0 %}
+| Phase | Switch | What | Status |
+|-------|--------|------|--------|
+{% for plan in prune_rows %}
+{% set acts = (plan.actions | default([])) + (plan.blocked_actions | default([])) %}
+| {{ plan.phase }} | {{ plan.hostname }} | {% if plan.placement_role == 'link_prune' %}{% for action in acts %}{{ action.interface }} toward {{ action.peer }}{{ ', ' if not loop.last }}{% endfor %}{% else %}{% set device = report.devices | selectattr('hostname', 'equalto', plan.hostname) | list | first | default({}) %}trunks{% if device.svi_present %}, Vlan{{ report.vlan_id }} SVI{% endif %}, VLAN {{ report.vlan_id }}{% endif %} | {{ 'ready' if plan.actions | default([]) | length > 0 else (plan.status ~ (': ' ~ cell(plan.blocked_reason) if plan.blocked_reason | default('') else '')) }} |
 {% endfor %}
-{% for leaf in placement.prune_eligible_leafs | default([]) %}
-{% set device = report.devices | selectattr('hostname', 'equalto', leaf.hostname) | list | first | default({}) %}
-{{ loop.index }}. {{ leaf.hostname }}{% if device.svi_present %} - source gateway: remove Vlan{{ report.vlan_id }} SVI{% endif %}{% if device.switch_uplink_ports | default([]) | length > 0 %}; trunks {{ short_list(device.switch_uplink_ports) }}{% endif %}
-
 {% else %}
-Nothing is prune-eligible.
-{% endfor %}
+Nothing to prune.
+{% endif %}
 {% set withheld = analysis | rejectattr('role', 'in', ['prune_eligible', 'absent']) | list %}
 {% if withheld | length > 0 %}
 

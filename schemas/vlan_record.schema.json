@@ -35,6 +35,22 @@
       "enum": ["", "distributed_anycast", "centralized_anycast"],
       "description": "L3 only. distributed_anycast: every participating leaf hosts the anycast gateway. centralized_anycast: a leaf pair (gateway_leafs) hosts it."
     },
+    "vni_pool": {
+      "type": "string",
+      "enum": ["internal", "customer"],
+      "description": "VNI range pool for this VLAN's DC. Discovery proposes the next free VNI from it when vni is empty."
+    },
+    "svi_mtu": {
+      "type": "integer",
+      "minimum": 68,
+      "maximum": 9214,
+      "description": "Fabric SVI MTU. Discovery copies the legacy SVI MTU, capped at the EOS maximum 9214."
+    },
+    "secondary_prefixes": {
+      "type": "array",
+      "description": "Secondary subnets on the legacy SVI. Not migrated; listed for review.",
+      "items": { "type": "string" }
+    },
     "gateway_location": {
       "type": "string",
       "enum": ["", "legacy", "fabric", "mixed", "external"],

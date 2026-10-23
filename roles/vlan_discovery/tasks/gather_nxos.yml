@@ -22,7 +22,9 @@
 
 - name: NXOS - collect L3 discovery context (statics + BGP)
   ansible.builtin.include_tasks: gather_nxos_l3_context.yml
-  when: discovery_collect_prune_context | default(true) | bool
+  when:
+    - discovery_collect_prune_context | default(true) | bool
+    - not (_disc_light | default(false) | bool)
 
 - name: NXOS - targeted discovery per VLAN
   ansible.builtin.include_tasks: gather_nxos_vlan.yml
@@ -53,6 +55,7 @@
       data_center: "{{ data_center | default('unknown') }}"
       os_family: "{{ network_os_family }}"
       migration_tier: "{{ migration_tier | default('') }}"
+      discovery_profile: "{{ 'light' if _disc_light | default(false) | bool else 'full' }}"
       timestamp: "{{ ansible_date_time.iso8601 }}"
       errors: "{{ {'show interface trunk': _nxos_trunk_show | default({})} | collect_command_errors }}"
       neighbors: "{{ _disc_neighbors | default([]) }}"

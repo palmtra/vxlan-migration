@@ -25,7 +25,9 @@
 
 - name: EOS - collect L3 discovery context (statics + BGP)
   ansible.builtin.include_tasks: gather_eos_prune_context.yml
-  when: discovery_collect_prune_context | default(true) | bool
+  when:
+    - discovery_collect_prune_context | default(true) | bool
+    - not (_disc_light | default(false) | bool)
 
 - name: EOS - show Loopback0 address
   ansible.netcommon.cli_command:
@@ -34,6 +36,7 @@
   check_mode: false
   changed_when: false
   failed_when: false
+  when: not (_disc_light | default(false) | bool)
 
 - name: EOS - show Loopback1 address
   ansible.netcommon.cli_command:
@@ -42,6 +45,7 @@
   check_mode: false
   changed_when: false
   failed_when: false
+  when: not (_disc_light | default(false) | bool)
 
 - name: EOS - record Loopback0 and Loopback1 addresses
   ansible.builtin.set_fact:
@@ -55,6 +59,7 @@
   check_mode: false
   changed_when: false
   failed_when: false
+  when: not (_disc_light | default(false) | bool)
 
 - name: EOS - show the router bgp line
   ansible.netcommon.cli_command:
@@ -63,6 +68,7 @@
   check_mode: false
   changed_when: false
   failed_when: false
+  when: not (_disc_light | default(false) | bool)
 
 - name: EOS - parse BGP summary JSON and the router bgp line
   ansible.builtin.set_fact:
@@ -119,6 +125,7 @@
       data_center: "{{ data_center | default('unknown') }}"
       os_family: "{{ network_os_family }}"
       migration_tier: "{{ migration_tier | default('') }}"
+      discovery_profile: "{{ 'light' if _disc_light | default(false) | bool else 'full' }}"
       timestamp: "{{ ansible_date_time.iso8601 }}"
       errors: "{{ {'show interfaces trunk': _eos_trunk_show | default({})} | collect_command_errors }}"
       neighbors: "{{ _disc_neighbors | default([]) }}"

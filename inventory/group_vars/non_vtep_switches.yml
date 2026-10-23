@@ -1,0 +1,8 @@
+---
+# -----------------------------------------------------------------------------
+# Switches that are not VTEPs: L2 extensions hanging off a leaf. They keep the
+# VLAN as plain L2 and must reach it through a VTEP only. Discovery is light:
+# VLAN, ports, MACs, neighbors, port-channels, STP. No routing or VXLAN.
+# -----------------------------------------------------------------------------
+migration_tier: access
+discovery_profile: light

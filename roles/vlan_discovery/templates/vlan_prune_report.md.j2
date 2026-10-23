@@ -44,6 +44,7 @@ Do **not** put prune CLI in the discovery report. Keep this file for operators.
 {% for plan in report.prune_plans %}
 ## {{ plan.hostname }} ({{ plan.os_family | default('eos') }}){% if plan.placement_role | default('') == 'link_prune' %} - link prune{% endif %}
 
+- Phase {{ plan.phase | default('') }}: {{ plan.phase_label | default('') }}
 - Status: `{{ plan.status | default('candidate') }}`
 - Human required: yes. Apply automated: no.
 {% if plan.placement_role | default('') == 'link_prune' %}

@@ -314,3 +314,26 @@ class PolicyTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class EndpointVerifyTests(unittest.TestCase):
+    def test_baseline_and_ping_parsing(self):
+        from vlan_lib.verify import endpoint_reachability, parse_endpoint_baseline
+
+        csv_text = (
+            "vlan_id,ip,mac,location,switch,interface,port_faces,role,flags,also_on\n"
+            "300,10.30.0.2,00:23:04:ee:be:02,uplink_only,,,\"\",,\"gateway\",\"\"\n"
+            "300,10.30.0.10,00:50:56:ab:30:10,edge,leaf1,Et3,\"esx\",compute,\"\",\"\"\n"
+            "300,,00:50:56:ab:30:99,edge,leaf1,Et4,\"\",compute,\"\",\"\"\n"
+            "301,10.31.0.10,00:50:56:ab:31:10,edge,leaf1,Et3,\"\",compute,\"\",\"\"\n"
+        )
+        self.assertEqual(parse_endpoint_baseline(csv_text, 300), ["10.30.0.10"])
+        summary = endpoint_reachability(
+            [
+                {"item": "10.30.0.10", "stdout": "2 packets transmitted, 2 received, 0% packet loss"},
+                {"item": "10.30.0.11", "stdout": "2 packets transmitted, 0 received, 100% packet loss"},
+                {"item": "10.30.0.12", "failed": True, "msg": "timeout"},
+                {"skipped": True},
+            ]
+        )
+        self.assertEqual(summary, {"reachable": ["10.30.0.10"], "unreachable": ["10.30.0.11", "10.30.0.12"]})

@@ -1,0 +1,7 @@
+---
+# -----------------------------------------------------------------------------
+# Legacy MLS / core being retired: Omaha Nexus 7010 vPC pair (NX-OS 8.4),
+# Lisle Arista MLAG pair (EOS, legacy, not a VTEP). Full discovery.
+# -----------------------------------------------------------------------------
+migration_tier: legacy
+discovery_profile: full

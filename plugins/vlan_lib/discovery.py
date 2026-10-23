@@ -29,7 +29,7 @@ from vlan_lib.topology import (
 
 # Ports whose MACs are local endpoints of the VLAN.
 _ENDPOINT_MAC_ROLES = frozenset(
-    {"compute", "unknown", "network_service", "downstream_switch"}
+    {"compute", "unknown", "network_service", "downstream_switch", "fabric_interconnect"}
 )
 
 # When a port-channel's members see different neighbors, the strongest wins.
@@ -37,7 +37,7 @@ _NEIGHBOR_ROLE_RANK = (
     "switch",
     "downstream_switch",
     "network_service",
-    "transit",
+    "fabric_interconnect",
     "compute",
 )
 

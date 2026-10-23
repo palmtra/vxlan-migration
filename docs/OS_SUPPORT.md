@@ -6,12 +6,14 @@ This repository migrates **legacy Cisco NX-OS → Arista EOS (VXLAN/EVPN)**.
 
 | OS | Role |
 |---|---|
-| **NXOS** | Legacy source — discovery (VLAN/SVI/HSRP/trunk/MAC/ARP/VRF/BGP) |
-| **EOS** | Target fabric — discovery, AVD/Jinja configlets, CVP, verify |
+| **NXOS** | Legacy source — Omaha MLS: Nexus 7010 Sup2 vPC pair, NX-OS 8.4.6, no FEX, no NX-API. Discovery over SSH CLI |
+| **EOS** | Target fabric (EOS 4.35, AVD + CVaaS) — discovery, AVD/Jinja configlets, CVP, verify. Also a legacy source: the Lisle MLS is an Arista MLAG pair (`legacy_mls`), and non-VTEP L2 extensions are EOS (`non_vtep_switches`) |
+
+The role of a switch comes from its inventory group (`migration_tier`), not its OS.
 
 New features (service bundles, prune plans, AVD patterns) are designed for this pair.
 
-## IOS — parked (reuse, not active development)
+## IOS — out of scope (parked)
 
 IOS discovery tasks remain in the tree (`roles/vlan_discovery/tasks/gather_ios*.yml`)
 but are **disabled by default** on `main` (`discovery_enable_ios: false`).

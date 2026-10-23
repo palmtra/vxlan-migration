@@ -13,6 +13,7 @@ from vlan_lib.placement import (
     build_vlan_placement,
     device_tier,
 )
+from vlan_lib.vni import allocate_vni, used_vnis, vni_range_problems
 from vlan_lib.prune import _trunk_remove_cli, build_device_prune_plan, build_prune_execution
 
 _PLACEHOLDER_VLAN_NAME = re.compile(r"^vlan[_-]?\d+$", re.I)
@@ -162,7 +163,7 @@ def build_l3_discovery(vlan_id, devices):
     }
 
 _ENDPOINT_ROLES = frozenset(
-    {"compute", "unknown", "access", "network_service", "downstream_switch"}
+    {"compute", "unknown", "access", "network_service", "downstream_switch", "fabric_interconnect"}
 )
 # HSRP v1/v2 and VRRP virtual MACs. These are gateways, not hosts.
 _FHRP_MAC_PREFIXES = ("00:00:0c:07:ac", "00:00:0c:9f:f", "00:00:5e:00:01", "00:00:5e:00:02")
@@ -367,21 +368,63 @@ def gateway_reachable_from_fabric(gateway, interconnects):
     )
 
 
+PRUNE_PHASES = {"mls_link": 1, "non_vtep_link": 2, "teardown": 3}
+PRUNE_PHASE_LABELS = {
+    1: "MLS links to non-VTEP switches (cuts the EVPN-legacy loop)",
+    2: "non-VTEP side of those links (secondary cleanup)",
+    3: "teardown after the gateway moved (trunks, SVI, VLAN)",
+}
+
+
+def active_svi(device):
+    """True when the switch still answers as the gateway for the VLAN."""
+    details = (device or {}).get("svi_details") or {}
+    return bool(
+        (device or {}).get("svi_present")
+        and details.get("ip_addresses")
+        and not details.get("shutdown")
+    )
+
+
+def gate_teardown_plans(prune_plans, devices):
+    """Block a full prune on a switch whose SVI is still the active gateway.
+
+    Removing the SVI before the gateway moves to the fabric drops the
+    gateway for every endpoint. The plan keeps its CLI under
+    ``blocked_actions`` until a re-run finds the SVI shut or gone.
+    """
+    by_host = {d.get("hostname"): d for d in devices or []}
+    for plan in prune_plans:
+        plan.setdefault("phase", PRUNE_PHASES["teardown"])
+        if plan.get("placement_role") != "prune_eligible":
+            continue
+        if not active_svi(by_host.get(plan.get("hostname"))) or not plan.get("actions"):
+            continue
+        plan["blocked_actions"] = list(plan.get("actions") or [])
+        plan["actions"] = []
+        plan["status"] = "blocked_until_gateway_moved"
+        plan["blocked_reason"] = (
+            "Vlan SVI on %s is still the active gateway; move the gateway to the fabric first"
+            % plan.get("hostname")
+        )
+    return prune_plans
+
+
 def build_link_prune_plans(vlan_id, devices, link_prunes, roles_by_host, extra_block=""):
     """One plan per switch for the MLS links a non-VTEP switch must drop.
 
-    The MLS side is skipped when that MLS is prune-eligible: its own plan
-    already removes the VLAN from every switch-to-switch trunk. A plan has
+    Phase 1 is the MLS side: pruning the MLS trunk isolates the legacy L2
+    and removes the loop while the interconnect keeps the MLS gateway in
+    reach. Phase 2 is the non-VTEP side, a secondary cleanup. A plan has
     actions only when ready (the VLAN is VNI-mapped on the VTEPs the non-VTEP
-    switch uplinks to); otherwise the CLI is kept under ``blocked_actions``.
+    switch uplinks to, and the gateway is reachable from the fabric);
+    otherwise the CLI is kept under ``blocked_actions``.
     """
     os_by_host = {d.get("hostname"): d.get("os_family") or "eos" for d in devices or []}
     plans = {}
     for item in link_prunes or []:
         host = item.get("hostname")
         if not host or not item.get("interface"):
-            continue
-        if item.get("side") == "mls" and roles_by_host.get(host) == "prune_eligible":
             continue
         os_family = os_by_host.get(host, "eos")
         action = {
@@ -402,6 +445,7 @@ def build_link_prune_plans(vlan_id, devices, link_prunes, roles_by_host, extra_b
                 "os_family": os_family,
                 "vlan_ids": [int(vlan_id)],
                 "placement_role": "link_prune",
+                "phase": PRUNE_PHASES["mls_link"] if item.get("side") == "mls" else PRUNE_PHASES["non_vtep_link"],
                 "status": "ready",
                 "actions": [],
                 "blocked_actions": [],
@@ -437,6 +481,40 @@ def build_link_prune_plans(vlan_id, devices, link_prunes, roles_by_host, extra_b
         )
         result.append(plan)
     return result
+
+
+EOS_SVI_MTU_MAX = 9214
+
+
+def _split_gateway_for_fabric(model, gateway):
+    """Shape the routing and gateway blocks for the fabric SVI.
+
+    Only the primary subnet moves: secondary subnets stay out of the fabric
+    and are flagged. Statics and BGP were already associated using every
+    subnet. The SVI keeps the legacy MTU, capped at the EOS maximum.
+    """
+    notes = []
+    routing = model.setdefault("routing", {})
+    secondary = [
+        item["prefix"] for item in (gateway or {}).get("subnets") or [] if item.get("secondary")
+    ]
+    if secondary:
+        routing["prefixes"] = [p for p in routing.get("prefixes") or [] if p not in secondary]
+        routing["secondary_prefixes"] = secondary
+        notes.append(
+            "Secondary subnet(s) %s on the legacy SVI are not migrated. Hosts there lose their "
+            "gateway when the MLS SVI goes; renumber them or decide to carry them." % ", ".join(secondary)
+        )
+    mtu = (gateway or {}).get("mtu")
+    block = model.setdefault("gateway", {})
+    if mtu:
+        block["svi_mtu"] = min(int(mtu), EOS_SVI_MTU_MAX)
+        if int(mtu) > EOS_SVI_MTU_MAX:
+            notes.append(
+                "Legacy SVI MTU %s is above the EOS maximum; the fabric SVI uses %s."
+                % (mtu, EOS_SVI_MTU_MAX)
+            )
+    return notes
 
 
 def fabric_readiness(report):
@@ -523,12 +601,16 @@ def build_action_items(report):
         return items
     items.extend((report.get("gateway_assessment") or {}).get("warnings") or [])
     items.extend((report.get("fabric_readiness") or {}).get("issues") or [])
+    items.extend(report.get("gateway_notes") or [])
     items.extend((report.get("l2_attachment") or {}).get("issues") or [])
     for plan in report.get("link_prune_plans") or []:
         if str(plan.get("status") or "").startswith("blocked"):
             items.append(
                 "Link prune on %s is blocked: %s." % (plan["hostname"], plan.get("blocked_reason") or "")
             )
+    for plan in report.get("prune_plans") or []:
+        if plan.get("status") == "blocked_until_gateway_moved":
+            items.append("Teardown of %s is blocked: %s." % (plan["hostname"], plan.get("blocked_reason") or ""))
     for item in (report.get("placement_analysis") or {}).get("switches") or []:
         if item.get("role") == "review":
             items.append("%s needs review: %s" % (item.get("hostname"), "; ".join(item.get("nonqualifying") or [])))
@@ -557,18 +639,35 @@ def build_action_items(report):
             "%s active IP(s) are in ARP but not in any MAC table (aged out, or behind a switch that was not "
             "discovered). Re-run discovery or check them by hand." % summary["not_in_mac_table"]
         )
-    if report.get("vni") in (None, "", 0) and report.get("vlan_id") is not None:
-        items.append("Assign evpn.l2.vni (VNI) in the SSOT record.")
+    allocation = report.get("vni_allocation") or {}
+    if allocation.get("vni"):
+        items.append(
+            "VNI %s proposed (%s). Confirm it, then write it to evpn.l2.vni in the SSOT record."
+            % (allocation["vni"], allocation.get("reason"))
+        )
+    elif report.get("vni") in (None, "", 0) and report.get("vlan_id") is not None:
+        items.append(
+            "No VNI: %s. Set evpn.l2.vni in the SSOT record."
+            % (allocation.get("reason") or "assign one")
+        )
+    items.extend(report.get("vni_range_problems") or [])
     return items
 
 
-def build_vlan_discovery_reports(vlans, play_hosts, hostvars, all_hosts=None):
+def build_vlan_discovery_reports(vlans, play_hosts, hostvars, all_hosts=None, vni_allocation=None):
     """Build one aggregated discovery report dict per VLAN in *vlans*.
 
     *all_hosts* (``ansible_play_hosts_all``) lets the report name switches
     that dropped out of the play (unreachable or failed). Hosts that were
     skipped on purpose set ``_discovery_skipped`` and are not listed.
+
+    *vni_allocation* (``{ranges, records, default_pool}``) proposes a VNI for
+    a VLAN without one: the next free VNI in its DC and pool.
     """
+    vni_allocation = vni_allocation if isinstance(vni_allocation, dict) else {}
+    vni_ranges = vni_allocation.get("ranges") or {}
+    range_problems = vni_range_problems(vni_ranges)
+    taken_vnis = used_vnis(list(vni_allocation.get("records") or []) + list(vlans))
     if not isinstance(vlans, list):
         raise AnsibleFilterError(
             "build_vlan_discovery_reports expects a list, got %s" % type(vlans)
@@ -866,7 +965,12 @@ def build_vlan_discovery_reports(vlans, play_hosts, hostvars, all_hosts=None):
             {host: item.get("role") for host, item in by_placement.items()},
             gateway_reachable_from_fabric(placement["gateway"], placement["l2"]["interconnects"]),
         )
-        prune_plans = link_prune_plans + prune_plans
+        gate_teardown_plans(prune_plans, devices)
+        prune_plans = sorted(
+            link_prune_plans + prune_plans, key=lambda plan: plan.get("phase") or 9
+        )
+        for plan in prune_plans:
+            plan["phase_label"] = PRUNE_PHASE_LABELS.get(plan.get("phase"), "")
 
         ssot = _ssot_from_discovery(vlan, devices)
         ssot["inferred_service_type"] = placement["migration_type"]
@@ -896,6 +1000,7 @@ def build_vlan_discovery_reports(vlans, play_hosts, hostvars, all_hosts=None):
         if ssot.get("svi_description"):
             site_vlan["description"] = ssot["svi_description"]
         attach_associated_routes(placement["deployment_model"], vlan_id, devices)
+        gateway_notes = _split_gateway_for_fabric(placement["deployment_model"], placement["gateway"])
         (
             endpoints,
             access_inventory,
@@ -908,6 +1013,17 @@ def build_vlan_discovery_reports(vlans, play_hosts, hostvars, all_hosts=None):
         gateway = placement["gateway"]
         endpoint_table = build_endpoint_table(devices, gateway)
         already_mapped, vni_conflicts = _vni_findings(vlan, devices)
+        taken_vnis |= used_vnis(None, devices)
+        proposed = {}
+        if vlan.get("vni") in (None, "", 0) and vni_allocation:
+            proposed = allocate_vni(
+                vlan.get("data_center") or "",
+                vlan.get("vni_pool") or vni_allocation.get("default_pool") or "customer",
+                vni_ranges,
+                taken_vnis,
+            )
+            if proposed.get("vni"):
+                taken_vnis.add(proposed["vni"])
         for device in devices:
             device["migration_tier"] = device_tier(device)
 
@@ -970,9 +1086,16 @@ def build_vlan_discovery_reports(vlans, play_hosts, hostvars, all_hosts=None):
             "spanning_tree": summarize_spanning_tree(devices),
             "vxlan_already_mapped": already_mapped,
             "vni_conflicts": vni_conflicts,
+            "vni_allocation": proposed,
+            "gateway_notes": gateway_notes,
+            "vni_range_problems": range_problems,
             "not_discovered": list(not_discovered),
             "switches_scanned": [device["hostname"] for device in devices],
         }
+        if proposed.get("vni"):
+            l2_evpn = report["deployment_model"].setdefault("evpn", {}).setdefault("l2", {})
+            l2_evpn["vni"] = proposed["vni"]
+            l2_evpn["vni_proposed"] = "%s pool %s" % (proposed.get("pool"), proposed.get("range"))
         report["fabric_readiness"] = fabric_readiness(report)
         report["action_items"] = build_action_items(report)
         report["deployment_model"]["site"]["data_center"] = (

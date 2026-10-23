@@ -30,7 +30,9 @@
   check_mode: false
   changed_when: false
   failed_when: false
-  when: discovery_collect_prune_context | default(true) | bool
+  when:
+    - discovery_collect_prune_context | default(true) | bool
+    - not (_disc_light | default(false) | bool)
 
 - name: EOS - show running-config section route-map
   ansible.netcommon.cli_command:
@@ -39,7 +41,9 @@
   check_mode: false
   changed_when: false
   failed_when: false
-  when: discovery_collect_prune_context | default(true) | bool
+  when:
+    - discovery_collect_prune_context | default(true) | bool
+    - not (_disc_light | default(false) | bool)
 
 - name: EOS - show running-config section router ospf
   ansible.netcommon.cli_command:
@@ -48,7 +52,9 @@
   check_mode: false
   changed_when: false
   failed_when: false
-  when: discovery_collect_prune_context | default(true) | bool
+  when:
+    - discovery_collect_prune_context | default(true) | bool
+    - not (_disc_light | default(false) | bool)
 
 - name: EOS - show vxlan vlan-to-vni
   ansible.netcommon.cli_command:
@@ -57,6 +63,7 @@
   check_mode: false
   changed_when: false
   failed_when: false
+  when: not (_disc_light | default(false) | bool)
 
 - name: EOS - show interfaces Vxlan1 (VTEP source, HER flood mode, VRF L3 VNIs)
   ansible.netcommon.cli_command:
@@ -65,6 +72,7 @@
   check_mode: false
   changed_when: false
   failed_when: false
+  when: not (_disc_light | default(false) | bool)
 
 - name: EOS - parse neighbors, port-channels, policy, and VXLAN map
   ansible.builtin.set_fact:

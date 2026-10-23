@@ -318,7 +318,7 @@ class DiscoveryEndToEndTests(unittest.TestCase):
         self.assertIn("nxos-mls-lis-99 was not discovered", items)
         self.assertIn("nxos-mls-lis-02 needs review", items)
         self.assertIn("Choose gateway_mode", items)
-        self.assertIn("Assign evpn.l2.vni", items)
+        self.assertIn("No VNI: assign one. Set evpn.l2.vni in the SSOT record.", items)
 
 
 if __name__ == "__main__":

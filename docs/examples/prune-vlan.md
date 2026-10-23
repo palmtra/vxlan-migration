@@ -18,7 +18,15 @@ A link prune is applied only when it is ready:
 
 Blocked link prunes are listed in the prune report with their CLI under "do not paste" and are never sent. A non-VTEP switch with endpoints and **no** VTEP uplink is an action item; its MLS links are kept and the MLS is `legacy_retained`.
 
-Typical cutover order: deploy the VNI (and the anycast gateway for L3) → re-run discovery → link prunes become `ready` → apply → move or retire the MLS.
+Every plan carries a **phase**. Per VLAN:
+
+| Phase | What | When it is ready |
+|---|---|---|
+| 1 | MLS side of each link to a non-VTEP switch. Pruning on the MLS isolates the legacy L2 and removes the loop; the interconnect keeps the MLS gateway in reach | VLAN VNI-mapped on the non-VTEP switch's VTEPs, gateway reachable from the fabric |
+| 2 | Non-VTEP side of the same links (secondary cleanup; AVD for CVaaS-managed EOS, CLI optional) | Same as phase 1 |
+| 3 | Teardown: trunks, SVI, and VLAN on prune-eligible switches | The SVI on that switch is no longer the active gateway (moved to the fabric) |
+
+Cutover order: deploy the VNI → phase 1 → re-run discovery → phase 2 → move the gateway → phase 3. A switch whose SVI is still the active gateway gets `blocked_until_gateway_moved`: its teardown CLI is kept, never sent.
 
 ## Dry-run (default)
 

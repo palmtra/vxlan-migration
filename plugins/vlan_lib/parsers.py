@@ -486,7 +486,8 @@ def classify_mac_port_role(interface, access_ports=None, trunk_ports=None, exemp
     return "unknown"
 
 
-# Fabric interconnects are transit. They do not make a switch a participating leaf.
+# UCS fabric interconnects carry the blades behind them. They are endpoint
+# attachment: a leaf with an FI keeps the VLAN.
 _TRANSIT_DESC_RE = re.compile(
     r"(?i)(?:\bfabric\s+interconnects?\b|\bfi-[ab]\b)"
 )
@@ -522,7 +523,7 @@ _NEIGHBOR_ATTACHMENT_ROLES = {
     "switch": "switch_uplink",
     "downstream_switch": "downstream_switch",
     "network_service": "network_service",
-    "transit": "transit",
+    "fabric_interconnect": "fabric_interconnect",
     "compute": "compute",
 }
 
@@ -646,7 +647,7 @@ def classify_attachment_role(
 
     Roles: ``compute``, ``network_service`` (firewall / LB / router),
     ``switch_uplink`` (switch in the inventory), ``downstream_switch`` (switch
-    outside the inventory), ``peer_link``, ``transit``, or ``unknown``.
+    outside the inventory), ``peer_link``, ``fabric_interconnect``, or ``unknown``.
 
     An LLDP/CDP neighbor decides first. Then descriptions, which win over
     access-vs-trunk: compute trunks (z14 OSA, UCS, Nutanix) are still endpoints.
@@ -661,7 +662,7 @@ def classify_attachment_role(
     if neighbor_role in _NEIGHBOR_ATTACHMENT_ROLES:
         return _NEIGHBOR_ATTACHMENT_ROLES[neighbor_role]
     if description and _TRANSIT_DESC_RE.search(description):
-        return "transit"
+        return "fabric_interconnect"
     if description and _NETWORK_SERVICE_DESC_RE.search(description):
         return "network_service"
     if description and _COMPUTE_DESC_RE.search(description):

@@ -37,7 +37,9 @@
   check_mode: false
   changed_when: false
   failed_when: false
-  when: discovery_collect_prune_context | default(true) | bool
+  when:
+    - discovery_collect_prune_context | default(true) | bool
+    - not (_disc_light | default(false) | bool)
 
 - name: NXOS - show running-config ospf
   ansible.netcommon.cli_command:
@@ -46,7 +48,9 @@
   check_mode: false
   changed_when: false
   failed_when: false
-  when: discovery_collect_prune_context | default(true) | bool
+  when:
+    - discovery_collect_prune_context | default(true) | bool
+    - not (_disc_light | default(false) | bool)
 
 - name: NXOS - parse neighbors, port-channels, and policy
   ansible.builtin.set_fact:

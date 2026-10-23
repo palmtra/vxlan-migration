@@ -18,6 +18,7 @@
   check_mode: false
   changed_when: false
   failed_when: false
+  when: not (_disc_light | default(false) | bool)
 
 - name: "NXOS - derive SVI VRF for VLAN {{ _disc_vlan.id }}"
   ansible.builtin.set_fact:

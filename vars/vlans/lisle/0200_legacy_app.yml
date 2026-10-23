@@ -14,5 +14,5 @@ target_switches:
 discovery_switches:
   - eos-leaf-lis-01
   - eos-leaf-lis-02
-  - nxos-mls-lis-01
-  - nxos-mls-lis-02
+  - eos-mls-lis-01
+  - eos-mls-lis-02

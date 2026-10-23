@@ -21,16 +21,16 @@ from vlan_lib.parsers import _normalize_interface_name, network_prefix, normaliz
 from vlan_lib.policy import evaluate_route_map
 
 _ENDPOINT_MAC_ROLES = frozenset(
-    {"compute", "unknown", "access", "network_service", "downstream_switch"}
+    {"compute", "unknown", "access", "network_service", "downstream_switch", "fabric_interconnect"}
 )
 _UPLINK_MAC_ROLES = frozenset(
-    {"switch_uplink", "peer_link", "transit", "trunk", "exempt_trunk"}
+    {"switch_uplink", "peer_link", "trunk", "exempt_trunk"}
 )
 
 _PLACEMENT_RULES = [
     "participating_leafs are where the VLAN/VNI must exist after migration.",
     "A switch is participating when it has local endpoint attachment, or when the engineer listed it in gateway_leafs.",
-    "VLAN database presence, trunk allowance, uplink-only MAC learning, transit aggregation, and fabric interconnects do not qualify.",
+    "VLAN database presence, trunk allowance, uplink-only MAC learning, and transit aggregation do not qualify. A UCS fabric interconnect does: the blades behind it are endpoints.",
     "prune_eligible_leafs carry the VLAN today and have no local endpoints. Source gateways are included and listed first: they are the root of the legacy L2.",
     "A source gateway that also has local endpoints, or that the engineer named in gateway_leafs, stays participating and is not pruned.",
     "gateway_leafs are explicit. Discovery never infers fabric gateway ownership from an SVI.",
@@ -383,6 +383,13 @@ def local_endpoint_evidence(device):
         qualifying.append(
             "endpoint-facing interfaces: %s" % ", ".join(interfaces)
         )
+    fis = [
+        item.get("interface")
+        for item in (device.get("port_attachments") or [])
+        if isinstance(item, dict) and item.get("role") == "fabric_interconnect" and item.get("interface")
+    ]
+    if fis:
+        qualifying.append("UCS fabric interconnect: %s" % ", ".join(_ports_with_neighbor(device, fis)))
     services = _ports_with_neighbor(device, device.get("service_ports"))
     if services:
         qualifying.append("firewall / load balancer / router: %s" % ", ".join(services))
@@ -421,15 +428,6 @@ def local_endpoint_evidence(device):
     nonqualifying = []
     if _uplink_only_macs(device, endpoint_macs):
         nonqualifying.append("MAC learned only on an uplink")
-    transit = [
-        item.get("interface")
-        for item in (device.get("port_attachments") or [])
-        if isinstance(item, dict) and item.get("role") == "transit"
-    ]
-    if transit and not interfaces and not endpoint_macs:
-        nonqualifying.append(
-            "fabric interconnect attachment: %s" % ", ".join(transit)
-        )
     if not qualifying:
         if device.get("switch_uplink_ports") or device.get("trunk_ports"):
             nonqualifying.append("VLAN allowed on a trunk")
@@ -1638,6 +1636,10 @@ def flatten_deployment_model(document):
         record["gateway_mode"] = gateway["mode"]
     if gateway.get("location"):
         record["gateway_location"] = gateway["location"]
+    if gateway.get("svi_mtu"):
+        record["svi_mtu"] = gateway["svi_mtu"]
+    if routing.get("secondary_prefixes"):
+        record["secondary_prefixes"] = list(routing["secondary_prefixes"])
     if isinstance(routing.get("associated"), dict):
         record["associated"] = routing["associated"]
     static_route_tags = normalize_static_route_tags(routing.get("static_route_tags"))

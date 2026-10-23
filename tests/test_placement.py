@@ -214,7 +214,7 @@ class PlacementTests(unittest.TestCase):
         self.assertEqual(placement["prune_order"], [])
         self.assertEqual(placement["by_hostname"]["agg01"]["role"], "protected")
 
-    def test_fabric_interconnect_does_not_participate(self):
+    def test_fabric_interconnect_keeps_the_vlan_on_its_leaf(self):
         placement = build_vlan_placement(
             {"id": 1, "name": "fi", "service_type": "l2"},
             [
@@ -223,19 +223,17 @@ class PlacementTests(unittest.TestCase):
                     port_attachments=[
                         {
                             "interface": "Ethernet10",
-                            "role": "transit",
+                            "role": "fabric_interconnect",
                             "description": "fabric interconnect A",
                         }
                     ],
                 )
             ],
         )
-        self.assertEqual(placement["by_hostname"]["tor01"]["role"], "prune_eligible")
-        self.assertTrue(
-            any(
-                "fabric interconnect" in item
-                for item in placement["by_hostname"]["tor01"]["nonqualifying"]
-            )
+        self.assertEqual(placement["by_hostname"]["tor01"]["role"], "participating")
+        self.assertIn(
+            "UCS fabric interconnect: Ethernet10 (fabric interconnect A)",
+            placement["by_hostname"]["tor01"]["evidence"],
         )
 
     def test_prune_eligible_switch_keeps_prune_actions(self):

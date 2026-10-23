@@ -194,7 +194,7 @@ target_switches:          # CVP configlet targets
   - eos-leaf-lis-02
 discovery_switches:       # optional; defaults to target_switches
   - eos-leaf-lis-01
-  - nxos-mls-lis-01
+  - eos-mls-lis-01
 ```
 
 ## Safety controls

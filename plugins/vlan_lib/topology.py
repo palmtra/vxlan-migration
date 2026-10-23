@@ -228,7 +228,7 @@ def classify_neighbor(neighbor, inventory_hostnames=None):
     ``switch`` - another switch in the inventory (switch-to-switch trunk).
     ``downstream_switch`` - a switch outside the inventory; endpoints may sit behind it.
     ``network_service`` - firewall, load balancer, or router; often the external gateway.
-    ``transit`` - UCS fabric interconnect (kept as transit, as before).
+    ``fabric_interconnect`` - UCS FI; the blades behind it are endpoints.
     ``compute`` - a server or hypervisor.
     ``unknown`` - not enough information; fall back to the port description.
     """
@@ -244,7 +244,7 @@ def classify_neighbor(neighbor, inventory_hostnames=None):
         for key in ("neighbor_name", "system_description", "platform")
     )
     if _FABRIC_INTERCONNECT_RE.search(text):
-        return "transit"
+        return "fabric_interconnect"
     if _NETWORK_SERVICE_PLATFORM_RE.search(text):
         return "network_service"
     if _SERVER_PLATFORM_RE.search(text):

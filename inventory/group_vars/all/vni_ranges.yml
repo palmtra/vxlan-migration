@@ -1,0 +1,22 @@
+---
+# -----------------------------------------------------------------------------
+# L2 VNI ranges per data center and pool. Discovery proposes the next free VNI
+# in the VLAN's DC and pool when its record has none. Free = not in any VLAN
+# record of the DC and not already mapped on a discovered switch.
+#
+# Each DC has its own ranges, so one VLAN ID in two DCs never shares a VNI.
+# Ranges must not overlap. NetBox replaces this file later.
+#
+# PLACEHOLDERS: start/end are null until the real ranges are agreed. With null
+# ranges discovery reports "no VNI range configured" instead of guessing.
+# -----------------------------------------------------------------------------
+vni_ranges:
+  lisle:
+    internal: {start: null, end: null}
+    customer: {start: null, end: null}
+  omaha:
+    internal: {start: null, end: null}
+    customer: {start: null, end: null}
+
+# Pool used when a VLAN record has no vni_pool (internal | customer).
+vni_default_pool: customer

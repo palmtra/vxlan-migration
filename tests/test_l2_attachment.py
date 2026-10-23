@@ -167,7 +167,13 @@ class L2AttachmentTests(unittest.TestCase):
         )
         self.assertEqual([a["interface"] for a in plans["mls1"]["actions"]], ["Po30"])
         self.assertIn("switchport trunk allowed vlan remove 50", plans["mls1"]["execution"]["full_cli"])
-        self.assertEqual(self.report["prune_plans"][0]["placement_role"], "link_prune")
+        self.assertEqual(self.report["prune_plans"][0]["hostname"], "mls1")
+        self.assertEqual(self.report["prune_plans"][0]["phase"], 1)
+        self.assertEqual(acc1["phase"], 2)
+        self.assertEqual(
+            [p["phase"] for p in self.report["prune_plans"]],
+            sorted(p["phase"] for p in self.report["prune_plans"]),
+        )
 
     def test_link_prune_is_blocked_until_the_vni_is_live(self):
         report = _report(vtep1_live=False)

@@ -1,0 +1,6 @@
+---
+# -----------------------------------------------------------------------------
+# Arista VXLAN/EVPN leaves (AVD + CVaaS). VNI targets. Full discovery.
+# -----------------------------------------------------------------------------
+migration_tier: fabric
+discovery_profile: full

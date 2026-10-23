@@ -62,6 +62,20 @@ Open features and planned work. Completed items are kept for context.
 - [x] Non-VTEP switches: `l2_attached` (keep VLAN, no VNI), VTEP attachment points, MLS link prunes gated on VNI live and gateway reachable, EVPN-legacy bridge and interconnect loop warnings
 - [x] Only VTEPs are VNI targets; an MLS with endpoints is `legacy_retained`
 - [x] EOS `show interfaces trunk`: physical `Et` trunks recognised; allowed list from the `Vlans allowed` section
+- [x] Inventory by role per DC (`vtep_leaves`, `non_vtep_switches`, `legacy_mls`); Lisle legacy MLS is Arista
+- [x] Light discovery profile for non-VTEP switches
+- [x] UCS fabric interconnects keep the VLAN on their leaf
+- [x] Prune phases: MLS link prune first, non-VTEP side second, teardown blocked while the SVI is the active gateway
+- [x] VNI proposal from per-DC internal/customer ranges (ranges still placeholders)
+- [x] Legacy SVI MTU carried (capped at 9214); secondary subnets flagged, not migrated; DHCP relay not migrated
+- [x] Verify pings every baseline endpoint from a gateway leaf
+
+### Pending decisions (see the open-questions doc)
+
+- [ ] F6 / E1 / F2: AVD-owned full config with `cv_deploy` vs migration configlets; AVD repo location
+- [ ] Real VNI ranges per DC and how a VLAN is marked internal vs customer
+- [ ] Sample outputs from the N7K and an EOS leaf (B9) for parser fixtures
+- [ ] Teams / email notification on change control (J4)
 
 ### Parked / hold (do not implement until there is a use-case)
 

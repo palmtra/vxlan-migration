@@ -72,7 +72,8 @@ These do **not** qualify:
 - The VLAN allowed on a trunk
 - The VLAN present in the VLAN database
 - Transit aggregation
-- Fabric interconnects
+
+A UCS fabric interconnect on a leaf **does** qualify: the blades behind it are endpoints, so that leaf keeps the VLAN.
 
 ---
 

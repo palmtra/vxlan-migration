@@ -93,6 +93,65 @@
         'registry': vlan_registry.vlans | default([])
       }) | list }}"
 
+# --- Endpoint reachability against the discovery baseline (C1) --------------
+
+- name: Pick the leaf that pings the baseline endpoints
+  ansible.builtin.set_fact:
+    _verify_ping_host: >-
+      {{ verify_ping_host
+         or ((hostvars['localhost']['_target_vlan_record'].gateway_leafs | default([]))
+             | select('in', ansible_play_hosts) | first | default(ansible_play_hosts | first)) }}
+    _verify_vlan_id: "{{ verify_vlan_ids | first | default('') }}"
+  when: verify_endpoint_reachability | bool
+
+- name: Find endpoint baseline CSVs from discovery
+  ansible.builtin.find:
+    paths: "{{ reports_dir | default(project_root ~ '/reports') }}"
+    patterns: "*_endpoints_*.csv"
+    recurse: true
+  register: _baseline_files
+  delegate_to: localhost
+  run_once: true
+  become: false
+  when:
+    - verify_endpoint_reachability | bool
+    - verify_endpoint_baseline_csv | length == 0
+
+- name: Load the endpoint baseline for this VLAN
+  ansible.builtin.set_fact:
+    _baseline_ips: "{{ lookup('ansible.builtin.file', _baseline_path) | parse_endpoint_baseline(_verify_vlan_id) if _baseline_path else [] }}"
+    _baseline_path_used: "{{ _baseline_path }}"
+  vars:
+    _newest: >-
+      {{ (_baseline_files.files | default([]) | sort(attribute='mtime') | map(attribute='path') | list
+          | select('search', '/' ~ (hostvars['localhost']['_target_vlan_record'].name | default('') | sanitize_report_slug) ~ '/')
+          | list | last) | default('', true) }}
+    _baseline_path: "{{ verify_endpoint_baseline_csv or _newest }}"
+  when:
+    - verify_endpoint_reachability | bool
+    - inventory_hostname == _verify_ping_host
+
+- name: EOS - ping each baseline endpoint from the gateway leaf
+  ansible.netcommon.cli_command:
+    command: "ping vrf {{ _verify_vrf }} {{ item }} {{ verify_ping_options }}"
+  loop: "{{ _baseline_ips | default([]) }}"
+  register: _endpoint_pings
+  vars:
+    _verify_vrf: "{{ hostvars['localhost']['_target_vlan_record'].vrf | default(target_vrf | default('default'), true) }}"
+  check_mode: false
+  changed_when: false
+  failed_when: false
+  when:
+    - verify_endpoint_reachability | bool
+    - inventory_hostname == _verify_ping_host
+
+- name: EOS - summarize endpoint reachability
+  ansible.builtin.set_fact:
+    _endpoint_check: "{{ _endpoint_pings.results | default([]) | endpoint_reachability }}"
+  when:
+    - verify_endpoint_reachability | bool
+    - inventory_hostname == _verify_ping_host
+
 # --- Aggregate result ---------------------------------------------------------
 
 - name: EOS - assemble overall verification result
@@ -116,6 +175,13 @@
           {{ verify_expect_vlan_present | bool
              | ternary('VLANs missing VNI mapping: ' ~ (_per_vlan_verification | default([]) | rejectattr('vni_mapped') | map(attribute='vlan_id') | list),
                         'VLANs still VNI-mapped after rollback: ' ~ (_per_vlan_verification | default([]) | selectattr('vni_mapped') | map(attribute='vlan_id') | list)) }}
+      endpoint_reachability:
+        passed: "{{ (not verify_endpoint_reachability | bool) or (inventory_hostname != _verify_ping_host | default('')) or (_endpoint_check.unreachable | default([]) | length == 0) }}"
+        detail: >-
+          {% if inventory_hostname != _verify_ping_host | default('') %}pings run from {{ _verify_ping_host | default('n/a') }}
+          {%- elif not _baseline_path_used | default('') %}no endpoint baseline found; skipped
+          {%- else %}{{ _endpoint_check.reachable | default([]) | length }}/{{ _baseline_ips | default([]) | length }} baseline endpoints answer from {{ inventory_hostname }}
+          {%- if _endpoint_check.unreachable | default([]) %}; no reply: {{ _endpoint_check.unreachable | join(', ') }}{% endif %}{% endif %}
       mac_arp_learning:
         passed: "{{ (not verify_mac_arp_learning | bool) or (_per_vlan_verification | default([]) | rejectattr('mac_or_arp_learned') | list | length == 0) }}"
         detail: "VLANs with no MAC/ARP learning: {{ _per_vlan_verification | default([]) | rejectattr('mac_or_arp_learned') | map(attribute='vlan_id') | list }}"

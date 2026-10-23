@@ -14,6 +14,10 @@
   become: false
   check_mode: false
 
+- name: Choose the discovery profile (light for non-VTEP switches)
+  ansible.builtin.set_fact:
+    _disc_light: "{{ (discovery_profile | default('full')) == 'light' }}"
+
 - name: Include EOS discovery tasks
   ansible.builtin.include_tasks: gather_eos.yml
   when: network_os_family == 'eos'
@@ -60,11 +64,15 @@
   ansible.builtin.set_fact:
     _vlan_discovery_reports: >-
       {{ _effective_vlans_for_reports
-         | build_vlan_discovery_reports(ansible_play_hosts, hostvars, ansible_play_hosts_all)
+         | build_vlan_discovery_reports(ansible_play_hosts, hostvars, ansible_play_hosts_all, _vni_allocation)
          | map('combine', {'data_center': _report_data_center}) | list }}
   vars:
     _effective_vlans_for_reports: "{{ hostvars['localhost']['_effective_vlans'] | default(_effective_vlans | default([])) }}"
     _report_data_center: "{{ hostvars['localhost']['_vlan_db_data_center'] }}"
+    _vni_allocation:
+      ranges: "{{ vni_ranges | default({}) }}"
+      default_pool: "{{ vni_default_pool | default('customer') }}"
+      records: "{{ hostvars['localhost']['_vlan_db'].vlans | default([]) }}"
   delegate_to: localhost
   become: false
   run_once: true

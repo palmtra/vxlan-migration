@@ -501,7 +501,11 @@ class DiscoveryReportSsotTests(unittest.TestCase):
         )
         self.assertEqual(nxos_plan_row["placement_role"], "prune_eligible")
         self.assertTrue(nxos_plan_row["source_gateway"])
-        nxos_ops = {action["op"] for action in nxos_plan_row["actions"]}
+        # The HSRP SVI is still the active gateway: teardown waits for the move.
+        self.assertEqual(nxos_plan_row["status"], "blocked_until_gateway_moved")
+        self.assertEqual(nxos_plan_row["actions"], [])
+        self.assertEqual(nxos_plan_row["phase"], 3)
+        nxos_ops = {action["op"] for action in nxos_plan_row["blocked_actions"]}
         self.assertIn("no_interface_vlan", nxos_ops)
         self.assertIn("no_vlan", nxos_ops)
         self.assertNotIn("no_ip_route", nxos_ops)

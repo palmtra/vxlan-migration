@@ -23,11 +23,16 @@ Credentials via vault (`inventory/group_vars/all/vault.yml`) or AAP custom crede
 
 ## Inventory scoping
 
+Hosts are defined once, in a role-per-DC group (`<dc>_vteps`, `<dc>_non_vtep`, `<dc>_mls`). Every other group is built from those.
+
 | Group | Purpose |
 |---|---|
 | `dc_lisle`, `dc_omaha` | Limit discovery/deploy to one data center |
-| `network_devices` | All EOS + NXOS + IOS targets |
-| `eos_devices` | CVP deploy and verify targets |
+| `vtep_leaves` | Arista VXLAN/EVPN leaves. `migration_tier: fabric`, full discovery |
+| `non_vtep_switches` | L2 extensions hanging off a leaf. `migration_tier: access`, `discovery_profile: light` (VLAN, ports, MACs, neighbors, port-channels, STP; no routing, policy, SVI, or VXLAN commands) |
+| `legacy_mls` | Legacy MLS being retired: Omaha Nexus 7010 vPC pair (NX-OS 8.4), Lisle Arista MLAG pair. `migration_tier: legacy`, full discovery |
+| `network_devices` | All of the above |
+| `eos_devices`, `nxos_devices` | OS groups (CLI modules, `network_os_family`). IOS is out of scope |
 
 Always pass `--limit dc_<name>` (or a host list) to control blast radius.
 
@@ -75,6 +80,7 @@ Collects VLAN, MAC, SVI, ARP, trunks, LLDP/CDP neighbors, spanning tree, and (on
 | `vlan_discovery_backup_enabled` | `false` | Capture config backup before discovery |
 | `discovery_collect_prune_context` | `true` | Collect static routes, BGP, OSPF, prefix-lists, and route-maps (EOS and NXOS) as **L3 discovery** (not prune actions) |
 | `migration_tier` (inventory group/host var) | `eos_devices`: `fabric`; `nxos_devices`: `legacy`; `ios_devices`: `access` | `fabric`: Arista leaf (a VTEP when Vxlan1 exists, otherwise a non-VTEP switch). `legacy`: the MLS / core being retired. `access`: a non-VTEP L2 switch that stays and must attach through a VTEP. Set `access` per host for any switch in the discovery list that is not a VTEP |
+| `vni_ranges` / `vni_default_pool` | null placeholders / `customer` | Per-DC VNI ranges for the `internal` and `customer` pools (`inventory/group_vars/all/vni_ranges.yml`). A VLAN record without `vni` gets the next free VNI in its DC and pool (`vni_pool` on the record), skipping VNIs in the DC's VLAN DB and VNIs already mapped on discovered switches. Proposed, never written: confirm it into the SSOT |
 | `vtep_source_interface` | `Loopback1` | Expected VTEP source on fabric leaves (AVD default). Also the source for underlay pings in verify |
 | `discovery_write_prune_plan` | `true` | Write the separate prune report (trunk/SVI/VLAN + EOS session text; never applies deletes) |
 | `prune_commit_timer` | `00:10:00` | EOS `commit timer` value printed in the prune report and used when prune apply is approved |
@@ -262,6 +268,10 @@ Run **after** the CVP change control has been executed. Checks VXLAN mapping and
 |---|---|---|
 | `auto_rollback_on_verification_failure` | `false` | Attempt CVP rollback on verify failure (off by default) |
 | `cvp_rollback_allow_destructive_no_vlan` | `false` | Allow rollback `no vlan` / VRF teardown |
+| `verify_endpoint_reachability` | `true` | Ping every host IP in the discovery endpoint baseline from one gateway leaf, in the VLAN's VRF. Pass = every baseline host answers; skipped when no baseline exists |
+| `verify_endpoint_baseline_csv` | newest `<vlan>_endpoints_*.csv` | Baseline to test against |
+| `verify_ping_host` | first gateway leaf | Leaf that sends the pings |
+| `verify_ping_options` | `repeat 2 timeout 1` | EOS ping options per endpoint |
 
 ### Example
 

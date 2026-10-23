@@ -17,4 +17,9 @@ first MLS (CDP), a trunk from the second MLS to an access switch outside the inv
 an EOS leaf with servers, an EOS leaf with the VLAN on its uplink only, one failing
 command, and one unreachable switch.
 
+`acc-sw-01` is a non-VTEP EOS switch with `discovery_profile: light`, dual-homed to
+`eos-leaf-01` and `nxos-mls-02`; its link prunes come out blocked because VLAN 300 is
+not VNI-mapped yet. `verify_mock.yml` then runs `post_change_verification` against the
+baseline CSV; `10.30.0.50` does not answer, so the endpoint check fails by design.
+
 Never put this directory on a production collections path.

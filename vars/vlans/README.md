@@ -51,7 +51,7 @@ target_switches:
   - eos-leaf-lis-01
 discovery_switches:
   - eos-leaf-lis-01
-  - nxos-mls-lis-01
+  - eos-mls-lis-01
 ```
 
 Records are validated against [`schemas/vlan_record.schema.json`](../../schemas/vlan_record.schema.json) on load (`jsonschema` required). Discovery writes a deployable model (routing, EVPN, participating leaves, prune-eligible leaves). **VNI must still be assigned** before migrate, and **gateway_leafs must be named** for an L3 cutover. A discovered SVI is a source gateway, not a fabric gateway leaf. L3 objects in a shared VRF are in the JSON analysis payload but are not unique to this VLAN.
@@ -65,6 +65,9 @@ Records are validated against [`schemas/vlan_record.schema.json`](../../schemas/
 | `gateway_leafs` | L3 | Fabric gateway leaves. Engineer-supplied |
 | `gateway_mode` | L3 | `distributed_anycast` or `centralized_anycast`. Engineer-supplied |
 | `gateway_location` | no | Filled by discovery: `legacy`, `fabric`, `mixed`, `external` |
+| `vni_pool` | no | `internal` or `customer`. Picks the DC's VNI range when discovery proposes a VNI (default `vni_default_pool`) |
+| `svi_mtu` | no | Fabric SVI MTU. Discovery copies the legacy SVI MTU, capped at 9214 (EOS maximum) |
+| `secondary_prefixes` | no | Secondary subnets on the legacy SVI. Not migrated; flagged for review |
 | `target_switches` | yes (migrate) | EOS hosts for CVP. A nested discovery model uses participating leaves |
 | `mcast_group` | never | Rejected by the schema and by deploy. BUM is head-end replication with EVPN flood lists |
 

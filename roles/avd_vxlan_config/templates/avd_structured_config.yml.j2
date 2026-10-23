@@ -31,7 +31,7 @@ eos_cli: |
 {% if _svi_description | length > 0 %}
    description {{ _svi_description }}
 {% endif %}
-   mtu {{ eos_svi_mtu | default(9214) }}
+   mtu {{ _avd_vlan.svi_mtu | default(eos_svi_mtu | default(9214), true) }}
 {% if _vrf not in ['', 'default'] %}
    vrf {{ _vrf }}
 {% endif %}
