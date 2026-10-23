@@ -79,7 +79,7 @@ Open features and planned work. Completed items are kept for context.
 - [x] VNI standard: Lisle internal 20000 / external 22000, Omaha 10000 / 11000 (`customer_type`)
 - [x] Subnets advertised with `network` under the VRF (no redistribute connected); gateway in VRF default refused
 - [x] External gateway VLANs placed on the DC's border pair; `external_gateway_leafs` as the manual override
-- [x] Omaha production inventory and AVD fabric facts (sw14 Loopback0 to confirm)
+- [x] Omaha production inventory and AVD fabric facts
 - [x] VNI range end values confirmed
 - [x] Routing discovery matches the VLAN prefix or a more-specific only (no covering /16, no next hop outside the subnet)
 - [x] Border-leaf BGP view of each legacy subnet (same AS as the MLS): advertised over iBGP from the MLS, by a fabric leaf, or not at all
