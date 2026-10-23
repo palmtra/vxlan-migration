@@ -74,7 +74,8 @@ netbox_url: ""
 netbox_token: ""
 
 # Arista CVP / CVAAS endpoint used by roles/cvp_deploy.
-cvp_url: ""
+# CVaaS tenant (us-central1-c). The token stays in Vault / AAP credentials.
+cvp_url: www.cv-prod-us-central1-c.arista.io
 cvp_token: ""
 
 # ServiceNow change-ticket integration used by roles/servicenow_input (intake)

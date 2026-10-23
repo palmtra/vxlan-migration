@@ -93,10 +93,20 @@ Discovery keeps a static or a BGP object only when it is tied to this VLAN's pre
 
 | Object | Included when |
 |---|---|
-| Static route | The next hop is an address inside the VLAN prefix (a firewall in the subnet), the static prefix is the VLAN prefix, or an optional `static_route_tags` entry equals the route `name` (case-insensitive) |
-| BGP `network` / `aggregate-address` | The statement advertises the VLAN prefix, a more-specific, or an aggregate that covers it |
+| Static route | The next hop is an address inside the VLAN prefix (a firewall in the subnet), the route exits the VLAN SVI, the static prefix is the VLAN prefix or a more-specific of it, or an optional `static_route_tags` entry equals the route `name` (case-insensitive) |
+| BGP `network` / `aggregate-address` | The statement is the VLAN prefix or a more-specific of it |
 | BGP `redistribute connected` or `static` | The device owns the SVI, so the prefix may be advertised. The VRF may be shared; confirm it |
 | BGP neighbor | The peer address is inside the VLAN prefix, or `update-source` is the VLAN SVI |
+
+A shorter prefix never matches. For `10.101.10.0/24`, a static or BGP object for `10.101.0.0/16` is not the VLAN's, and neither is a static via `10.101.11.2`. Live `show ip bgp <prefix>` answers count only when the table entry is that exact prefix.
+
+#### Is the subnet in the fabric's BGP table today?
+
+The border leaves (`border_leaf: true` in the inventory) share the legacy MLS's AS (Lisle 20034, Omaha 30452), so a subnet the MLS advertises reaches them over iBGP. After every switch is gathered, each border leaf runs `show ip bgp <subnet> vrf <vrf>` for every subnet of every SVI found in the run. The report's routing table shows one **bgp fabric view** row per border leaf and subnet:
+
+- `iBGP from fnts-fntc03-aggpe-mls01, best`: the MLS advertises it today (the peer is named from its router-id). Its `network` statement goes away with the MLS SVI.
+- `eBGP from <leaf> (AS path ...)`: a fabric leaf already originates it.
+- **not in the fabric's BGP table**: nothing advertises the subnet into the fabric. Look at the static routes tied to the VLAN (a next hop inside the subnet) before moving the gateway.
 
 Fabric default routes and spine iBGP are left out unless a tag equals that route's name. Tags are optional and the engineer enters them on the VLAN record (`static_route_tags`). These objects are written under `routing.associated` for review and so the gateway move can recreate them. Prune does not delete them.
 

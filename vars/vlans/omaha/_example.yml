@@ -14,10 +14,10 @@ vlan_name: WEB_VXLAN
 vni: 50100
 vrf: default
 target_switches:
-  - eos-leaf-oma-01
-  - eos-leaf-oma-02
+  - fntc-aggacc-sw01
+  - fntc-aggacc-sw02
 discovery_switches:
-  - eos-leaf-oma-01
-  - eos-leaf-oma-02
-  - nxos-mls-oma-01
-  - nxos-mls-oma-02
+  - fntc-aggacc-sw01
+  - fntc-aggacc-sw02
+  - fnts-fntc03-aggpe-mls01
+  - fnts-fntc03-aggpe-mls02

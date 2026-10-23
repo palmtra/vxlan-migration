@@ -679,6 +679,7 @@ def empty_associated_routes():
         "bgp_neighbors": [],
         "bgp_exports": [],
         "bgp_live": [],
+        "bgp_fabric": [],
         "ospf": [],
     }
 
@@ -780,8 +781,9 @@ def _ip_in_prefixes(ip_text, prefixes):
 def _prefix_relation(candidate, vlan_prefixes):
     """How *candidate* relates to the VLAN prefixes.
 
-    ``equal`` and ``more_specific`` are VLAN routes. ``covers`` means an
-    aggregate contains the VLAN prefix. Default route is never ``covers``.
+    ``equal`` and ``more_specific`` are VLAN routes. ``covers`` (a shorter
+    prefix containing the VLAN prefix) is only used for OSPF network
+    statements, which enable OSPF on the SVI. Default route is never ``covers``.
     """
     parsed = _prefix_tuple(candidate)
     if not parsed:
@@ -847,10 +849,13 @@ def attach_associated_routes(model, vlan_id, devices):
     """Attach statics and BGP objects that belong to this VLAN.
 
     A shared-VRF dump is not enough. A static counts when its next hop is
-    inside a VLAN prefix, when the static itself is that prefix, or when an
-    engineer tag matches the route name (case-insensitive). A BGP
-    network or aggregate counts when it is, contains, or is contained by a
-    VLAN prefix. ``redistribute connected`` or ``static`` on a device that
+    inside a VLAN prefix, when it exits the VLAN SVI, when its prefix is the
+    VLAN prefix or a more-specific of it, or when an engineer tag matches the
+    route name (case-insensitive). A BGP network or aggregate counts when it
+    is the VLAN prefix or a more-specific of it.
+
+    A shorter prefix never matches: for 10.101.10.0/24, neither a static or
+    BGP object for 10.101.0.0/16 nor a static via 10.101.11.2 is the VLAN's. ``redistribute connected`` or ``static`` on a device that
     owns the SVI is recorded because that is how the prefix is often advertised.
     Peers count when they sit on the VLAN or use its SVI as update-source.
 
@@ -898,18 +903,12 @@ def attach_associated_routes(model, vlan_id, devices):
             hit = _ip_in_prefixes(next_hop, prefixes) if vrf_ok else ""
             relation, related = _prefix_relation(prefix, prefixes) if vrf_ok else ("", "")
             via_svi = vrf_ok and _update_source_is_vlan(exit_iface or next_hop, vlan_id)
-            discard = str(exit_iface or next_hop).lower().startswith("null")
             if hit:
                 reason = "next_hop %s is inside %s" % (next_hop, hit)
             elif via_svi:
                 reason = "exits via %s" % (exit_iface or next_hop)
             elif relation in ("equal", "more_specific"):
                 reason = "prefix %s is inside %s" % (prefix, related)
-            elif relation == "covers" and discard:
-                reason = "discard route %s covers %s; it often anchors an aggregate" % (
-                    prefix,
-                    related,
-                )
             elif name_tag:
                 reason = "route name %s matches tag %s" % (
                     route.get("name") or "",
@@ -947,16 +946,12 @@ def attach_associated_routes(model, vlan_id, devices):
             ):
                 for candidate in values:
                     relation, related = _prefix_relation(candidate, prefixes)
-                    if kind == "network" and relation not in ("equal", "more_specific", "covers"):
-                        continue
-                    if kind == "aggregate" and relation not in ("equal", "covers"):
+                    if relation not in ("equal", "more_specific"):
                         continue
                     if relation == "equal":
                         reason = "%s statement advertises %s" % (kind, related)
-                    elif relation == "more_specific":
-                        reason = "%s %s is a more specific of %s" % (kind, candidate, related)
                     else:
-                        reason = "%s %s covers VLAN prefix %s" % (kind, candidate, related)
+                        reason = "%s %s is a more specific of %s" % (kind, candidate, related)
                     key = (hostname, vrf_name, kind, candidate)
                     if key in network_seen:
                         continue
@@ -1060,10 +1055,65 @@ def attach_associated_routes(model, vlan_id, devices):
         "bgp_neighbors": neighbors,
         "bgp_exports": exports,
         "bgp_live": live,
+        "bgp_fabric": fabric_bgp_view(devices),
         "ospf": ospf,
     }
     routing["associated"] = associated
     return associated
+
+
+def fabric_bgp_view(devices):
+    """The border leaves' BGP view of each VLAN subnet.
+
+    One row per border leaf and subnet: is it in the fabric's BGP table,
+    which path is best, and who it is learned from. A peer is named when its
+    router-id matches a discovered switch, so an iBGP path from the legacy
+    MLS (same AS as the border leaves) reads as such.
+    """
+    by_router_id = {}
+    for device in devices or []:
+        if isinstance(device, dict) and device.get("router_id"):
+            by_router_id[str(device["router_id"])] = device.get("hostname") or ""
+    rows = []
+    for device in devices or []:
+        if not isinstance(device, dict):
+            continue
+        for item in device.get("border_bgp") or []:
+            if not isinstance(item, dict):
+                continue
+            paths = []
+            for path in item.get("paths") or []:
+                source = by_router_id.get(str(path.get("peer_router_id") or ""), "")
+                if path.get("local"):
+                    kind = "originated here"
+                elif path.get("internal") or (not path.get("external") and not path.get("as_path")):
+                    kind = "iBGP"
+                else:
+                    kind = "eBGP"
+                paths.append(
+                    {
+                        "from": source or path.get("peer_router_id") or path.get("peer") or "",
+                        "from_hostname": source,
+                        "peer": path.get("peer") or "",
+                        "next_hop": path.get("next_hop") or "",
+                        "as_path": path.get("as_path") or "",
+                        "kind": kind,
+                        "best": bool(path.get("best")),
+                    }
+                )
+            best = next((path for path in paths if path["best"]), paths[0] if paths else None)
+            rows.append(
+                {
+                    "hostname": device.get("hostname") or "",
+                    "bgp_as": device.get("bgp_as") or "",
+                    "vrf": item.get("vrf") or "default",
+                    "prefix": item.get("prefix") or "",
+                    "present": bool(item.get("present")),
+                    "best": best,
+                    "paths": paths,
+                }
+            )
+    return rows
 
 
 def _advertisement_view(vlan_id, devices, prefixes, vrfs, networks):

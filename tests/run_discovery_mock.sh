@@ -64,6 +64,7 @@ expect "$REPORT" "Link prune on acc-sw-01 is blocked: VLAN 300 is not VNI-mapped
 expect "$REPORT" "| acc-sw-01 | non-VTEP | l2_attached |"
 expect "$REPORT" "| nxos-mls-01 | legacy | legacy_retained |"
 expect "$REPORT" "attachment point for non-VTEP switch acc-sw-01"
+expect "$REPORT" '| eos-leaf-02 | TENANT1 | bgp fabric view | 10.30.0.0/24 eBGP from nxos-mls-01 (AS path 65001), best | border leaf AS 65101, live `show ip bgp`, exact prefix only |'
 PRUNE="$(ls "$OUT"/reports/lisle/*/*_prune_*.md)"
 expect "$PRUNE" "## acc-sw-01 (eos) - link prune"
 expect "$PRUNE" "## nxos-mls-02 (nxos) - link prune"

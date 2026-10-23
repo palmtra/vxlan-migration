@@ -11,6 +11,7 @@
     _nxos_bgp_vlan_blocks: []
     _nxos_bgp_vrfs: []
     _nxos_bgp_as: ""
+    _nxos_router_id: ""
     _nxos_ip_route_raw: ""
     _nxos_bgp_raw: ""
 
@@ -71,6 +72,7 @@
       bgp_vlan_blocks: "{{ _nxos_bgp_vlan_blocks | default([]) }}"
       bgp_vrfs: "{{ _nxos_bgp_vrfs | default([]) }}"
       bgp_as: "{{ _nxos_bgp_as | default('') }}"
+      router_id: "{{ _nxos_router_id | default('') }}"
       ip_route_raw: "{{ _nxos_ip_route_raw | default('') }}"
       bgp_raw: "{{ _nxos_bgp_raw | default('') }}"
       prune_plan: "{{ _nxos_prune_plan | default({}) }}"

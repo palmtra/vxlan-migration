@@ -49,6 +49,14 @@
     - network_os_family == 'ios'
     - not (discovery_enable_ios | default(false) | bool)
 
+- name: Look up the VLAN subnets in BGP on the border leaves
+  ansible.builtin.include_tasks: gather_border_bgp.yml
+  when:
+    - border_leaf | default(false) | bool
+    - network_os_family == 'eos'
+    - not (_discovery_skipped | default(false) | bool)
+    - _vlan_discovery is defined
+
 - name: Write legacy per-host JSON report
   ansible.builtin.template:
     src: host_report.json.j2

@@ -318,20 +318,93 @@ def parse_ospf_context(text):
     return processes
 
 
-def parse_bgp_prefix_detail(text):
+_BGP_ENTRY_RE = re.compile(r"(?i)BGP routing table entry for\s+(\S+?)(?:,|\s|$)")
+_BGP_FROM_RE = re.compile(r"^\s*(\S+)(?:\s+\(metric \d+\))?\s+from\s+(\S+)\s+\((\S+)\)")
+_BGP_NXOS_ASPATH_RE = re.compile(r"(?i)^\s*AS-Path:\s*(.*?)(?:,\s*path sourced.*)?$")
+
+
+def _bgp_paths(lines):
+    """Paths of one ``show ip bgp <prefix>`` entry (EOS and NXOS layouts)."""
+    paths = []
+    as_path = None
+    current = None
+    pending = {}
+    in_paths = False
+    for line in lines:
+        stripped = line.strip()
+        if re.match(r"(?i)^paths:", stripped):
+            in_paths = True
+            continue
+        if not in_paths or not stripped:
+            continue
+        path_type = re.match(r"(?i)^path type:\s*(.*)$", stripped)
+        if path_type:
+            # NXOS prints the path type before the next hop.
+            words = path_type.group(1).lower()
+            pending = {
+                "internal": bool(re.match(r"internal\b", words)),
+                "external": bool(re.match(r"external\b", words)),
+                "best": "is best path" in words,
+                "local": bool(re.match(r"(local|redist|aggr)", words)),
+            }
+            current = None
+            continue
+        nxos_as = _BGP_NXOS_ASPATH_RE.match(line)
+        if nxos_as:
+            as_path = "" if nxos_as.group(1).strip().upper() == "NONE" else nxos_as.group(1).strip()
+            continue
+        hop = _BGP_FROM_RE.match(line)
+        if hop:
+            current = {
+                "as_path": as_path or "",
+                "next_hop": hop.group(1),
+                "peer": hop.group(2),
+                "peer_router_id": hop.group(3),
+                "internal": pending.get("internal", False),
+                "external": pending.get("external", False),
+                "best": pending.get("best", False),
+                "local": pending.get("local", False) or hop.group(2) in ("-", "0.0.0.0"),
+            }
+            paths.append(current)
+            as_path = None
+            pending = {}
+            continue
+        if current is not None and re.search(r"(?i)\b(valid|internal|external|best)\b", stripped) and not stripped.lower().startswith("origin"):
+            words = stripped.lower()
+            current["internal"] = current["internal"] or bool(re.search(r"\binternal\b", words))
+            current["external"] = current["external"] or bool(re.search(r"\bexternal\b", words))
+            current["best"] = current["best"] or bool(re.search(r"\bbest\b", words))
+            current["local"] = current["local"] or bool(re.search(r"\bsourced\b|\blocal\b", words))
+            continue
+        # EOS prints the AS path alone on the line before the next hop ("Local" = empty).
+        if line[:1].isspace() and not re.match(r"(?i)^(origin|received|rx |community|extended|advertised|path type|last update)", stripped):
+            if re.match(r"^(Local|[\d.{}\[\]() ]+)$", stripped):
+                as_path = "" if stripped == "Local" else stripped
+    return paths
+
+
+def parse_bgp_prefix_detail(text, prefix=""):
     """Parse ``show ip bgp <prefix> vrf <vrf>`` (EOS / NXOS).
 
-    Returns ``{present, advertised_to, local}``. ``local`` means this switch
-    originates the prefix (network, redistribute, or aggregate).
+    Returns ``{present, entry, advertised_to, local, paths}``. ``local`` means
+    this switch originates the prefix (network, redistribute, or aggregate).
+    ``paths`` lists ``{as_path, next_hop, peer, peer_router_id, internal,
+    external, best, local}``. An empty ``as_path`` on an internal path is
+    iBGP from the same AS; EOS prints that as ``Local``, which is not the
+    same as locally originated.
+
+    With *prefix*, only that exact table entry counts: a covering route the
+    switch returns for a longer prefix is ``present: False``.
     """
     body = str(text or "")
-    result = {"present": False, "advertised_to": [], "local": False}
-    if not re.search(r"(?i)BGP routing table entry for", body):
+    result = {"present": False, "entry": "", "advertised_to": [], "local": False, "paths": []}
+    entry = _BGP_ENTRY_RE.search(body)
+    if not entry:
+        return result
+    result["entry"] = entry.group(1)
+    if prefix and _canonical_prefix(entry.group(1)) != _canonical_prefix(prefix):
         return result
     result["present"] = True
-    result["local"] = bool(
-        re.search(r"(?i)locally originated|\bsourced\b|path type:\s*(?:redist|local|aggr)|^\s+Local\s*$", body, re.M)
-    )
     lines = body.splitlines()
     collecting = False
     for line in lines:
@@ -347,7 +420,18 @@ def parse_bgp_prefix_detail(text):
         for address in addresses:
             if address not in result["advertised_to"]:
                 result["advertised_to"].append(address)
+    result["paths"] = _bgp_paths(lines)
+    result["local"] = bool(re.search(r"(?i)locally originated", body)) or any(path["local"] for path in result["paths"])
     return result
+
+
+def _canonical_prefix(text):
+    import ipaddress
+
+    try:
+        return str(ipaddress.ip_network(str(text).strip(), strict=False))
+    except ValueError:
+        return str(text).strip()
 
 
 def collect_command_errors(results):

@@ -312,7 +312,7 @@ router bgp 65001
         default = next(item for item in context["vrfs"] if item["name"] == "default")
         self.assertEqual(default["networks"], ["10.9.0.0/24"])
 
-    def test_vlan_associated_routes_skip_fabric_default(self):
+    def test_vlan_associated_routes_exact_or_more_specific_only(self):
         per_vlan = {
             "vlan_id": 100,
             "os_family": "nxos",
@@ -352,6 +352,11 @@ router bgp 65001
                             "next_hop": "10.1.0.1",
                             "name": "fabric_default",
                         },
+                        # Shorter prefixes and next hops outside the /24 are not the VLAN's.
+                        {"vrf": "TENANT1", "prefix": "10.10.0.0/16", "next_hop": "Null0", "interface": "Null0"},
+                        {"vrf": "TENANT1", "prefix": "198.51.100.0/24", "next_hop": "10.10.101.2"},
+                        # A more-specific of the VLAN prefix is.
+                        {"vrf": "TENANT1", "prefix": "10.10.100.128/25", "next_hop": "Null0", "interface": "Null0"},
                     ],
                     "bgp_neighbors": [
                         {
@@ -372,7 +377,7 @@ router bgp 65001
                     "bgp_vrfs": [
                         {
                             "name": "TENANT1",
-                            "networks": ["10.10.100.0/24"],
+                            "networks": ["10.10.100.0/24", "10.10.0.0/16"],
                             "aggregates": ["10.10.0.0/16"],
                             "redistribute": ["connected"],
                         }
@@ -388,12 +393,16 @@ router bgp 65001
         )[0]
         associated = report["deployment_model"]["routing"]["associated"]
         statics = associated["static_routes"]
-        self.assertEqual(len(statics), 1)
-        self.assertEqual(statics[0]["next_hop"], "10.10.100.5")
+        self.assertEqual([(item["prefix"], item["next_hop"]) for item in statics], [
+            ("192.0.2.0/24", "10.10.100.5"),
+            ("10.10.100.128/25", "Null0"),
+        ])
         self.assertEqual(statics[0]["name"], "firewall")
         kinds = {(item["kind"], item["prefix"] or item["method"]) for item in associated["bgp_networks"]}
         self.assertIn(("network", "10.10.100.0/24"), kinds)
-        self.assertIn(("aggregate", "10.10.0.0/16"), kinds)
+        # A shorter prefix never matches: no /16 network or aggregate.
+        self.assertNotIn(("network", "10.10.0.0/16"), kinds)
+        self.assertNotIn(("aggregate", "10.10.0.0/16"), kinds)
         self.assertIn(("redistribute", "connected"), kinds)
         peers = [item["neighbor"] for item in associated["bgp_neighbors"]]
         self.assertEqual(peers, ["10.10.100.5"])

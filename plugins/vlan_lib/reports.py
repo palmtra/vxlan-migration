@@ -728,6 +728,13 @@ def build_vlan_discovery_reports(vlans, play_hosts, hostvars, all_hosts=None, vn
                     "vxlan_mapped": per_vlan.get("vxlan_mapped", False),
                     "stp": per_vlan.get("stp", {}),
                     "bgp_prefix_detail": per_vlan.get("bgp_prefix_detail", []),
+                    "border_bgp": [
+                        item
+                        for item in discovery.get("border_bgp") or []
+                        if isinstance(item, dict) and _str_equal(item.get("vlan_id"), vlan_id)
+                    ],
+                    "router_id": discovery.get("router_id") or discovery.get("loopback0") or "",
+                    "bgp_as": discovery.get("bgp_as") or "",
                     "errors": list(discovery.get("errors") or [])
                     + list(per_vlan.get("errors") or []),
                     "migration_tier": discovery.get("migration_tier", ""),

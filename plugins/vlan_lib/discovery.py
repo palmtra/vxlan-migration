@@ -17,6 +17,7 @@ from vlan_lib.parsers import (
     parse_svi_vrf,
     parse_vlan_id_ports,
     svi_command_indicates_present,
+    svi_prefixes,
 )
 from vlan_lib.policy import parse_bgp_prefix_detail
 from vlan_lib.topology import (
@@ -285,10 +286,11 @@ def extract_vlan_targeted_discovery(vlan, outputs):
     for item in outputs.get("bgp_prefix_outputs") or []:
         if not isinstance(item, dict) or item.get("skipped"):
             continue
-        parsed_bgp = parse_bgp_prefix_detail(item.get("stdout") or "")
+        requested = item.get("prefix") or str(item.get("item") or "")
+        parsed_bgp = parse_bgp_prefix_detail(item.get("stdout") or "", requested)
         parsed_bgp.update(
             {
-                "prefix": item.get("prefix") or str(item.get("item") or ""),
+                "prefix": requested,
                 "vrf": item.get("vrf") or svi_vrf or "default",
             }
         )
@@ -481,3 +483,38 @@ def build_vlan_verification(vlan_id, outputs):
     }
 
 
+def border_bgp_targets(play_hosts, hostvars):
+    """``[{vlan_id, prefix, vrf}]`` for the border leaves to look up in BGP.
+
+    Every subnet of every SVI discovered this run (the legacy gateway on the
+    MLS). The border leaves share the MLS's AS, so their BGP table shows
+    whether the subnet is advertised into the fabric today and by whom.
+    """
+    targets = []
+    seen = set()
+    for host in play_hosts or []:
+        discovery = (hostvars.get(host) or {}).get("_vlan_discovery") or {}
+        for entry in discovery.get("per_vlan") or []:
+            if not isinstance(entry, dict) or not entry.get("svi_present"):
+                continue
+            vrf = entry.get("svi_vrf") or "default"
+            for prefix in svi_prefixes(entry.get("svi_raw") or "", entry.get("os_family") or discovery.get("os_family") or "eos"):
+                key = (str(entry.get("vlan_id")), prefix, vrf)
+                if key in seen:
+                    continue
+                seen.add(key)
+                targets.append({"vlan_id": entry.get("vlan_id"), "prefix": prefix, "vrf": vrf})
+    return targets
+
+
+def parse_border_bgp(results):
+    """Looped ``show ip bgp <prefix> vrf <vrf>`` results on a border leaf."""
+    parsed = []
+    for item in results or []:
+        if not isinstance(item, dict) or item.get("skipped"):
+            continue
+        target = item.get("item") if isinstance(item.get("item"), dict) else {}
+        entry = parse_bgp_prefix_detail(item.get("stdout") or "", target.get("prefix") or "")
+        entry.update({"vlan_id": target.get("vlan_id"), "prefix": target.get("prefix") or "", "vrf": target.get("vrf") or "default"})
+        parsed.append(entry)
+    return parsed

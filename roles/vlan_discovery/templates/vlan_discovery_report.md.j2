@@ -131,7 +131,7 @@ Inactive SVIs (remove with the VLAN): {% for svi in gw.inactive_svis %}{{ svi.ho
 
 ## Routing objects tied to the VLAN
 
-{% if route_rows | length == 0 and assoc.bgp_exports | default([]) | length == 0 and assoc.bgp_live | default([]) | length == 0 %}
+{% if route_rows | length == 0 and assoc.bgp_exports | default([]) | length == 0 and assoc.bgp_live | default([]) | length == 0 and assoc.bgp_fabric | default([]) | length == 0 %}
 None found{% if report.migration_type == 'l2' %} (expected for an external gateway){% endif %}.
 {% else %}
 | Switch | VRF | Object | Detail | Why |
@@ -150,6 +150,9 @@ None found{% if report.migration_type == 'l2' %} (expected for an external gatew
 {% endfor %}
 {% for item in assoc.bgp_live | default([]) %}
 | {{ item.hostname }} | {{ item.vrf }} | bgp table | {{ item.prefix }}{% if not item.present %} not in BGP{% elif item.advertised_to %} advertised to {{ item.advertised_to | join(', ') }}{% else %} in BGP, not advertised{% endif %} | live `show ip bgp`{% if item.local %}, originated here{% endif %} |
+{% endfor %}
+{% for item in assoc.bgp_fabric | default([]) %}
+| {{ item.hostname }} | {{ item.vrf }} | bgp fabric view | {{ item.prefix }}{% if not item.present %} **not in the fabric's BGP table**{% else %} {{ item.best.kind }} from {{ item.best.from }}{% if item.best.as_path %} (AS path {{ item.best.as_path }}){% endif %}, best{% for path in item.paths if not path.best %}; also {{ path.kind }} from {{ path.from }}{% endfor %}{% endif %} | border leaf{% if item.bgp_as %} AS {{ item.bgp_as }}{% endif %}, live `show ip bgp`, exact prefix only |
 {% endfor %}
 {% for item in assoc.ospf | default([]) %}
 | {{ item.hostname }} | {{ item.vrf }} | ospf{% if item.process %} {{ item.process }}{% endif %} | {{ cell(item.detail) }} | {{ cell(item.reason) }} |

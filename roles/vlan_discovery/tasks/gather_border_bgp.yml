@@ -1,0 +1,34 @@
+---
+# -----------------------------------------------------------------------------
+# Border leaves: is each legacy VLAN subnet in the fabric's BGP table today?
+#
+# Runs after every switch is gathered, on hosts with border_leaf: true. The
+# border leaves share the legacy MLS's AS, so a subnet the MLS advertises
+# shows up here over iBGP. The lookup is per subnet of every SVI found this
+# run, in the SVI's VRF, and only the exact prefix counts (a covering /16 is
+# not the /24).
+# -----------------------------------------------------------------------------
+
+- name: Border leaf - collect the VLAN subnets found on the SVI owners
+  ansible.builtin.set_fact:
+    _border_bgp_targets: "{{ ansible_play_hosts | border_bgp_targets(hostvars) }}"
+
+- name: Border leaf - show ip bgp for each VLAN subnet
+  ansible.netcommon.cli_command:
+    command: "show ip bgp {{ item.prefix }} vrf {{ item.vrf }}"
+  register: _border_bgp_show
+  loop: "{{ _border_bgp_targets }}"
+  loop_control:
+    label: "VLAN {{ item.vlan_id }} {{ item.prefix }} vrf {{ item.vrf }}"
+  check_mode: false
+  changed_when: false
+  failed_when: false
+
+- name: Border leaf - add the fabric BGP view to the discovery facts
+  ansible.builtin.set_fact:
+    _vlan_discovery: >-
+      {{ _vlan_discovery | combine({
+           'border_bgp': _border_bgp_show.results | default([]) | parse_border_bgp,
+           'errors': (_vlan_discovery.errors | default([]))
+                     + ({'show ip bgp <vlan subnet> vrf <vrf>': _border_bgp_show | default({})} | collect_command_errors)
+         }) }}
