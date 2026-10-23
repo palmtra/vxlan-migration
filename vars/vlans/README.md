@@ -65,7 +65,8 @@ Records are validated against [`schemas/vlan_record.schema.json`](../../schemas/
 | `gateway_leafs` | L3 | Fabric gateway leaves. Engineer-supplied |
 | `gateway_mode` | L3 | `distributed_anycast` or `centralized_anycast`. Engineer-supplied |
 | `gateway_location` | no | Filled by discovery: `legacy`, `fabric`, `mixed`, `external` |
-| `vni_pool` | no | `internal` or `customer`. Picks the DC's VNI range when discovery proposes a VNI (default `vni_default_pool`) |
+| `customer_type` | no | `internal` or `external`. Picks the DC's VNI range when discovery proposes a VNI: Lisle 20000 / 22000, Omaha 10000 / 11000 (default `vni_default_customer_type`) |
+| `external_gateway_leafs` | no | L2 VLANs with an external gateway (firewall) only. Leaves the gateway attaches to when it is not the DC's border leaf pair. Manual override; without it the VLAN also goes on the border pair |
 | `svi_mtu` | no | Fabric SVI MTU. Discovery copies the legacy SVI MTU, capped at 9214 (EOS maximum) |
 | `secondary_prefixes` | no | Secondary subnets on the legacy SVI. Not migrated; flagged for review |
 | `target_switches` | yes (migrate) | EOS hosts for CVP. A nested discovery model uses participating leaves |

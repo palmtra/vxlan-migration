@@ -7,4 +7,4 @@ mock_cli_root: "{{ inventory_dir }}/.."
 vni_ranges:
   lisle:
     internal: {start: 10000, end: 19999}
-    customer: {start: 20000, end: 29999}
+    external: {start: 20000, end: 29999}

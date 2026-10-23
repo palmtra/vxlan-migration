@@ -71,7 +71,7 @@
     _report_data_center: "{{ hostvars['localhost']['_vlan_db_data_center'] }}"
     _vni_allocation:
       ranges: "{{ vni_ranges | default({}) }}"
-      default_pool: "{{ vni_default_pool | default('customer') }}"
+      default_pool: "{{ vni_default_customer_type | default('external') }}"
       records: "{{ hostvars['localhost']['_vlan_db'].vlans | default([]) }}"
   delegate_to: localhost
   become: false

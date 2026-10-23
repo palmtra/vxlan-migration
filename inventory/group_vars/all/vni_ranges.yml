@@ -1,22 +1,25 @@
 ---
 # -----------------------------------------------------------------------------
-# L2 VNI ranges per data center and pool. Discovery proposes the next free VNI
-# in the VLAN's DC and pool when its record has none. Free = not in any VLAN
-# record of the DC and not already mapped on a discovered switch.
+# L2 VNI ranges per data center and customer type. Discovery proposes the next
+# free VNI in the VLAN's DC and customer_type when its record has none. Free =
+# not in any VLAN record of the DC and not mapped on a discovered switch (L2 or
+# L3 VNI). Same values as palmtra/avd-vxlan-repo vni_ranges.yml.
 #
-# Each DC has its own ranges, so one VLAN ID in two DCs never shares a VNI.
-# Ranges must not overlap. NetBox replaces this file later.
-#
-# PLACEHOLDERS: start/end are null until the real ranges are agreed. With null
-# ranges discovery reports "no VNI range configured" instead of guessing.
+# Standard (incrementing by 1 from the start):
+#   Lisle  internal 20000   external customers 22000
+#   Omaha  internal 10000   external customers 11000
+# L3 VNIs do not follow this standard (they use lower numbers) and are skipped
+# when a discovered switch maps them.
+# The end values are each block's start up to just below the next block.
+# NetBox replaces this file as the allocator later.
 # -----------------------------------------------------------------------------
 vni_ranges:
   lisle:
-    internal: {start: null, end: null}
-    customer: {start: null, end: null}
+    internal: {start: 20000, end: 21999}
+    external: {start: 22000, end: 23999}
   omaha:
-    internal: {start: null, end: null}
-    customer: {start: null, end: null}
+    internal: {start: 10000, end: 10999}
+    external: {start: 11000, end: 11999}
 
-# Pool used when a VLAN record has no vni_pool (internal | customer).
-vni_default_pool: customer
+# customer_type used when a VLAN record has none (internal | external).
+vni_default_customer_type: external

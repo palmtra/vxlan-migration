@@ -9,7 +9,14 @@ SVI on the gateway leaf pair, the same VLAN as an ``l2vlan`` on the others.
 
 Placement is by leaf pair: ``tags`` are node group names from
 ``group_vars/<DC>_FABRIC.yml``. A pair carries the VLAN when any of its
-leaves does (MLAG peers carry the same VLANs).
+leaves does (MLAG peers carry the same VLANs). A VLAN whose gateway stays
+external also goes on the pair the gateway (firewall) attaches to: the DC's
+``_external_gateway_pair`` (the border leaves), unless the record names
+other leaves in ``external_gateway_leafs`` (a manual override).
+
+The fabric advertises subnets with ``network`` statements under the VRF and
+never redistributes connected, so an anycast gateway in VRF default would
+not be advertised and is refused.
 
 RD and RT follow the fabric's scheme in both DCs (see ``bgp_vlan_evpn``):
 ``rd_override`` is the VLAN id, so the RD is ``<router-id>:<vlan id>``, and
@@ -22,7 +29,6 @@ from collections.abc import Mapping
 from .placement import _vlan_route_target, virtual_gateway_address
 
 GATEWAY_MODES = ("distributed_anycast", "centralized_anycast")
-DEFAULT_VRF_ID = 1  # AVD needs an id for VRF default; the VRF is never rendered.
 
 
 def avd_leaf_pairs(fabric_vars):
@@ -43,6 +49,17 @@ def _fabric_nodes(fabric_vars):
                 "asn": str(node.get("bgp_as") or group.get("bgp_as") or ""),
             }
     return nodes
+
+
+def asn_value(asn):
+    """ASN as an int, from asplain (``4200000203``) or asdot (``64086.60107``)."""
+    text = str(asn or "").strip()
+    if "." in text:
+        high, _, low = text.partition(".")
+        if high.isdigit() and low.isdigit():
+            return int(high) * 65536 + int(low)
+        return None
+    return int(text) if text.isdigit() else None
 
 
 def _pairs_for(leaves, pairs, problems, label):
@@ -68,7 +85,7 @@ def _fabric_drift(record, fabric_vars):
         asn = str(bgp.get("asn") or "").strip()
         if router_id and node["router_id"] and router_id != node["router_id"]:
             problems.append("%s router-id is %s on the switch but %s in the AVD repo" % (leaf, router_id, node["router_id"]))
-        if asn and node["asn"] and asn != node["asn"]:
+        if asn and node["asn"] and asn_value(asn) != asn_value(node["asn"]):
             problems.append("%s ASN is %s on the switch but %s in the AVD repo" % (leaf, asn, node["asn"]))
     return problems
 
@@ -105,8 +122,8 @@ def avd_service_entries(record, fabric_vars, default_mtu=9214):
         common["rt_override"] = route_target
 
     migration = {"source": "vxlan-migration %s VLAN %s" % (record.get("data_center") or "", vlan_id)}
-    if record.get("vni_pool"):
-        migration["vni_pool"] = str(record["vni_pool"])
+    if record.get("customer_type"):
+        migration["customer_type"] = str(record["customer_type"])
 
     participating = list(record.get("target_switches") or record.get("participating_leafs") or [])
     gateway_leafs = list(record.get("gateway_leafs") or [])
@@ -145,15 +162,30 @@ def avd_service_entries(record, fabric_vars, default_mtu=9214):
 
         vrf_name = str(record.get("vrf") or "default")
         vrf = {"name": vrf_name}
-        if str(record.get("l3_vni") or "").strip().isdigit():
+        if vrf_name == "default":
+            problems.append(
+                "VLAN %s gateway is in VRF default; the fabric advertises subnets with network statements "
+                "under a VRF (no redistribute connected), so set the record's vrf" % vlan_id
+            )
+        elif str(record.get("l3_vni") or "").strip().isdigit():
             vrf["vrf_vni"] = int(record["l3_vni"])
-        elif vrf_name == "default":
-            vrf["vrf_id"] = DEFAULT_VRF_ID
         else:
             problems.append("VRF %s needs l3_vni (the fabric's L3 VNI) in the record" % vrf_name)
     else:
         tags = _pairs_for(participating, pairs, problems, "leaf")
-        l2vlan = dict(common, tags=tags, _migration=migration)
+        override = list(record.get("external_gateway_leafs") or [])
+        if override:
+            gateway_pairs = _pairs_for(override, pairs, problems, "external gateway leaf")
+            if len(gateway_pairs) > 1:
+                problems.append("external_gateway_leafs %s span more than one leaf pair" % override)
+            elif gateway_pairs:
+                migration["external_gateway_pair"] = gateway_pairs[0]
+        else:
+            gateway_pairs = [str(fabric_vars.get("_external_gateway_pair"))] if (fabric_vars or {}).get("_external_gateway_pair") else []
+            if not gateway_pairs:
+                problems.append("the AVD repo's fabric file has no _external_gateway_pair; set external_gateway_leafs on the record")
+        tags += [pair for pair in gateway_pairs if pair not in tags]
+        l2vlan = dict(common, tags=tags, _migration=dict(migration, gateway_mode="external"))
 
     for entry in (svi, l2vlan):
         if entry is not None and not entry["tags"]:

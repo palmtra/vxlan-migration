@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
 """L2 VNI allocation from per-DC ranges.
 
-Each data center has its own VNI ranges, one per pool (``internal`` and
-``customer``), so the same VLAN ID in two DCs never shares a VNI. A VLAN
-record without a VNI gets the next free one in its DC and pool. Free means
+Each data center has its own VNI ranges, one per customer type (``internal``
+and ``external``), so the same VLAN ID in two DCs never shares a VNI. A VLAN
+record without a VNI gets the next free one in its DC and customer type. Free means
 not in any VLAN record of that DC, not already mapped on a discovered
 switch, and not handed to another VLAN earlier in the same run.
 
@@ -11,7 +11,7 @@ The ranges are hard-coded in ``inventory/group_vars/all/vni_ranges.yml`` for
 now; NetBox becomes the allocator later.
 """
 
-VNI_POOLS = ("internal", "customer")
+VNI_POOLS = ("internal", "external")
 
 
 def _range(entry):
@@ -74,11 +74,11 @@ def used_vnis(records=None, devices=None):
 
 def allocate_vni(data_center, pool, ranges, used):
     """Return ``{vni, pool, range, reason}``. ``vni`` is None when none is free."""
-    pool = str(pool or "").strip().lower() or "customer"
+    pool = str(pool or "").strip().lower() or "external"
     pools = (ranges or {}).get(data_center) or {}
     span = _range(pools.get(pool)) if isinstance(pools, dict) else None
     if pool not in VNI_POOLS:
-        return {"vni": None, "pool": pool, "range": "", "reason": "vni_pool must be internal or customer"}
+        return {"vni": None, "pool": pool, "range": "", "reason": "customer_type must be internal or external"}
     if span is None:
         return {
             "vni": None,

@@ -1018,7 +1018,7 @@ def build_vlan_discovery_reports(vlans, play_hosts, hostvars, all_hosts=None, vn
         if vlan.get("vni") in (None, "", 0) and vni_allocation:
             proposed = allocate_vni(
                 vlan.get("data_center") or "",
-                vlan.get("vni_pool") or vni_allocation.get("default_pool") or "customer",
+                vlan.get("customer_type") or vni_allocation.get("default_pool") or "external",
                 vni_ranges,
                 taken_vnis,
             )

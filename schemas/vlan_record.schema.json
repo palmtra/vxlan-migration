@@ -35,10 +35,15 @@
       "enum": ["", "distributed_anycast", "centralized_anycast"],
       "description": "L3 only. distributed_anycast: every participating leaf hosts the anycast gateway. centralized_anycast: a leaf pair (gateway_leafs) hosts it."
     },
-    "vni_pool": {
+    "customer_type": {
       "type": "string",
-      "enum": ["internal", "customer"],
-      "description": "VNI range pool for this VLAN's DC. Discovery proposes the next free VNI from it when vni is empty."
+      "enum": ["internal", "external"],
+      "description": "internal or external customer. Picks the DC's VNI range (Lisle 20000/22000, Omaha 10000/11000); discovery proposes the next free VNI from it when vni is empty."
+    },
+    "external_gateway_leafs": {
+      "type": "array",
+      "description": "L2 (external gateway) only. Leaves the firewall / external gateway attaches to, when that is not the DC's border leaf pair (the default). A manual override.",
+      "items": { "type": "string", "minLength": 1 }
     },
     "svi_mtu": {
       "type": "integer",

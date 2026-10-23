@@ -74,11 +74,17 @@ Open features and planned work. Completed items are kept for context.
 
 ### Pending decisions (see the open-questions doc)
 
-- [ ] Production fabric facts in the AVD repo (leaf pairs, ASN, Loopback0 per leaf); EVPN VLAN RD/RT scheme in use
+- [x] Lisle production inventory (VTEP / non-VTEP / legacy pairs) and AVD fabric facts; sw05/06 BGP in asdot
+- [x] EVPN VLAN scheme, both DCs: RD `<router-id>:<vlan>`, RT `<l2 vni>:<vlan>` (VLAN 966 is the reference)
+- [x] VNI standard: Lisle internal 20000 / external 22000, Omaha 10000 / 11000 (`customer_type`)
+- [x] Subnets advertised with `network` under the VRF (no redistribute connected); gateway in VRF default refused
+- [x] External gateway VLANs placed on the DC's border pair; `external_gateway_leafs` as the manual override
+- [ ] Omaha production inventory and AVD fabric facts
+- [ ] Confirm the VNI range end values (assumed: each block up to the next block's start)
+- [ ] NetBox as the VNI allocator: next free per DC and customer_type
 - [ ] CVaaS: fabric config in Static Configuration Studio? `hostname:` tag query, or serial numbers per leaf
 - [ ] Open the AVD repo PR from the migration automatically (today: export + manual commit/PR)
 - [ ] Retire the legacy `cv_configlet_v3` deploy path once the AVD repo path is proven
-- [ ] Real VNI ranges per DC and how a VLAN is marked internal vs customer
 - [ ] Sample outputs from the N7K and an EOS leaf (B9) for parser fixtures
 - [ ] Teams / email notification on change control (J4)
 

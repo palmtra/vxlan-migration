@@ -31,13 +31,14 @@ from vlan_lib.avd_services import (  # noqa: E402
 )
 
 FABRIC = {
+    "_external_gateway_pair": "PAIR2",
     "l3leaf": {
         "node_groups": [
             {"group": "PAIR1", "bgp_as": "65101", "nodes": [
                 {"name": "leaf1a", "id": 1, "loopback_ipv4_address": "10.250.0.1"},
                 {"name": "leaf1b", "id": 2, "loopback_ipv4_address": "10.250.0.2"},
             ]},
-            {"group": "PAIR2", "bgp_as": "65102", "nodes": [
+            {"group": "PAIR2", "bgp_as": "64086.60107", "nodes": [
                 {"name": "leaf2a", "id": 3, "loopback_ipv4_address": "10.250.0.3"},
                 {"name": "leaf2b", "id": 4, "loopback_ipv4_address": "10.250.0.4"},
             ]},
@@ -53,7 +54,7 @@ L3 = {
     "service_type": "l3",
     "data_center": "lisle",
     "vni": 20100,
-    "vni_pool": "customer",
+    "customer_type": "external",
     "vrf": "PROD",
     "l3_vni": 50001,
     "gateway": "10.100.0.1",
@@ -90,7 +91,7 @@ class ServiceEntries(unittest.TestCase):
             "ip_address_virtual": "10.100.0.1/24",
             "mtu": 9214,
             "description": "web tier",
-            "_migration": {"source": "vxlan-migration lisle VLAN 100", "vni_pool": "customer", "gateway_mode": "distributed_anycast"},
+            "_migration": {"source": "vxlan-migration lisle VLAN 100", "customer_type": "external", "gateway_mode": "distributed_anycast"},
         })
 
     def test_gateway_leafs_add_their_pair(self):
@@ -111,21 +112,35 @@ class ServiceEntries(unittest.TestCase):
         record = dict(L3, gateway_mode="centralized_anycast")
         self.assertIn("centralized_anycast needs gateway_leafs", avd_service_entries(record, FABRIC)["problems"])
 
-    def test_external_gateway_is_l2vlan(self):
-        record = dict(L3, service_type="l2", gateway="", prefixes=[])
+    def test_external_gateway_goes_on_the_border_pair(self):
+        record = dict(L3, service_type="l2", gateway="", prefixes=[], target_switches=["leaf1a"])
         result = avd_service_entries(record, FABRIC)
         self.assertEqual(result["problems"], [])
         self.assertIsNone(result["svi"])
         self.assertIsNone(result["vrf"])
         self.assertEqual(result["l2vlan"]["tags"], ["PAIR1", "PAIR2"])
+        self.assertEqual(result["l2vlan"]["_migration"]["gateway_mode"], "external")
+        self.assertNotIn("external_gateway_pair", result["l2vlan"]["_migration"])
 
-    def test_default_vrf_gets_an_id(self):
+    def test_external_gateway_manual_override(self):
+        record = dict(L3, service_type="l2", gateway="", prefixes=[], target_switches=["leaf1a"], external_gateway_leafs=["leaf1b"])
+        result = avd_service_entries(record, FABRIC)
+        self.assertEqual(result["problems"], [])
+        self.assertEqual(result["l2vlan"]["tags"], ["PAIR1"])
+        self.assertEqual(result["l2vlan"]["_migration"]["external_gateway_pair"], "PAIR1")
+
+    def test_external_gateway_needs_a_pair(self):
+        record = dict(L3, service_type="l2", gateway="", prefixes=[])
+        fabric = {key: value for key, value in FABRIC.items() if key != "_external_gateway_pair"}
+        self.assertTrue(any("no _external_gateway_pair" in p for p in avd_service_entries(record, fabric)["problems"]))
+        record["external_gateway_leafs"] = ["leaf1a", "leaf2a"]
+        self.assertTrue(any("span more than one leaf pair" in p for p in avd_service_entries(record, FABRIC)["problems"]))
+
+    def test_gateway_in_vrf_default_is_refused(self):
         record = dict(L3, vrf="default")
         record.pop("l3_vni")
-        result = avd_service_entries(record, FABRIC)
-        self.assertEqual(result["vrf"], {"name": "default", "vrf_id": 1})
-        self.assertEqual(result["svi"]["rd_override"], 100)
-        self.assertEqual(result["svi"]["rt_override"], "20100:100")
+        problems = avd_service_entries(record, FABRIC)["problems"]
+        self.assertTrue(any("VRF default" in p and "no redistribute connected" in p for p in problems), problems)
 
     def test_route_target_is_l2_vni_and_vlan(self):
         # The VRF's L3 targets never become the VLAN's route-target.
@@ -143,7 +158,7 @@ class ServiceEntries(unittest.TestCase):
             (dict(L3, gateway=""), "needs gateway and prefixes"),
             (dict(L3, vrf="TENANT_A", l3_vni=None), "VRF TENANT_A needs l3_vni"),
             (dict(L3, gateway_mode="anycast"), "gateway_mode 'anycast'"),
-            (dict(L3, service_type="l2", target_switches=[]), "has no leaf pair to go on"),
+            (dict(L3, target_switches=[], gateway_leafs=[]), "has no leaf pair to go on"),
         ]
         for record, expected in cases:
             problems = avd_service_entries(record, FABRIC)["problems"]
@@ -153,7 +168,11 @@ class ServiceEntries(unittest.TestCase):
         record = dict(L3, leaf_bgp={"leaf1a": {"asn": "65101", "router_id": "10.250.0.9"}, "leaf2b": {"asn": "65999"}})
         problems = avd_service_entries(record, FABRIC)["problems"]
         self.assertIn("leaf1a router-id is 10.250.0.9 on the switch but 10.250.0.1 in the AVD repo", problems)
-        self.assertIn("leaf2b ASN is 65999 on the switch but 65102 in the AVD repo", problems)
+        self.assertIn("leaf2b ASN is 65999 on the switch but 64086.60107 in the AVD repo", problems)
+
+    def test_asn_notations_compare_equal(self):
+        record = dict(L3, leaf_bgp={"leaf2b": {"asn": "4200000203"}, "leaf1a": {"asn": "65101"}})
+        self.assertEqual(avd_service_entries(record, FABRIC)["problems"], [])
 
     def test_secondaries_are_noted_not_moved(self):
         record = dict(L3, secondary_prefixes=["10.101.0.0/24"])
