@@ -538,29 +538,21 @@ def _leaf_bgp_map(placement):
 
 
 def _vlan_route_target(record):
-    """Route-target for ``router bgp / vlan``.
+    """Route-target for ``router bgp / vlan``: the L2 VNI's, both directions.
 
-    Prefer the explicit L3 import and export targets. When those are absent,
-    use ``<l3_vni>:<vlan id>``. An L2 target is the last fallback.
+    The fabric (both DCs) uses ``<l2 vni>:<vlan id>``. An explicit ``l2_rt``
+    on the record wins. The L3 VRF targets (``rt_import`` / ``rt_export``,
+    ``l3_vni``) belong to the VRF, which is already built, never to the VLAN.
     """
     if not isinstance(record, dict):
         return {}
-    rt_import = str(record.get("rt_import") or "").strip()
-    rt_export = str(record.get("rt_export") or "").strip()
-    if rt_import and rt_export:
-        if rt_import == rt_export:
-            return {"rt_both": rt_import}
-        return {"rt_import": rt_import, "rt_export": rt_export}
-    single = rt_import or rt_export
-    if single:
-        return {"rt_both": single}
-    l3_vni = record.get("l3_vni")
-    vlan_id = record.get("id")
-    if l3_vni not in (None, "") and vlan_id not in (None, ""):
-        return {"rt_both": "%s:%s" % (l3_vni, vlan_id)}
     l2_rt = str(record.get("l2_rt") or "").strip()
     if l2_rt:
         return {"rt_both": l2_rt}
+    vni = record.get("vni")
+    vlan_id = record.get("id")
+    if str(vni or "").strip().isdigit() and vlan_id not in (None, ""):
+        return {"rt_both": "%s:%s" % (int(vni), vlan_id)}
     return {}
 
 
@@ -624,8 +616,9 @@ def virtual_gateway_address(gateway, prefixes=None):
 def bgp_vlan_evpn(record, hostname, host_asn="", host_router_id=""):
     """EOS ``router bgp / vlan`` values for one VTEP.
 
-    RD is the leaf route distinguisher, or ``<router-id>:<vlan id>``.
-    An empty result means this VLAN has no route-target to publish.
+    RD is the leaf route distinguisher, or ``<router-id>:<vlan id>``. The
+    route-target is ``<l2 vni>:<vlan id>`` (see ``_vlan_route_target``).
+    An empty result means this VLAN has no L2 VNI, so nothing to publish.
     ``missing`` lists asn or rd when a target exists but the leaf cannot build it.
     """
     if not isinstance(record, dict):
@@ -1612,9 +1605,9 @@ def flatten_deployment_model(document):
             if hostname and hostname not in discovery:
                 discovery.append(hostname)
 
+    # The VLAN's VNI is the L2 VNI only. The L3 VNI belongs to the VRF; a
+    # missing L2 VNI is allocated from the DC's range by discovery.
     vni = _blank_evpn_vni(l2_evpn.get("vni"))
-    if vni is None:
-        vni = _blank_evpn_vni(l3_evpn.get("vni"))
     record = {
         "id": _coerce_int(vlan.get("id")),
         "name": vlan.get("name") or "",

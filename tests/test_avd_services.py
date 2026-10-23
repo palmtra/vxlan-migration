@@ -84,7 +84,7 @@ class ServiceEntries(unittest.TestCase):
             "name": "WEB",
             "vni_override": 20100,
             "rd_override": 100,
-            "rt_override": "50001:100",
+            "rt_override": "20100:100",
             "enabled": True,
             "tags": ["PAIR1", "PAIR2"],
             "ip_address_virtual": "10.100.0.1/24",
@@ -124,18 +124,17 @@ class ServiceEntries(unittest.TestCase):
         record.pop("l3_vni")
         result = avd_service_entries(record, FABRIC)
         self.assertEqual(result["vrf"], {"name": "default", "vrf_id": 1})
-        # No route-target in the record: AVD's <vni>:<vni>, RD still <router-id>:<vlan>.
-        self.assertNotIn("rt_override", result["svi"])
         self.assertEqual(result["svi"]["rd_override"], 100)
-        self.assertTrue(any("AVD uses 20100:20100" in note for note in result["notes"]))
+        self.assertEqual(result["svi"]["rt_override"], "20100:100")
 
-    def test_explicit_route_target(self):
-        record = dict(L3, rt_import="65000:100", rt_export="65000:100")
-        self.assertEqual(avd_service_entries(record, FABRIC)["svi"]["rt_override"], "65000:100")
+    def test_route_target_is_l2_vni_and_vlan(self):
+        # The VRF's L3 targets never become the VLAN's route-target.
+        record = dict(L3, rt_import="1:12", rt_export="1:12")
+        self.assertEqual(avd_service_entries(record, FABRIC)["svi"]["rt_override"], "20100:100")
 
-    def test_asymmetric_route_target_is_a_problem(self):
-        record = dict(L3, rt_import="65000:100", rt_export="65000:200")
-        self.assertTrue(any("one route-target per VLAN" in p for p in avd_service_entries(record, FABRIC)["problems"]))
+    def test_explicit_l2_route_target(self):
+        record = dict(L3, l2_rt="966:966")
+        self.assertEqual(avd_service_entries(record, FABRIC)["svi"]["rt_override"], "966:966")
 
     def test_problems(self):
         cases = [

@@ -11,10 +11,9 @@ Placement is by leaf pair: ``tags`` are node group names from
 ``group_vars/<DC>_FABRIC.yml``. A pair carries the VLAN when any of its
 leaves does (MLAG peers carry the same VLANs).
 
-RD and RT keep the scheme the CLI path uses (see ``bgp_vlan_evpn``):
-``rd_override`` is the VLAN id (RD ``<router-id>:<vlan id>``) and
-``rt_override`` is the record's route-target. Without a route-target AVD
-uses ``<vni>:<vni>``.
+RD and RT follow the fabric's scheme in both DCs (see ``bgp_vlan_evpn``):
+``rd_override`` is the VLAN id, so the RD is ``<router-id>:<vlan id>``, and
+``rt_override`` is ``<l2 vni>:<vlan id>`` (or the record's ``l2_rt``).
 """
 
 import copy
@@ -100,18 +99,10 @@ def avd_service_entries(record, fabric_vars, default_mtu=9214):
     common = {"id": int(vlan_id), "name": name} if str(vlan_id).isdigit() else {"id": vlan_id, "name": name}
     if vni is not None:
         common["vni_override"] = vni
-    route_target = _vlan_route_target(record)
-    if route_target.get("rt_both"):
-        common["rd_override"] = common["id"]
-        common["rt_override"] = route_target["rt_both"]
-    elif route_target:
-        problems.append(
-            "VLAN %s imports %s and exports %s; AVD sets one route-target per VLAN"
-            % (vlan_id, route_target.get("rt_import"), route_target.get("rt_export"))
-        )
-    else:
-        common["rd_override"] = common["id"]
-        notes.append("no route-target in the record; AVD uses %s:%s" % (vni, vni))
+    common["rd_override"] = common["id"]
+    route_target = _vlan_route_target(record).get("rt_both")
+    if route_target:
+        common["rt_override"] = route_target
 
     migration = {"source": "vxlan-migration %s VLAN %s" % (record.get("data_center") or "", vlan_id)}
     if record.get("vni_pool"):

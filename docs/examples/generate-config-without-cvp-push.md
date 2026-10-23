@@ -39,8 +39,8 @@ vlan_name: WEB_VXLAN
 vni: 50100
 vrf: default
 target_switches:
-  - eos-leaf-lis-01
-  - eos-leaf-lis-02
+  - chi01-blf01
+  - chi01-blf02
 ```
 
 ---

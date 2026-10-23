@@ -11,7 +11,7 @@ vlans:
     vlan_name: WEB_VXLAN
     vrf: default
     target_switches:
-      - eos-leaf-lis-01
+      - chi01-blf01
   - id: 200
     role: l3svi
     service_type: l3

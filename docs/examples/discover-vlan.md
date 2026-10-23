@@ -53,7 +53,7 @@ Update `inventory/hosts.yml` so `ansible_host` values point at real devices (the
 Preflight one switch:
 
 ```bash
-ansible eos-leaf-lis-01 -i inventory/hosts.yml -m ansible.netcommon.cli_command \
+ansible chi01-blf01 -i inventory/hosts.yml -m ansible.netcommon.cli_command \
   -a "command='show version'" --ask-pass -e ansible_user=admin
 ```
 
@@ -168,10 +168,10 @@ Example:
 
 ```text
 PLAY RECAP
-eos-leaf-lis-01   : ok=25  failed=0  unreachable=0
+chi01-blf01   : ok=25  failed=0  unreachable=0
 ...
 TASK [Display VLAN report output paths]
-ok: [eos-leaf-lis-01 -> localhost] => {
+ok: [chi01-blf01 -> localhost] => {
     "msg": "Wrote VLAN discovery reports under reports/lisle/legacy_web/ ..."
 }
 ```

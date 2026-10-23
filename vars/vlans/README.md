@@ -48,10 +48,10 @@ prefixes:                 # optional; derived from SVI CIDRs
   - 10.10.100.0/24
 static_route_tags: []     # optional; case-insensitive match against `ip route ... name`
 target_switches:
-  - eos-leaf-lis-01
+  - chi01-blf01
 discovery_switches:
-  - eos-leaf-lis-01
-  - eos-mls-lis-01
+  - chi01-blf01
+  - fnts-chi01-aggpe-ml01
 ```
 
 Records are validated against [`schemas/vlan_record.schema.json`](../../schemas/vlan_record.schema.json) on load (`jsonschema` required). Discovery writes a deployable model (routing, EVPN, participating leaves, prune-eligible leaves). **VNI must still be assigned** before migrate, and **gateway_leafs must be named** for an L3 cutover. A discovered SVI is a source gateway, not a fabric gateway leaf. L3 objects in a shared VRF are in the JSON analysis payload but are not unique to this VLAN.

@@ -209,11 +209,11 @@ gateway: 10.10.100.1     # optional; filled from SVI VR / HSRP by discovery
 prefixes:                # optional; derived from SVI CIDRs
   - 10.10.100.0/24
 target_switches:          # CVP configlet targets
-  - eos-leaf-lis-01
-  - eos-leaf-lis-02
+  - chi01-blf01
+  - chi01-blf02
 discovery_switches:       # optional; defaults to target_switches
-  - eos-leaf-lis-01
-  - eos-mls-lis-01
+  - chi01-blf01
+  - fnts-chi01-aggpe-ml01
 ```
 
 ## Safety controls

@@ -134,7 +134,7 @@ class VlanDbLoaderTests(unittest.TestCase):
         self.assertEqual(record["vni"], 13000)
         self.assertIsInstance(record["vni"], int)
 
-    def test_vlan_vni_uses_l3_vni_when_l2_vni_is_empty(self):
+    def test_vlan_vni_is_never_the_l3_vni(self):
         record = parse_vlan_record(
             {
                 "site": {"data_center": "omaha", "vlan": {"id": 2903, "name": "FNTS-LAB-EXTERNAL"}},
@@ -152,7 +152,9 @@ class VlanDbLoaderTests(unittest.TestCase):
             },
             "2903.yml",
         )
-        self.assertEqual(record["vni"], 10003)
+        # The L3 VNI is the VRF's. An empty L2 VNI stays empty for discovery to allocate.
+        self.assertIsNone(record["vni"])
+        self.assertEqual(record["l3_vni"], 10003)
         self.assertEqual(record["name"], "FNTS-LAB-EXTERNAL")
         self.assertEqual(record["gateway_leafs"], ["oma01-blf01"])
 
@@ -279,7 +281,8 @@ class VlanDbLoaderTests(unittest.TestCase):
         border = bgp_vlan_evpn(record, "oma01-blf01")
         self.assertEqual(border["asn"], "30452")
         self.assertEqual(border["rd"], "66.180.0.3:2903")
-        self.assertEqual(border["rt_both"], "10003:2903")
+        # L2 VNI : VLAN id. The L3 VRF targets are not the VLAN's.
+        self.assertEqual(border["rt_both"], "12903:2903")
         self.assertNotIn("missing", border)
         access = bgp_vlan_evpn(record, "oma-ce-sw01")
         self.assertEqual(access["asn"], "4200000106")
@@ -291,30 +294,26 @@ class VlanDbLoaderTests(unittest.TestCase):
         derived = bgp_vlan_evpn(
             {
                 "id": 2903,
+                "vni": 12903,
                 "l3_vni": 10003,
+                "rt_import": "10003:2903",
                 "leaf_bgp": {"sw1": {"asn": "30452", "router_id": "66.180.0.3"}},
             },
             "sw1",
         )
         self.assertEqual(derived["rd"], "66.180.0.3:2903")
-        self.assertEqual(derived["rt_both"], "10003:2903")
+        self.assertEqual(derived["rt_both"], "12903:2903")
 
-        split = bgp_vlan_evpn(
-            {
-                "id": 2903,
-                "rt_import": "10003:2903",
-                "rt_export": "10004:2903",
-                "leaf_bgp": {"sw1": {"asn": "30452", "rd": "66.180.0.3:2903"}},
-            },
+        explicit = bgp_vlan_evpn(
+            {"id": 966, "vni": 966, "l2_rt": "966:966", "leaf_bgp": {"sw1": {"asn": "20034", "rd": "66.180.0.17:966"}}},
             "sw1",
         )
-        self.assertEqual(split["rt_import"], "10003:2903")
-        self.assertEqual(split["rt_export"], "10004:2903")
-        self.assertNotIn("rt_both", split)
+        self.assertEqual(explicit["rt_both"], "966:966")
 
-        missing = bgp_vlan_evpn({"id": 2903, "l3_vni": 10003}, "sw1")
+        missing = bgp_vlan_evpn({"id": 2903, "vni": 12903}, "sw1")
         self.assertEqual(missing["missing"], ["asn", "rd"])
-        self.assertEqual(bgp_vlan_evpn({"id": 2903, "vni": 12903}, "sw1"), {})
+        # No L2 VNI: nothing to publish (the L3 VNI is the VRF's).
+        self.assertEqual(bgp_vlan_evpn({"id": 2903, "l3_vni": 10003}, "sw1"), {})
 
 
     def test_coalesce_trimmed(self):
