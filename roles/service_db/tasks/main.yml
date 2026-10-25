@@ -11,7 +11,9 @@
 
 - name: Resolve data center for service DB lookup
   ansible.builtin.set_fact:
-    _service_db_data_center: "{{ {'manual': manual_data_center | default(''), 'target': target_data_center | default(''), 'limit': ansible_limit | default('')} | resolve_run_data_center }}"
+    _service_db_data_center: >-
+      {{ {'manual': manual_data_center | default(''), 'target': target_data_center | default(''),
+      'limit': ansible_limit | default('')} | resolve_run_data_center }}
     _service_db_id: "{{ [manual_service_id | default(''), service_id | default('')] | coalesce_trimmed }}"
   delegate_facts: true
 
@@ -31,7 +33,9 @@
 
 - name: Load service record from the DC directory
   ansible.builtin.set_fact:
-    _service_record: "{{ service_db_dir | load_service_from_directory(hostvars['localhost']['_service_db_data_center'], hostvars['localhost']['_service_db_id']) }}"
+    _service_record: >-
+      {{ service_db_dir | load_service_from_directory(hostvars['localhost']['_service_db_data_center'],
+      hostvars['localhost']['_service_db_id']) }}
   when: hostvars['localhost']['_service_db_id'] | default('') | length > 0
   delegate_facts: true
 

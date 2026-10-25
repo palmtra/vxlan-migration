@@ -7,4 +7,5 @@
 # directly from the rulebook.
 # -----------------------------------------------------------------------------
 
-- ansible.builtin.import_playbook: playbooks/advanced/workflow_verify.yml
+- name: Run the Advanced verify workflow
+  ansible.builtin.import_playbook: playbooks/advanced/workflow_verify.yml

@@ -1,3 +1,4 @@
+---
 # CVAAS/CVP endpoint variables. Provide the token via Ansible Vault, AAP credentials,
 # or a scoped variable file; do not commit it in plain text.
 ansible_host: www.cv-prod-us-central1-c.arista.io

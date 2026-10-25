@@ -44,4 +44,3 @@ cvp_change_control_auto_execute_allowed: false
 # Default loopback / interface values used in the generated structured config.
 avd_vxlan_source_interface: Loopback1
 avd_vxlan_udp_port: 4789
-

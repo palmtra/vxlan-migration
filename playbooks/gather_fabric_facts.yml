@@ -2,8 +2,6 @@
 - name: Gather read-only fabric information from CVP
   hosts: CVAAS
   gather_facts: false
-  collections:
-    - arista.cvp
 
   tasks:
     - name: "Collect all facts (devices, configlets, containers, images)"

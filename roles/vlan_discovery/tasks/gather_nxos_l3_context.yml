@@ -29,7 +29,8 @@
 
 - name: NXOS - parse static routes and BGP context
   ansible.builtin.set_fact:
-    _nxos_static_routes: "{{ (_nxos_vrf_context_section.stdout | default('') ~ '\n' ~ (_nxos_ip_route_include.stdout | default(''))) | parse_ip_route_statics }}"
+    _nxos_static_routes: "{{ (_nxos_vrf_context_section.stdout | default('') ~ '\n' ~ (_nxos_ip_route_include.stdout | default('')))
+      | parse_ip_route_statics }}"
     _nxos_bgp_context: "{{ _nxos_bgp_section.stdout | default('') | parse_bgp_context }}"
     _nxos_ip_route_raw: "{{ (_nxos_vrf_context_section.stdout | default('') ~ '\n' ~ (_nxos_ip_route_include.stdout | default(''))) }}"
     _nxos_bgp_raw: "{{ _nxos_bgp_section.stdout | default('') }}"
