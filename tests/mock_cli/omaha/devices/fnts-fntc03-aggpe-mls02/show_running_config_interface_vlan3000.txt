@@ -1,0 +1,17 @@
+!Command: show running-config interface Vlan3000
+!Running configuration last done at: Mon Oct 12 08:14:22 2026
+
+version 8.4(2)
+
+interface Vlan3000
+  description ACME_APP_GW
+  no shutdown
+  mtu 9216
+  vrf member v0000822a
+  no ip redirects
+  ip address 10.230.0.3/24
+  hsrp version 2
+  hsrp 3000
+    preempt
+    priority 100
+    ip 10.230.0.1

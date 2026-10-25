@@ -1,0 +1,9 @@
+VL3000
+  Spanning tree enabled protocol rapid-pvst
+  Root ID    Priority    27576
+             Address     0026.98aa.0001
+             Cost        1999
+             Port        1 (Port-Channel1)
+
+  Bridge ID  Priority    32768  (priority 32768 sys-id-ext 3000)
+             Address     001c.7311.0006

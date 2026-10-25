@@ -1,0 +1,9 @@
+          Mac Address Table
+------------------------------------------------------------------
+Vlan    Mac Address       Type        Ports      Moves   Last Move
+----    -----------       ----        -----      -----   ---------
+3000    0050.56b3.0010    DYNAMIC     Et5        1       0:02:11 ago
+3000    0050.56b3.0020    DYNAMIC     Po3        1       0:03:40 ago
+3000    0026.98aa.0001    DYNAMIC     Po1        1       12 days, 4:01:10 ago
+3000    0026.98aa.0002    DYNAMIC     Po1        1       12 days, 4:01:10 ago
+Total Mac Addresses for this criterion: 4

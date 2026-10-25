@@ -1,0 +1,13 @@
+Interface Ethernet49 detected 1 LLDP neighbors:
+
+  Neighbor 0026.98aa.0001/Ethernet3/5, age 4 seconds
+  - Port ID        : "Ethernet3/5"
+  - System Name: "fnts-fntc03-aggpe-mls01"
+  - System Description: "Cisco Nexus Operating System (NX-OS) Software 8.4(2)"
+
+Interface Ethernet50 detected 1 LLDP neighbors:
+
+  Neighbor 0026.98aa.0002/Ethernet3/5, age 4 seconds
+  - Port ID        : "Ethernet3/5"
+  - System Name: "fnts-fntc03-aggpe-mls02"
+  - System Description: "Cisco Nexus Operating System (NX-OS) Software 8.4(2)"

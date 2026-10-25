@@ -1,0 +1,3 @@
+interface Ethernet5
+   description esx-acme-02
+   switchport access vlan 3000

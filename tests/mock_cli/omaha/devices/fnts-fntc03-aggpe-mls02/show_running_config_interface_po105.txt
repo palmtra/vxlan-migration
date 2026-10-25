@@ -1,0 +1,5 @@
+interface port-channel105
+  description to fntc-aggacc-sw05/06
+  switchport mode trunk
+  switchport trunk allowed vlan 2100,3000
+  vpc 105

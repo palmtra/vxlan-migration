@@ -1,0 +1,4 @@
+interface Port-Channel1
+   description uplink to fntc-aggacc-sw01/02
+   switchport mode trunk
+   switchport trunk allowed vlan 3000

@@ -1,0 +1,29 @@
+Chassis id: 001c.7311.0001
+Port id: Ethernet50
+Local Port id: Eth3/1
+System Name: fntc-aggacc-sw01
+System Description: Arista Networks EOS version 4.31.2F
+Enabled Capabilities: B, R
+
+Chassis id: 001c.7311.0002
+Port id: Ethernet50
+Local Port id: Eth3/2
+System Name: fntc-aggacc-sw02
+System Description: Arista Networks EOS version 4.31.2F
+Enabled Capabilities: B, R
+
+Chassis id: 001c.7311.0005
+Port id: Ethernet50
+Local Port id: Eth3/5
+System Name: fntc-aggacc-sw05
+System Description: Arista Networks EOS version 4.31.2F
+Enabled Capabilities: B, R
+
+Chassis id: 001c.7311.0006
+Port id: Ethernet50
+Local Port id: Eth3/6
+System Name: fntc-aggacc-sw06
+System Description: Arista Networks EOS version 4.31.2F
+Enabled Capabilities: B, R
+
+Total entries displayed: 4

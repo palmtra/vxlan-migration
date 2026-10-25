@@ -1,0 +1,2 @@
+Loopback1 is up
+  Internet address is 66.180.1.5/32

@@ -1,10 +1,11 @@
 # vxlan-migration developer tasks
-.PHONY: help lint test mock syntax molecule ci ee-deps
+.PHONY: help lint test mock mock-omaha syntax molecule ci ee-deps
 
 help:
 	@echo "make lint     - yamllint + ansible-lint"
 	@echo "make test     - unit tests"
 	@echo "make mock     - run discover_vlan.yml end to end against canned CLI output"
+	@echo "make mock-omaha - Omaha VLAN 3000: discover, record, generate configs (AVD_REPO_DIR= adds the AVD build)"
 	@echo "make syntax   - ansible-playbook --syntax-check on core playbooks"
 	@echo "make molecule - localhost molecule scenarios (vlan_db, service_db)"
 	@echo "make ci       - lint + test + syntax + molecule (local CI mirror)"
@@ -18,6 +19,9 @@ test:
 
 mock:
 	tests/run_discovery_mock.sh
+
+mock-omaha:
+	tests/run_omaha_vlan3000_mock.sh
 
 syntax:
 	@set -e; \

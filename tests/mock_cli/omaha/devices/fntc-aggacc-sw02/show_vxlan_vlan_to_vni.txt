@@ -1,0 +1,5 @@
+VLAN       VNI          Source       Interface       802.1Q Tag
+---------- ------------ ------------ --------------- ----------
+2100       10000        static       Vxlan1          2100
+2500       11000        static       Vxlan1          2500
+2501       11001        static       Vxlan1          2501

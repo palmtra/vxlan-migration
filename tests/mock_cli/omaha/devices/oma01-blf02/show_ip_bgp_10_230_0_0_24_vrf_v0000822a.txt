@@ -1,0 +1,14 @@
+BGP routing table information for VRF v0000822a
+Router identifier 66.180.0.4, local AS number 30452
+BGP routing table entry for 10.230.0.0/24
+ Paths: 2 available
+  Local
+    66.180.0.1 from 66.180.0.1 (66.180.0.1)
+      Origin INCOMPLETE, metric 0, localpref 100, IGP metric 1, weight 0, tag 0
+      Received 41d02h ago, valid, internal, ECMP head, ECMP, best, ECMP contributor
+      Rx SAFI: Unicast
+  Local
+    66.180.0.2 from 66.180.0.2 (66.180.0.2)
+      Origin INCOMPLETE, metric 0, localpref 100, IGP metric 1, weight 0, tag 0
+      Received 41d02h ago, valid, internal, ECMP, ECMP contributor
+      Rx SAFI: Unicast

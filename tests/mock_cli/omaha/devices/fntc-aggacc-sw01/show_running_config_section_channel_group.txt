@@ -1,0 +1,6 @@
+interface Ethernet3
+   channel-group 3 mode active
+interface Ethernet49
+   channel-group 1 mode active
+interface Ethernet50
+   channel-group 1 mode active

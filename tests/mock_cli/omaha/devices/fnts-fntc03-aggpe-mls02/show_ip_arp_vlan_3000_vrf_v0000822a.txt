@@ -1,0 +1,8 @@
+IP ARP Table for context v0000822a
+Total number of entries: 5
+Address         Age       MAC Address     Interface       Flags
+10.230.0.10     00:01:12  0050.56b3.0010  Vlan3000
+10.230.0.11     00:00:40  0050.56b3.0011  Vlan3000
+10.230.0.20     00:02:10  0050.56b3.0020  Vlan3000
+10.230.0.2      00:00:02  0026.98aa.0001  Vlan3000
+10.230.0.40     00:18:44  0050.56b3.0040  Vlan3000

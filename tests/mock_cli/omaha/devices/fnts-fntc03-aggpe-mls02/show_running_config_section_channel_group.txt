@@ -1,0 +1,8 @@
+interface Ethernet3/1
+  channel-group 101 mode active
+interface Ethernet3/2
+  channel-group 101 mode active
+interface Ethernet3/5
+  channel-group 105 mode active
+interface Ethernet3/6
+  channel-group 105 mode active

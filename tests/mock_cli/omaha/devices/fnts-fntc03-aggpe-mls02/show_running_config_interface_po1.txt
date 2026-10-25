@@ -1,0 +1,4 @@
+interface port-channel1
+  switchport mode trunk
+  spanning-tree port type network
+  vpc peer-link

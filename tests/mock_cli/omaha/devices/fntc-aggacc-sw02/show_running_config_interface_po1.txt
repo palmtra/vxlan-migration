@@ -1,0 +1,5 @@
+interface Port-Channel1
+   description MLAG uplink to fnts-fntc03-aggpe-mls01/02 Po101
+   switchport mode trunk
+   switchport trunk allowed vlan 2100,2500-2501,3000
+   mlag 1

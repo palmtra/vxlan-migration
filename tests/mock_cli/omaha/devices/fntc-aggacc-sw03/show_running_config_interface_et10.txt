@@ -1,0 +1,3 @@
+interface Ethernet10
+   description acme-db-01
+   switchport access vlan 3000

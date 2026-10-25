@@ -1,0 +1,3 @@
+Cisco Nexus Operating System (NX-OS) Software
+  NXOS: version 8.4(2)
+  cisco Nexus7000 C7010 (10 Slot) Chassis

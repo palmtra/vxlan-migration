@@ -1,0 +1,28 @@
+Interface Ethernet5 detected 1 LLDP neighbors:
+
+  Neighbor 0050.56b3.0011/vmnic2, age 12 seconds
+  - System Name: "esx-acme-02"
+  - System Description: "VMware ESX Releasebuild-21495797"
+  - System Capabilities : Bridge
+    Enabled Capabilities: Bridge
+
+Interface Ethernet3 detected 1 LLDP neighbors:
+
+  Neighbor 001c.7311.0003/Ethernet50, age 4 seconds
+  - Port ID        : "Ethernet50"
+  - System Name: "fntc-aggacc-sw03"
+  - System Description: "Arista Networks EOS version 4.31.2F"
+
+Interface Ethernet49 detected 1 LLDP neighbors:
+
+  Neighbor 0026.98aa.0001/Ethernet3/2, age 4 seconds
+  - Port ID        : "Ethernet3/2"
+  - System Name: "fnts-fntc03-aggpe-mls01"
+  - System Description: "Cisco Nexus Operating System (NX-OS) Software 8.4(2)"
+
+Interface Ethernet50 detected 1 LLDP neighbors:
+
+  Neighbor 0026.98aa.0002/Ethernet3/2, age 4 seconds
+  - Port ID        : "Ethernet3/2"
+  - System Name: "fnts-fntc03-aggpe-mls02"
+  - System Description: "Cisco Nexus Operating System (NX-OS) Software 8.4(2)"
