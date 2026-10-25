@@ -9,7 +9,9 @@
 
 - name: Resolve effective data center for VLAN DB lookup
   ansible.builtin.set_fact:
-    _vlan_db_data_center: "{{ {'manual': manual_data_center | default(''), 'target': target_data_center | default(''), 'limit': ansible_limit | default('')} | resolve_run_data_center }}"
+    _vlan_db_data_center: >-
+      {{ {'manual': manual_data_center | default(''), 'target': target_data_center | default(''),
+      'limit': ansible_limit | default('')} | resolve_run_data_center }}
     _vlan_db_target_vlan_ids: "{{ target_vlan_ids | default([]) | normalize_target_vlan_ids(manual_vlan_id | default(none)) }}"
   delegate_facts: true
 
@@ -22,7 +24,9 @@
 
 - name: Load VLAN records from the DC directory
   ansible.builtin.set_fact:
-    _vlan_db_load: "{{ vlan_db_dir | load_vlan_db_from_directory(hostvars['localhost']['_vlan_db_data_center'], hostvars['localhost']['_vlan_db_target_vlan_ids']) }}"
+    _vlan_db_load: >-
+      {{ vlan_db_dir | load_vlan_db_from_directory(hostvars['localhost']['_vlan_db_data_center'],
+      hostvars['localhost']['_vlan_db_target_vlan_ids']) }}
   delegate_facts: true
 
 - name: Expose VLAN registry from the DC directory
@@ -46,14 +50,20 @@
 
 - name: Compute effective VLAN list for this run
   ansible.builtin.set_fact:
-    _effective_vlans: "{{ hostvars['localhost']['_vlan_db'].vlans | select_vlans_for_run(hostvars['localhost']['_vlan_db_target_vlan_ids'], target_actions | default([])) }}"
+    _effective_vlans: >-
+      {{ hostvars['localhost']['_vlan_db'].vlans | select_vlans_for_run(hostvars['localhost']['_vlan_db_target_vlan_ids'],
+      target_actions | default([])) }}
   delegate_facts: true
 
 - name: Backfill missing service VLANs as synthetic discovery records
   ansible.builtin.set_fact:
-    _effective_vlans: "{{ hostvars['localhost']['_effective_vlans'] + (hostvars['localhost']['_service_record'] | service_probe_vlan_records(hostvars['localhost']['_effective_vlans'])) }}"
+    _effective_vlans: >-
+      {{ hostvars['localhost']['_effective_vlans'] + (hostvars['localhost']['_service_record']
+      | service_probe_vlan_records(hostvars['localhost']['_effective_vlans'])) }}
     _discovery_scan_all_switches: true
-    _discovery_probe_mode: "{{ true if (hostvars['localhost']['_service_record'] | service_probe_vlan_records(hostvars['localhost']['_effective_vlans']) | length > 0) else (hostvars['localhost']['_discovery_probe_mode'] | default(false)) }}"
+    _discovery_probe_mode: >-
+      {{ true if (hostvars['localhost']['_service_record'] | service_probe_vlan_records(hostvars['localhost']['_effective_vlans'])
+      | length > 0) else (hostvars['localhost']['_discovery_probe_mode'] | default(false)) }}
   when:
     - discovery_allow_probe | default(false) | bool
     - hostvars['localhost']['_service_record'] | default({}) | length > 0
@@ -117,7 +127,9 @@
 
 - name: Look up the workflow target VLAN record when target_vlan_id is set
   ansible.builtin.set_fact:
-    _target_vlan_record: "{{ hostvars['localhost']['_vlan_db'].vlans | selectattr('id', 'equalto', hostvars['localhost'].target_vlan_id | int) | first | default({}) }}"
+    _target_vlan_record: >-
+      {{ hostvars['localhost']['_vlan_db'].vlans | selectattr('id', 'equalto', hostvars['localhost'].target_vlan_id | int) | first
+      | default({}) }}
   when:
     - hostvars['localhost'].target_vlan_id is defined
     - not (hostvars['localhost']['_discovery_probe_mode'] | default(false) | bool)
@@ -176,7 +188,9 @@
       target_switches: "{{ hostvars['localhost']['_target_vlan_record'].target_switches }}"
       data_center: "{{ hostvars['localhost']['_vlan_db_data_center'] }}"
     _ssot_source: local_registry
-    _workflow_discovery_hosts: "{{ hostvars['localhost']['_target_vlan_record'].discovery_switches | default(hostvars['localhost']['_target_vlan_record'].target_switches) }}"
+    _workflow_discovery_hosts: >-
+      {{ hostvars['localhost']['_target_vlan_record'].discovery_switches
+      | default(hostvars['localhost']['_target_vlan_record'].target_switches) }}
     _workflow_cvp_target_switches: "{{ hostvars['localhost']['_target_vlan_record'].target_switches }}"
   when:
     - hostvars['localhost']['_target_vlan_record'] | default({}) | length > 0

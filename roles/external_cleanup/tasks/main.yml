@@ -75,7 +75,9 @@
   when:
     - external_cleanup_api_url | default('', true) | length > 0
     - _vlan_found_on_switches | bool
-  ignore_errors: true
+  # The orchestrator call is best effort: any failure must not stop the run,
+  # and it should still show as failed/ignored in the output and recap.
+  ignore_errors: true  # noqa: ignore-errors
 
 - name: Report cleanup hand-off status
   ansible.builtin.debug:

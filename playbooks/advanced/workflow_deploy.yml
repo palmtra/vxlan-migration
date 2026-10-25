@@ -13,6 +13,7 @@
 #     -e cvp_apply_configlets=false
 # -----------------------------------------------------------------------------
 
-- ansible.builtin.import_playbook: ../core/workflow_deploy.yml
+- name: Run the core deploy workflow at the Advanced tier
+  ansible.builtin.import_playbook: ../core/workflow_deploy.yml
   vars:
     workflow_tier: advanced

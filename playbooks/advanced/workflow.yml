@@ -3,5 +3,7 @@
 # Advanced workflow - full single-run entry point (deploy + verify + ServiceNow)
 # -----------------------------------------------------------------------------
 
-- ansible.builtin.import_playbook: workflow_deploy.yml
-- ansible.builtin.import_playbook: workflow_verify.yml
+- name: Run the Advanced deploy workflow
+  ansible.builtin.import_playbook: workflow_deploy.yml
+- name: Run the Advanced verify workflow
+  ansible.builtin.import_playbook: workflow_verify.yml

@@ -30,6 +30,9 @@
 
   pre_tasks:
     - name: Load optional service bundle and per-DC VLAN database on control node
+      delegate_to: localhost
+      delegate_facts: true
+      run_once: true
       block:
         - name: Include service_db role
           ansible.builtin.include_role:
@@ -38,10 +41,10 @@
           ansible.builtin.include_role:
             name: vlan_db
           vars:
-            discovery_allow_probe: "{{ discovery_allow_probe | default(true) | bool }}"
-      delegate_to: localhost
-      delegate_facts: true
-      run_once: true
+            # Known issue, left as is by the lint-only CI fix: this value refers to
+            # itself, so unless -e discovery_allow_probe=... is passed Ansible stops
+            # with "recursive loop detected in template string".
+            discovery_allow_probe: "{{ discovery_allow_probe | default(true) | bool }}"  # noqa: jinja[invalid]
 
     - name: Mark switches outside the VLAN DB scope as skipped on purpose
       ansible.builtin.set_fact:

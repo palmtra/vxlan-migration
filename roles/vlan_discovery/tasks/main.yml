@@ -60,7 +60,9 @@
 - name: Write legacy per-host JSON report
   ansible.builtin.template:
     src: host_report.json.j2
-    dest: "{{ discovery_reports_dir }}/{{ hostvars['localhost']['_vlan_db_data_center'] }}/{{ inventory_hostname }}/{{ inventory_hostname }}_vlan_state_{{ _report_timestamp_ms }}.json"
+    dest: >-
+      {{ discovery_reports_dir }}/{{ hostvars['localhost']['_vlan_db_data_center'] }}/{{ inventory_hostname }}/{{
+      inventory_hostname }}_vlan_state_{{ _report_timestamp_ms }}.json
     mode: '0644'
   delegate_to: localhost
   become: false
@@ -99,7 +101,9 @@
 
 - name: Use a VLAN name supplied for this run when discovery did not find one
   ansible.builtin.set_fact:
-    _target_vlan_record: "{{ hostvars['localhost']['_target_vlan_record'] | combine({'name': manual_vlan_name, 'vlan_name': manual_vlan_name, '_label_needs_vlan_name': false}) }}"
+    _target_vlan_record: >-
+      {{ hostvars['localhost']['_target_vlan_record'] | combine({'name': manual_vlan_name, 'vlan_name': manual_vlan_name,
+      '_label_needs_vlan_name': false}) }}
   delegate_to: localhost
   delegate_facts: true
   become: false
@@ -113,7 +117,9 @@
   ansible.builtin.pause:
     prompt: >-
       VLAN {{ hostvars['localhost']['_target_vlan_record'].id }} has no agreed name from discovery
-      {% if hostvars['localhost']['_target_vlan_record']._name_candidates | default([]) | length > 0 %}(saw {{ hostvars['localhost']['_target_vlan_record']._name_candidates | join(', ') }}). {% else %}. {% endif %}Enter the VLAN name to use on the fabric.
+      {% if hostvars['localhost']['_target_vlan_record']._name_candidates | default([])
+      | length > 0 %}(saw {{ hostvars['localhost']['_target_vlan_record']._name_candidates
+      | join(', ') }}). {% else %}. {% endif %}Enter the VLAN name to use on the fabric.
   register: _asked_vlan_name
   delegate_to: localhost
   become: false
@@ -125,7 +131,9 @@
 
 - name: Store the VLAN name that was asked for
   ansible.builtin.set_fact:
-    _target_vlan_record: "{{ hostvars['localhost']['_target_vlan_record'] | combine({'name': _asked_vlan_name.user_input | trim, 'vlan_name': _asked_vlan_name.user_input | trim, '_label_needs_vlan_name': false}) }}"
+    _target_vlan_record: >-
+      {{ hostvars['localhost']['_target_vlan_record'] | combine({'name': _asked_vlan_name.user_input | trim,
+      'vlan_name': _asked_vlan_name.user_input | trim, '_label_needs_vlan_name': false}) }}
   delegate_to: localhost
   delegate_facts: true
   become: false
@@ -145,7 +153,9 @@
 
 - name: Use a gateway description supplied for this run when discovery did not find one
   ansible.builtin.set_fact:
-    _target_vlan_record: "{{ hostvars['localhost']['_target_vlan_record'] | combine({'description': manual_svi_description, 'svi_description': manual_svi_description, '_label_needs_svi_description': false}) }}"
+    _target_vlan_record: >-
+      {{ hostvars['localhost']['_target_vlan_record'] | combine({'description': manual_svi_description,
+      'svi_description': manual_svi_description, '_label_needs_svi_description': false}) }}
   delegate_to: localhost
   delegate_facts: true
   become: false
@@ -160,7 +170,9 @@
   ansible.builtin.pause:
     prompt: >-
       VLAN {{ hostvars['localhost']['_target_vlan_record'].id }} has no agreed interface description on the previous gateway
-      {% if hostvars['localhost']['_target_vlan_record']._description_candidates | default([]) | length > 0 %}(saw {{ hostvars['localhost']['_target_vlan_record']._description_candidates | join(', ') }}). {% else %}. {% endif %}Enter the description to use on the fabric SVI.
+      {% if hostvars['localhost']['_target_vlan_record']._description_candidates | default([])
+      | length > 0 %}(saw {{ hostvars['localhost']['_target_vlan_record']._description_candidates
+      | join(', ') }}). {% else %}. {% endif %}Enter the description to use on the fabric SVI.
   register: _asked_svi_description
   delegate_to: localhost
   become: false
@@ -173,7 +185,9 @@
 
 - name: Store the gateway description that was asked for
   ansible.builtin.set_fact:
-    _target_vlan_record: "{{ hostvars['localhost']['_target_vlan_record'] | combine({'description': _asked_svi_description.user_input | trim, 'svi_description': _asked_svi_description.user_input | trim, '_label_needs_svi_description': false}) }}"
+    _target_vlan_record: >-
+      {{ hostvars['localhost']['_target_vlan_record'] | combine({'description': _asked_svi_description.user_input | trim,
+      'svi_description': _asked_svi_description.user_input | trim, '_label_needs_svi_description': false}) }}
   delegate_to: localhost
   delegate_facts: true
   become: false
@@ -210,7 +224,9 @@
   ansible.builtin.pause:
     prompt: >-
       VLAN {{ hostvars['localhost']['_target_vlan_record'].id }} has no agreed VRF on the previous gateway
-      {% if hostvars['localhost']['_target_vlan_record']._vrf_candidates | default([]) | length > 0 %}(saw {{ hostvars['localhost']['_target_vlan_record']._vrf_candidates | join(', ') }}). {% else %}. {% endif %}Enter the VRF for the fabric SVI and the BGP network statement.
+      {% if hostvars['localhost']['_target_vlan_record']._vrf_candidates | default([])
+      | length > 0 %}(saw {{ hostvars['localhost']['_target_vlan_record']._vrf_candidates
+      | join(', ') }}). {% else %}. {% endif %}Enter the VRF for the fabric SVI and the BGP network statement.
   register: _asked_vrf
   delegate_to: localhost
   become: false
@@ -261,7 +277,9 @@
 - name: Write VLAN-centric Markdown report
   ansible.builtin.template:
     src: vlan_discovery_report.md.j2
-    dest: "{{ discovery_reports_dir }}/{{ report.data_center | default('unknown') }}/{{ report.vlan_slug }}/{{ report.vlan_slug }}_discovery_{{ _report_timestamp_ms }}.md"
+    dest: >-
+      {{ discovery_reports_dir }}/{{ report.data_center | default('unknown') }}/{{ report.vlan_slug }}/{{ report.vlan_slug
+      }}_discovery_{{ _report_timestamp_ms }}.md
     mode: '0644'
   delegate_to: localhost
   become: false
@@ -277,7 +295,9 @@
 - name: Write VLAN-centric CSV report
   ansible.builtin.template:
     src: vlan_discovery_report.csv.j2
-    dest: "{{ discovery_reports_dir }}/{{ report.data_center | default('unknown') }}/{{ report.vlan_slug }}/{{ report.vlan_slug }}_discovery_{{ _report_timestamp_ms }}.csv"
+    dest: >-
+      {{ discovery_reports_dir }}/{{ report.data_center | default('unknown') }}/{{ report.vlan_slug }}/{{ report.vlan_slug
+      }}_discovery_{{ _report_timestamp_ms }}.csv
     mode: '0644'
   delegate_to: localhost
   become: false
@@ -293,7 +313,9 @@
 - name: Write VLAN endpoint baseline CSV (active IPs and MAC-only endpoints)
   ansible.builtin.template:
     src: vlan_endpoints.csv.j2
-    dest: "{{ discovery_reports_dir }}/{{ report.data_center | default('unknown') }}/{{ report.vlan_slug }}/{{ report.vlan_slug }}_endpoints_{{ _report_timestamp_ms }}.csv"
+    dest: >-
+      {{ discovery_reports_dir }}/{{ report.data_center | default('unknown') }}/{{ report.vlan_slug }}/{{ report.vlan_slug
+      }}_endpoints_{{ _report_timestamp_ms }}.csv
     mode: '0644'
   delegate_to: localhost
   become: false
@@ -309,7 +331,9 @@
 - name: Write VLAN-centric JSON report
   ansible.builtin.template:
     src: vlan_discovery_report.json.j2
-    dest: "{{ discovery_reports_dir }}/{{ report.data_center | default('unknown') }}/{{ report.vlan_slug }}/{{ report.vlan_slug }}_discovery_{{ _report_timestamp_ms }}.json"
+    dest: >-
+      {{ discovery_reports_dir }}/{{ report.data_center | default('unknown') }}/{{ report.vlan_slug }}/{{ report.vlan_slug
+      }}_discovery_{{ _report_timestamp_ms }}.json
     mode: '0644'
   delegate_to: localhost
   become: false
@@ -325,7 +349,9 @@
 - name: Write VLAN-centric YAML report
   ansible.builtin.template:
     src: vlan_discovery_report.yaml.j2
-    dest: "{{ discovery_reports_dir }}/{{ report.data_center | default('unknown') }}/{{ report.vlan_slug }}/{{ report.vlan_slug }}_discovery_{{ _report_timestamp_ms }}.yml"
+    dest: >-
+      {{ discovery_reports_dir }}/{{ report.data_center | default('unknown') }}/{{ report.vlan_slug }}/{{ report.vlan_slug
+      }}_discovery_{{ _report_timestamp_ms }}.yml
     mode: '0644'
   delegate_to: localhost
   become: false
@@ -338,10 +364,12 @@
     - discovery_write_vlan_reports | bool
     - discovery_write_yaml | bool
 
-- name: Write VLAN DB snippet for pasting into vars/vlans/{{ report.data_center }}.yml
+- name: Write VLAN DB snippet for pasting into {{ 'vars/vlans/' ~ report.data_center ~ '.yml' }}
   ansible.builtin.template:
     src: vlan_db_snippet.yml.j2
-    dest: "{{ discovery_reports_dir }}/{{ report.data_center | default('unknown') }}/{{ report.vlan_slug }}/{{ report.vlan_id | vlan_db_record_filename(report.vlan_name) }}"
+    dest: >-
+      {{ discovery_reports_dir }}/{{ report.data_center | default('unknown') }}/{{ report.vlan_slug }}/{{ report.vlan_id
+      | vlan_db_record_filename(report.vlan_name) }}
     mode: '0644'
   delegate_to: localhost
   become: false
@@ -357,7 +385,9 @@
 - name: Write VLAN-centric prune Markdown report
   ansible.builtin.template:
     src: vlan_prune_report.md.j2
-    dest: "{{ discovery_reports_dir }}/{{ report.data_center | default('unknown') }}/{{ report.vlan_slug }}/{{ report.vlan_slug }}_prune_{{ _report_timestamp_ms }}.md"
+    dest: >-
+      {{ discovery_reports_dir }}/{{ report.data_center | default('unknown') }}/{{ report.vlan_slug }}/{{ report.vlan_slug
+      }}_prune_{{ _report_timestamp_ms }}.md
     mode: '0644'
   delegate_to: localhost
   become: false
@@ -374,7 +404,9 @@
 - name: Write VLAN-centric prune JSON report
   ansible.builtin.template:
     src: vlan_prune_report.json.j2
-    dest: "{{ discovery_reports_dir }}/{{ report.data_center | default('unknown') }}/{{ report.vlan_slug }}/{{ report.vlan_slug }}_prune_{{ _report_timestamp_ms }}.json"
+    dest: >-
+      {{ discovery_reports_dir }}/{{ report.data_center | default('unknown') }}/{{ report.vlan_slug }}/{{ report.vlan_slug
+      }}_prune_{{ _report_timestamp_ms }}.json
     mode: '0644'
   delegate_to: localhost
   become: false
@@ -390,7 +422,9 @@
 
 - name: Collect per-device prune plans from discovery facts
   ansible.builtin.set_fact:
-    _device_prune_plans: "{{ ansible_play_hosts | map('extract', hostvars, '_vlan_discovery') | selectattr('prune_plan', 'defined') | map(attribute='prune_plan') | selectattr('hostname', 'defined') | list }}"
+    _device_prune_plans: >-
+      {{ ansible_play_hosts | map('extract', hostvars, '_vlan_discovery') | selectattr('prune_plan', 'defined')
+      | map(attribute='prune_plan') | selectattr('hostname', 'defined') | list }}
   delegate_to: localhost
   become: false
   run_once: true

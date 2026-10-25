@@ -28,6 +28,9 @@
 
   pre_tasks:
     - name: Bootstrap workflow input and VLAN DB on control node
+      run_once: true
+      delegate_to: localhost
+      delegate_facts: true
       block:
         - name: Step 1a - Normalize manual workflow input (Core)
           ansible.builtin.include_role:
@@ -48,16 +51,15 @@
             name: vlan_db
           vars:
             target_data_center: "{{ [manual_data_center | default(''), hostvars['localhost']['target_data_center'] | default('')] | coalesce_trimmed }}"
-            target_vlan_ids: "{{ [hostvars['localhost']['target_vlan_id']] if (hostvars['localhost']['target_vlan_id'] | default('', true) | string | length > 0) else [] }}"
+            target_vlan_ids: >-
+              {{ [hostvars['localhost']['target_vlan_id']]
+              if (hostvars['localhost']['target_vlan_id'] | default('', true) | string | length > 0) else [] }}
 
         - name: Set workflow-scoped target VLAN list
           ansible.builtin.set_fact:
             target_vlan_ids:
               - "{{ hostvars['localhost']['target_vlan_id'] | int }}"
           when: hostvars['localhost']['target_vlan_id'] is defined
-      run_once: true
-      delegate_to: localhost
-      delegate_facts: true
 
     - name: Mark switches outside the VLAN DB scope as skipped on purpose
       ansible.builtin.set_fact:
@@ -201,6 +203,11 @@
       delegate_to: localhost
 
     - name: Notify ServiceNow that the change control is pending approval (Advanced)
+      run_once: true
+      delegate_to: localhost
+      when:
+        - workflow_tier | default('core') == 'advanced'
+        - snow_enable_callbacks | default(true) | bool
       block:
         - name: Update ServiceNow ticket for pending CVP approval
           ansible.builtin.include_role:
@@ -210,8 +217,3 @@
               VLAN {{ hostvars['localhost']['target_vlan_id'] }} VXLAN migration configlets generated and pushed to CVP.
               A change control is pending approval in CVP before verification runs.
             snow_ticket_state: "wait_for_approval"
-      run_once: true
-      delegate_to: localhost
-      when:
-        - workflow_tier | default('core') == 'advanced'
-        - snow_enable_callbacks | default(true) | bool

@@ -49,7 +49,8 @@
 
 - name: EOS - identify unreachable VTEPs
   ansible.builtin.set_fact:
-    _vtep_unreachable: "{{ _eos_vtep_ping.results | default([]) | rejectattr('stdout', 'search', '[1-9][0-9]*\\s+received|bytes from') | map(attribute='item') | list }}"
+    _vtep_unreachable: "{{ _eos_vtep_ping.results | default([]) | rejectattr('stdout', 'search', '[1-9][0-9]*\\s+received|bytes from')
+      | map(attribute='item') | list }}"
   when: verify_vtep_reachability | bool
 
 # --- VNI mapping + MAC/ARP learning, per VLAN --------------------------------
@@ -174,17 +175,23 @@
         detail: >-
           {{ verify_expect_vlan_present | bool
              | ternary('VLANs missing VNI mapping: ' ~ (_per_vlan_verification | default([]) | rejectattr('vni_mapped') | map(attribute='vlan_id') | list),
-                        'VLANs still VNI-mapped after rollback: ' ~ (_per_vlan_verification | default([]) | selectattr('vni_mapped') | map(attribute='vlan_id') | list)) }}
+                        'VLANs still VNI-mapped after rollback: ' ~ (_per_vlan_verification | default([])
+                        | selectattr('vni_mapped') | map(attribute='vlan_id') | list)) }}
       endpoint_reachability:
-        passed: "{{ (not verify_endpoint_reachability | bool) or (inventory_hostname != _verify_ping_host | default('')) or (_endpoint_check.unreachable | default([]) | length == 0) }}"
+        passed: >-
+          {{ (not verify_endpoint_reachability | bool) or (inventory_hostname != _verify_ping_host | default(''))
+          or (_endpoint_check.unreachable | default([]) | length == 0) }}
         detail: >-
           {% if inventory_hostname != _verify_ping_host | default('') %}pings run from {{ _verify_ping_host | default('n/a') }}
           {%- elif not _baseline_path_used | default('') %}no endpoint baseline found; skipped
-          {%- else %}{{ _endpoint_check.reachable | default([]) | length }}/{{ _baseline_ips | default([]) | length }} baseline endpoints answer from {{ inventory_hostname }}
+          {%- else %}{{ _endpoint_check.reachable | default([]) | length }}/{{ _baseline_ips | default([])
+          | length }} baseline endpoints answer from {{ inventory_hostname }}
           {%- if _endpoint_check.unreachable | default([]) %}; no reply: {{ _endpoint_check.unreachable | join(', ') }}{% endif %}{% endif %}
       mac_arp_learning:
         passed: "{{ (not verify_mac_arp_learning | bool) or (_per_vlan_verification | default([]) | rejectattr('mac_or_arp_learned') | list | length == 0) }}"
-        detail: "VLANs with no MAC/ARP learning: {{ _per_vlan_verification | default([]) | rejectattr('mac_or_arp_learned') | map(attribute='vlan_id') | list }}"
+        detail: >-
+          VLANs with no MAC/ARP learning: {{ _per_vlan_verification | default([]) | rejectattr('mac_or_arp_learned')
+          | map(attribute='vlan_id') | list }}
 
 - name: Determine overall verification pass/fail
   ansible.builtin.set_fact:

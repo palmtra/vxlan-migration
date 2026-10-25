@@ -23,6 +23,9 @@
 
   pre_tasks:
     - name: Bootstrap verify workflow state and VLAN DB on control node
+      run_once: true
+      delegate_to: localhost
+      delegate_facts: true
       block:
         - name: Determine whether workflow state must be loaded from disk
           ansible.builtin.set_fact:
@@ -47,9 +50,6 @@
             target_data_center: "{{ [manual_data_center | default(''), hostvars['localhost']['target_data_center'] | default('')] | coalesce_trimmed }}"
             target_vlan_ids:
               - "{{ hostvars['localhost']['target_vlan_id'] | default(resume_vlan_id) | int }}"
-      run_once: true
-      delegate_to: localhost
-      delegate_facts: true
 
     - name: Limit verification to target_switches from the VLAN DB
       ansible.builtin.meta: end_host

@@ -90,9 +90,12 @@
 - name: Write NetBox export artifact
   ansible.builtin.copy:
     dest: >-
-      {{ netbox_export_artifact_dir }}/netbox_export_{{ target_data_center }}_vlan{{ target_vlan_id | default('all') }}_{{ lookup('pipe', 'date +%Y%m%d_%H%M%S') }}.json
+      {{ netbox_export_artifact_dir }}/netbox_export_{{ target_data_center }}_vlan{{ target_vlan_id | default('all') }}_{{
+      lookup('pipe', 'date +%Y%m%d_%H%M%S') }}.json
     mode: '0644'
-    content: "{{ {'data_center': target_data_center, 'dry_run': netbox_export_dry_run | bool, 'results': _netbox_export_results | default([])} | to_nice_json }}"
+    content: >-
+      {{ {'data_center': target_data_center, 'dry_run': netbox_export_dry_run | bool,
+      'results': _netbox_export_results | default([])} | to_nice_json }}
   delegate_to: localhost
   become: false
   run_once: true
