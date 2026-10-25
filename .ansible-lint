@@ -24,6 +24,12 @@ kinds:
   - yaml: "vars/vlans/**/*.yml"
   - yaml: "vars/services/**/*.yml"
 
+# arista.avd.validate_inputs is not in the pinned arista.avd 5.x range, and the
+# AVD/CVP versions stay matched to ansible-core, so mock it for lint only.
+# Known issue: roles/avd_vxlan_config/tasks/main.yml still calls it at runtime.
+mock_modules:
+  - arista.avd.validate_inputs
+
 warn_list:
   - experimental
   - yaml[line-length]
