@@ -22,6 +22,7 @@
 - name: Skip NetBox lookup when not configured
   ansible.builtin.set_fact:
     _netbox_sync_status: not_configured
+    _netbox_reachable: false
   delegate_to: localhost
   become: false
   run_once: true
