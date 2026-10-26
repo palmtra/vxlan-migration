@@ -40,10 +40,8 @@
     - name: Load per-DC VLAN database
       ansible.builtin.include_role:
         name: vlan_db
+      # target_data_center comes from the normalized fact set above.
       vars:
-        # Known issue, left as is by the lint-only CI fix: this task var refers to
-        # itself, which Ansible reports as "recursive loop detected in template string".
-        target_data_center: "{{ target_data_center }}"  # noqa: jinja[invalid]
         target_vlan_ids: "{{ _export_target_vlan_ids }}"
 
 - name: Export VLAN records to NetBox
