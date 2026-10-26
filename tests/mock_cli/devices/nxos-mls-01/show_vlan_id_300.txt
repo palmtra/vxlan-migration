@@ -1,7 +1,0 @@
-VLAN Name                             Status    Ports
----- -------------------------------- --------- -------------------------------
-300  APP_WEB                          active    Po1, Po10, Po11, Eth1/20
-
-VLAN Type         Vlan-mode
----- -----        ----------
-300  enet         CE

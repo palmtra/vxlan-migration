@@ -1,4 +1,0 @@
-interface port-channel11
-  description to eos-leaf-02
-  switchport mode trunk
-  switchport trunk allowed vlan 300

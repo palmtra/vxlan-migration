@@ -1,4 +1,0 @@
-Port      Native vlan  Status     Allowed vlans
-Et1       1            trunking   1,10
-Po1       1            trunking   100,200-210
-Po3       1            trunking   1-4094

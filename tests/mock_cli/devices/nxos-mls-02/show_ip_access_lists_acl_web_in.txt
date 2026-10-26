@@ -1,3 +1,0 @@
-IP access list ACL_WEB_IN
-        10 permit tcp any 10.30.0.0/24 eq 443
-        20 deny ip any any log

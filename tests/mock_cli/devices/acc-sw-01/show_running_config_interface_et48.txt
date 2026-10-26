@@ -1,3 +1,0 @@
-interface Ethernet48
-   switchport mode trunk
-   switchport trunk allowed vlan 300

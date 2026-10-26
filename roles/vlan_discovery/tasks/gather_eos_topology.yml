@@ -45,17 +45,6 @@
     - discovery_collect_prune_context | default(true) | bool
     - not (_disc_light | default(false) | bool)
 
-- name: EOS - show running-config section router ospf
-  ansible.netcommon.cli_command:
-    command: show running-config section router ospf
-  register: _eos_ospf_show
-  check_mode: false
-  changed_when: false
-  failed_when: false
-  when:
-    - discovery_collect_prune_context | default(true) | bool
-    - not (_disc_light | default(false) | bool)
-
 - name: EOS - show vxlan vlan-to-vni
   ansible.netcommon.cli_command:
     command: show vxlan vlan-to-vni
@@ -80,6 +69,5 @@
     _disc_port_channels: "{{ _eos_channel_group_show.stdout | default('') | parse_port_channel_members('eos') }}"
     _disc_prefix_lists: "{{ _eos_prefix_list_show.stdout | default('') | parse_prefix_lists }}"
     _disc_route_maps: "{{ _eos_route_map_show.stdout | default('') | parse_route_maps }}"
-    _disc_ospf: "{{ _eos_ospf_show.stdout | default('') | parse_ospf_context }}"
     _disc_vxlan_mappings: "{{ _eos_show_vxlan.stdout | default('') | parse_vxlan_vlan_to_vni }}"
     _disc_vxlan_interface: "{{ _eos_vxlan_interface_show.stdout | default('') | parse_vxlan_interface }}"

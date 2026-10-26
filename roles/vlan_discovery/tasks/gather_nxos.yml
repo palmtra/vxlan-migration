@@ -65,7 +65,6 @@
       port_channels: "{{ _disc_port_channels | default({}) }}"
       prefix_lists: "{{ _disc_prefix_lists | default({}) }}"
       route_maps: "{{ _disc_route_maps | default({}) }}"
-      ospf: "{{ _disc_ospf | default([]) }}"
       vxlan_mappings: "{{ _disc_vxlan_mappings | default([]) }}"
       vxlan_interface: "{{ _disc_vxlan_interface | default({}) }}"
       expected_vtep_source: "{{ vtep_source_interface | default('Loopback1') }}"

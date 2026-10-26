@@ -16,7 +16,9 @@
 #     -e cvp_apply_configlets=false
 #
 # target_vrf is optional and defaults to the VLAN record's vrf. Configlets are
-# generated only for the record's target_switches.
+# generated only for the record's target_switches and gateway_leafs. The SVI
+# goes on every one of them (gateway_mode distributed_anycast, the default) or
+# on gateway_leafs only (centralized_anycast).
 #
 # When cvp_apply_configlets=true and CVP credentials are available, the
 # generated configlets are pushed to CVP as a pending change control.
@@ -57,15 +59,15 @@
     - name: Fail when a target switch is not an EOS host in this run
       ansible.builtin.fail:
         msg: >-
-          VLAN {{ target_vlan_id }} lists target_switches {{ _missing }} that are not
-          EOS hosts in this run (check eos_devices in the inventory and --limit).
-          No configlet would be generated for them.
+          VLAN {{ target_vlan_id }} lists switches {{ _missing }} (target_switches or
+          gateway_leafs) that are not EOS hosts in this run (check eos_devices in the
+          inventory and --limit). No configlet would be generated for them.
       vars:
         _missing: "{{ _cvp_hosts | difference(ansible_play_hosts_all) }}"
       when: _missing | length > 0
       run_once: true
 
-    - name: Limit config generation to target_switches from the VLAN DB
+    - name: Limit config generation to the VLAN's target switches and gateway leaves
       ansible.builtin.meta: end_host
       when: inventory_hostname not in _cvp_hosts
 

@@ -11,6 +11,7 @@ from vlan_lib.placement import (
     PRUNE_STATUS_BY_ROLE,
     attach_associated_routes,
     build_vlan_placement,
+    condense_associated_routes,
     device_tier,
 )
 from vlan_lib.vni import allocate_vni, used_vnis, vni_range_problems
@@ -502,8 +503,8 @@ def _split_gateway_for_fabric(model, gateway):
         routing["prefixes"] = [p for p in routing.get("prefixes") or [] if p not in secondary]
         routing["secondary_prefixes"] = secondary
         notes.append(
-            "Secondary subnet(s) %s on the legacy SVI are not migrated. Hosts there lose their "
-            "gateway when the MLS SVI goes; renumber them or decide to carry them." % ", ".join(secondary)
+            "Renumber the hosts in secondary subnet(s) %s, or plan to carry them: they are not "
+            "migrated, and lose their gateway when the MLS SVI goes." % ", ".join(secondary)
         )
     mtu = (gateway or {}).get("mtu")
     block = model.setdefault("gateway", {})
@@ -511,8 +512,8 @@ def _split_gateway_for_fabric(model, gateway):
         block["svi_mtu"] = min(int(mtu), EOS_SVI_MTU_MAX)
         if int(mtu) > EOS_SVI_MTU_MAX:
             notes.append(
-                "Legacy SVI MTU %s is above the EOS maximum; the fabric SVI uses %s."
-                % (mtu, EOS_SVI_MTU_MAX)
+                "Nothing to do: legacy SVI MTU %s is above the EOS maximum, so the fabric SVI "
+                "is generated with %s." % (mtu, EOS_SVI_MTU_MAX)
             )
     return notes
 
@@ -541,7 +542,10 @@ def fabric_readiness(report):
     for hostname in wanted:
         device = devices.get(hostname)
         if device is None:
-            issues.append("%s is a fabric leaf for this VLAN but was not discovered; its VTEP is unchecked." % hostname)
+            issues.append(
+                "Re-run discovery with %s reachable: it is a fabric leaf for this VLAN and its VTEP "
+                "is unchecked." % hostname
+            )
             continue
         if device_tier(device) != "fabric":
             continue
@@ -558,41 +562,109 @@ def fabric_readiness(report):
         }
         checked.append(row)
         if not row["present"]:
-            issues.append("%s has no Vxlan interface; it is not a VTEP yet." % hostname)
+            issues.append(
+                "Build the VTEP on %s before the VNI goes there (Vxlan1 sourced from %s, head-end "
+                "replication, EVPN flood list): it has no Vxlan interface." % (hostname, expected)
+            )
             continue
         if row["replication_mode"] != "headend":
             issues.append(
-                "%s floods BUM with %s, not head-end replication."
+                "Set head-end replication on %s: it floods BUM with %s."
                 % (hostname, row["replication_mode"] or "an unknown mode")
             )
         if row["flood_list_source"].upper() != "EVPN":
             issues.append(
-                "%s builds its head-end flood list from %s, not EVPN type-3 routes."
+                "Build the head-end flood list on %s from EVPN type-3 routes: it uses %s."
                 % (hostname, row["flood_list_source"] or "an unknown source")
             )
         if row["source_interface"].lower() != expected.lower():
             issues.append(
-                "%s VTEP source is %s, expected %s."
-                % (hostname, row["source_interface"] or "unset", expected)
+                "Change the VTEP source on %s to %s: it is %s."
+                % (hostname, expected, row["source_interface"] or "unset")
             )
         if l3 and row["l3_vni"] is None:
             missing_vrf.append(hostname)
     if missing_vrf:
+        subject = {1: "the leaf does not have", 2: "neither leaf has"}.get(
+            len(missing_vrf), "none of these leaves has"
+        )
         issues.append(
-            "VRF %s has no L3 VNI on %s. Define the VRF in AVD before the gateway moves."
-            % (vrf, ", ".join(missing_vrf))
+            "Create VRF %s on %s first: %s that VRF set up for routing in the fabric (no L3 VNI). "
+            "Add it in AVD with its L3 VNI and deploy it before the gateway moves; the VLAN "
+            "configlet puts the SVI in the VRF but does not create it."
+            % (vrf, ", ".join(missing_vrf), subject)
         )
     return {"checked": checked, "issues": issues, "vrf": vrf if l3 else ""}
+
+
+def _rebuild_items(report):
+    """L3 objects the generated VLAN configlet does not carry; rebuilt by hand."""
+    if report.get("migration_type") != "l3":
+        return []
+    items = []
+    services = (report.get("gateway_assessment") or {}).get("services") or {}
+    parts = []
+    for item in services.get("dhcp_relay") or []:
+        parts.append("DHCP relay %s%s" % (item.get("server"), " (vrf %s)" % item["vrf"] if item.get("vrf") else ""))
+    for item in services.get("acls") or []:
+        parts.append("ACL %s %s" % (item.get("name"), item.get("direction") or ""))
+    for key, label in (("pbr", "PBR"), ("ipv6_addresses", "IPv6"), ("multicast", "multicast"), ("nat", "NAT"), ("urpf", "uRPF")):
+        for value in services.get(key) or []:
+            parts.append("%s %s" % (label, value))
+    if parts:
+        items.append(
+            "Rebuild on the fabric SVI by hand, the VLAN configlet does not carry them: %s."
+            % "; ".join(part.strip() for part in parts)
+        )
+    if services.get("other_lines"):
+        items.append(
+            "Review these legacy SVI lines, discovery did not recognise them: %s."
+            % ", ".join("`%s`" % line for line in services["other_lines"])
+        )
+    routing = (report.get("deployment_model") or {}).get("routing") or {}
+    parts = []
+    for route in routing.get("static_routes") or []:
+        parts.append(
+            "static %s via %s%s%s"
+            % (
+                route.get("prefix"),
+                route.get("next_hop") or route.get("interface"),
+                " vrf %s" % route["vrf"] if route.get("vrf") else "",
+                " (%s)" % route["name"] if route.get("name") else "",
+            )
+        )
+    for peer in routing.get("bgp_peers") or []:
+        parts.append(
+            "BGP peer %s AS %s%s%s"
+            % (
+                peer.get("neighbor"),
+                peer.get("remote_as") or "?",
+                " vrf %s" % peer["vrf"] if peer.get("vrf") else "",
+                " (%s)" % peer["description"] if peer.get("description") else "",
+            )
+        )
+    if parts:
+        items.append(
+            "Recreate in the fabric before the gateway moves, the VLAN configlet does not carry them: %s."
+            % "; ".join(parts)
+        )
+    return items
 
 
 def build_action_items(report):
     """Everything an engineer must resolve before this VLAN can migrate."""
     items = []
     for host in report.get("not_discovered") or []:
-        items.append("%s was not discovered (unreachable or failed); placement and prune lists may be incomplete." % host)
+        items.append(
+            "Fix reachability to %s and re-run discovery: it was not discovered (unreachable or failed), "
+            "so placement and prune lists may be incomplete." % host
+        )
     for device in report.get("devices") or []:
         for error in device.get("errors") or []:
-            items.append("%s: `%s` failed: %s" % (device.get("hostname"), error.get("command"), error.get("error")))
+            items.append(
+                "%s: `%s` failed: %s. Re-run discovery or run the command by hand."
+                % (device.get("hostname"), error.get("command"), error.get("error"))
+            )
     if not report.get("switches_vlan_defined") and not report.get("switches_with_svi"):
         items.append(
             "VLAN %s is not configured on any discovered switch. Nothing to migrate or prune here."
@@ -602,6 +674,7 @@ def build_action_items(report):
     items.extend((report.get("gateway_assessment") or {}).get("warnings") or [])
     items.extend((report.get("fabric_readiness") or {}).get("issues") or [])
     items.extend(report.get("gateway_notes") or [])
+    items.extend(_rebuild_items(report))
     items.extend((report.get("l2_attachment") or {}).get("issues") or [])
     for plan in report.get("link_prune_plans") or []:
         if str(plan.get("status") or "").startswith("blocked"):
@@ -613,36 +686,49 @@ def build_action_items(report):
             items.append("Teardown of %s is blocked: %s." % (plan["hostname"], plan.get("blocked_reason") or ""))
     for item in (report.get("placement_analysis") or {}).get("switches") or []:
         if item.get("role") == "review":
-            items.append("%s needs review: %s" % (item.get("hostname"), "; ".join(item.get("nonqualifying") or [])))
+            items.append(
+                "Review %s before migrating: %s" % (item.get("hostname"), "; ".join(item.get("nonqualifying") or []))
+            )
     if report.get("needs_vlan_name"):
         items.append(
-            "VLAN name is not agreed across switches (%s)."
+            "Agree the VLAN name and set site.vlan.name (or -e manual_vlan_name=): switches disagree (%s)."
             % (", ".join(report.get("name_candidates") or []) or "none found")
         )
     stp = report.get("spanning_tree") or {}
     if stp.get("present") and not stp.get("root_hostname"):
-        items.append("STP root %s is not a discovered switch; the VLAN extends beyond discovery scope." % stp.get("root_address"))
+        items.append(
+            "Find the switch that is STP root %s and add it to discovery: it is not a discovered switch, "
+            "so the VLAN extends beyond discovery scope." % stp.get("root_address")
+        )
     if stp.get("inconsistent_roots"):
-        items.append("Switches disagree on the STP root (%s); the L2 domain may be split." % ", ".join([stp.get("root_address")] + stp["inconsistent_roots"]))
+        items.append(
+            "Check the L2 domain for a split: switches disagree on the STP root (%s)."
+            % ", ".join([stp.get("root_address")] + stp["inconsistent_roots"])
+        )
     for item in report.get("vni_conflicts") or []:
-        items.append("VNI %s is already mapped to VLAN %s on %s." % (item["vni"], item["vlan_id"], item["hostname"]))
+        items.append(
+            "Pick another VNI: %s is already mapped to VLAN %s on %s." % (item["vni"], item["vlan_id"], item["hostname"])
+        )
     for item in report.get("vxlan_already_mapped") or []:
-        items.append("VLAN is already VXLAN-mapped on %s (VNI %s)." % (item["hostname"], item["vni"]))
+        items.append(
+            "Confirm VNI %s matches evpn.l2.vni: the VLAN is already VXLAN-mapped on %s."
+            % (item["vni"], item["hostname"])
+        )
     summary = (report.get("endpoint_table") or {}).get("summary") or {}
     if summary.get("uplink_only"):
         items.append(
-            "%s active IP(s) are only seen on switch-to-switch trunks; their edge switch is outside discovery scope."
-            % summary["uplink_only"]
+            "Extend discovery to the switches behind those trunks: %s active IP(s) are only seen on "
+            "switch-to-switch trunks, so their edge switch is outside discovery scope." % summary["uplink_only"]
         )
     if summary.get("not_in_mac_table"):
         items.append(
-            "%s active IP(s) are in ARP but not in any MAC table (aged out, or behind a switch that was not "
-            "discovered). Re-run discovery or check them by hand." % summary["not_in_mac_table"]
+            "Re-run discovery or check them by hand: %s active IP(s) are in ARP but not in any MAC table "
+            "(aged out, or behind a switch that was not discovered)." % summary["not_in_mac_table"]
         )
     allocation = report.get("vni_allocation") or {}
     if allocation.get("vni"):
         items.append(
-            "VNI %s proposed (%s). Confirm it, then write it to evpn.l2.vni in the SSOT record."
+            "VNI %s proposed (%s). Confirm it in evpn.l2.vni of the SSOT record."
             % (allocation["vni"], allocation.get("reason"))
         )
     elif report.get("vni") in (None, "", 0) and report.get("vlan_id") is not None:
@@ -741,7 +827,6 @@ def build_vlan_discovery_reports(vlans, play_hosts, hostvars, all_hosts=None, vn
                     "neighbor_count": len(discovery.get("neighbors") or []),
                     "prefix_lists": discovery.get("prefix_lists", {}),
                     "route_maps": discovery.get("route_maps", {}),
-                    "ospf": discovery.get("ospf", []),
                     "vxlan_mappings": discovery.get("vxlan_mappings", []),
                     "vxlan_interface": discovery.get("vxlan_interface", {}),
                     "expected_vtep_source": discovery.get("expected_vtep_source", ""),
@@ -1006,7 +1091,11 @@ def build_vlan_discovery_reports(vlans, play_hosts, hostvars, all_hosts=None, vn
             site_vlan["name"] = ssot.get("name") or vlan.get("name") or ""
         if ssot.get("svi_description"):
             site_vlan["description"] = ssot["svi_description"]
-        attach_associated_routes(placement["deployment_model"], vlan_id, devices)
+        # Full per-switch routing detail goes to the reports; the model keeps
+        # the condensed summary (discovery_model_routing_detail adds it back).
+        routing_detail = attach_associated_routes(placement["deployment_model"], vlan_id, devices)
+        routing.pop("associated", None)
+        routing.update(condense_associated_routes(routing_detail, devices))
         gateway_notes = _split_gateway_for_fabric(placement["deployment_model"], placement["gateway"])
         (
             endpoints,
@@ -1080,6 +1169,7 @@ def build_vlan_discovery_reports(vlans, play_hosts, hostvars, all_hosts=None, vn
             "uplink_inventory": uplink_inventory,
             "unknown_inventory": unknown_inventory,
             "l3_discovery": l3_discovery,
+            "routing_detail": routing_detail,
             "data_center": vlan.get("data_center", ""),
             "devices": devices,
             "migration_type": placement["migration_type"],

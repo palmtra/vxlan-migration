@@ -846,7 +846,6 @@ def _empty_svi_stanza():
         "dhcp_relay": [],
         "acls": [],
         "pbr": [],
-        "ospf": [],
         "multicast": [],
         "nat": [],
         "urpf": [],
@@ -1027,8 +1026,8 @@ def _parse_svi_stanza(svi_config):
         if match:
             result["pbr"].append(match.group(1))
             continue
+        # OSPF is not used by the migration; skip it rather than list it for review.
         if re.match(r"^(?:ip\s+router\s+ospf|ip\s+ospf)\b", line, re.I):
-            result["ospf"].append(line)
             continue
         if re.match(r"^(?:ip\s+pim|ip\s+igmp|pim\s+ipv4|ip\s+multicast)\b", line, re.I):
             result["multicast"].append(line)

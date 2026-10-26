@@ -108,7 +108,7 @@ ansible-playbook -i inventory/hosts.yml playbooks/core/discover_vlan.yml \
 ## Discover via a service bundle (multi-VLAN + prune retain)
 
 Multi-VLAN / multi-VRF cutovers can use a service file under `vars/services/<dc>/`.
-Copy `vars/services/lisle/_example.yml` to a real id (without `_meta.example`) first.
+Create `vars/services/<dc>/<id>.yml` first; the format is in `vars/services/README.md`.
 
 ```bash
 ansible-playbook -i inventory/hosts.yml playbooks/core/discover_vlan.yml \
@@ -196,10 +196,10 @@ Two reports:
 
 1. **Discovery** — read top to bottom:
    - **Summary**: VLAN name, where the gateway is (legacy MLS, fabric, or external firewall), subnets and VIP, VRF, migration type, gateway mode, counts, STP root.
-   - **Action items**: resolve every line before migrating (unreachable switches, failed commands, firewall still on the MLS, `review` switches, missing `gateway_mode` or VNI, endpoints that could not be located).
+   - **Action items**: resolve every line before migrating (unreachable switches, failed commands, firewall still on the MLS, `review` switches, missing VRF / L3 VNI on a leaf, objects to rebuild by hand, VNI to confirm, endpoints that could not be located).
    - **Switches**: one row per switch carrying the VLAN with its tier, role, local endpoint ports, VLAN trunks, and SVI.
-   - **Gateway objects to rebuild in the fabric**: addresses, HSRP/VRRP, DHCP relay, ACL, PBR, OSPF, multicast, IPv6, and any SVI line discovery did not recognise.
-   - **Routing objects tied to the VLAN**: statics, BGP networks and redistribution (with route-map verdicts), BGP peers on the VLAN, what each peer is sent, the live BGP table, OSPF.
+   - **Gateway objects to rebuild in the fabric**: addresses, HSRP/VRRP, DHCP relay, ACL, PBR, multicast, IPv6, and any SVI line discovery did not recognise.
+   - **Routing objects tied to the VLAN**: statics, BGP networks and redistribution (with route-map verdicts), BGP peers on the VLAN, what each peer is sent, the live BGP table, and the border leaves' fabric BGP view.
    - **Active endpoints**: every IP in ARP with its MAC, edge switch, and port. The same list is in `<vlan>_endpoints_<ts>.csv`; keep it as the test baseline.
    - **Prune order**.
    No prune CLI.
@@ -230,8 +230,8 @@ It is listed in `.gitignore`, so it will not appear in `git status` even when pr
 
 ## Test discovery without devices
 
-`make mock` (or `tests/run_discovery_mock.sh`) runs this playbook end to end against canned
-CLI output under `tests/mock_cli/devices/`. Add a device directory there to reproduce a field
+The tests live on the `test` branch. `make tests-fetch`, then `make mock` (or `tests/run_discovery_mock.sh`), runs this playbook end to end against canned
+CLI output under `tests/mock_cli/devices/`. Add a device directory there (in a PR to `test`) to reproduce a field
 problem: one file per command, named after the command (lowercase, non-alphanumerics as `_`).
 
 ---
@@ -247,6 +247,6 @@ reports/<dc>/<vlan_name>/<vlan_name>_prune_<timestamp>.{md,json}
 ```
 
 Use the `{vid}_{slug}.yml` snippet written under the report directory to bootstrap
-`vars/vlans/<dc>/` (see `vars/vlans/README.md` and `vars/vlans/<dc>/_example.yml`).
+`vars/vlans/<dc>/` (see `vars/vlans/README.md`).
 
 See [USAGE_GUIDE.md](../USAGE_GUIDE.md) § Discovery for all flags.

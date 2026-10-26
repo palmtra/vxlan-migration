@@ -1,6 +1,8 @@
 # Paste as vars/vlans/{{ report.data_center }}/{{ report.vlan_id | vlan_db_record_filename(report.vlan_name) }}
 # Deployable model for VLAN {{ report.vlan_id }} ({{ report.vlan_name }}).
 # Migration type {{ report.migration_type | default(report.service_type) }}: L3 means the gateway moves into the fabric; L2 means it stays outside.
-# Fill evpn.l2.vni before migrate. Fill placement.gateway_leafs yourself for L3; discovery does not infer them.
+# Confirm evpn.l2.vni before migrate. L3 gateway.mode defaults to distributed_anycast (SVI on every
+# participating leaf); set centralized_anycast and name two placement.gateway_leafs for a leaf pair.
 # On-box name: {{ report.vlan_name_on_box | default('(not parsed)') }}
-{{ report.deployment_model | to_nice_yaml }}
+{{ (report.deployment_model | combine({'routing': {'associated': report.routing_detail}}, recursive=True)
+    if discovery_model_routing_detail | bool else report.deployment_model) | to_nice_yaml }}

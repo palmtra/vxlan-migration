@@ -1,7 +1,0 @@
-Legend:
-        * - primary entry, G - Gateway MAC, (R) - Routed MAC, O - Overlay MAC
-   VLAN     MAC Address      Type      age     Secure NTFY Ports
----------+-----------------+--------+---------+------+----+------------------
-*  300     0050.56ab.3010   dynamic  0         F      F    Po10
-*  300     0050.56ab.3011   dynamic  0         F      F    Po10
-*  300     00a0.c9aa.0254   dynamic  0         F      F    Eth1/20

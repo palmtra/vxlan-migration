@@ -7,7 +7,7 @@
 {% set _svi_description = (_avd_vlan.svi_description | default(_avd_vlan.description, true) | string) %}
 {% set _vni = _avd_vlan.vni | default(_avd_vlan.l3_vni, true) %}
 {% set _vrf = (_avd_vlan.vrf | default(target_vrf | default('default')) | string) %}
-{% set _is_gateway = (_target_device in (_avd_vlan.gateway_leafs | default([]))) and ((_avd_vlan.service_type | default('')) == 'l3') %}
+{% set _is_gateway = _target_device in (_avd_vlan | vlan_gateway_hosts) %}
 {% set _virtual = (_avd_vlan.gateway | default('', true) | string) | virtual_gateway_address(_avd_vlan.prefixes | default([])) %}
 {% set _prefixes = _avd_vlan.prefixes | default([]) %}
 {% set _vtep_bgp = hostvars[_target_device] | host_vtep_bgp %}

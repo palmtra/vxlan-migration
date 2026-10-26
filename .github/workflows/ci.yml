@@ -15,6 +15,22 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # Test code and synthetic data (fixtures, mock devices, sample VLAN
+      # records) live on the test branch only. This branch must not carry them.
+      - name: No test code or synthetic data on this branch
+        run: |
+          tracked="$(git ls-files -- tests molecule 'vars/vlans/*/_*' 'vars/services/*/_*')"
+          if [ -n "$tracked" ]; then
+            echo "::error::Test code and synthetic data belong on the test branch, not here:"
+            echo "$tracked"
+            exit 1
+          fi
+
+      - name: Fetch tests and fixtures from the test branch (untracked)
+        run: |
+          git fetch --depth 1 origin test
+          git archive FETCH_HEAD tests molecule | tar -x
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:

@@ -1,3 +1,0 @@
-interface port-channel1
-  switchport mode trunk
-  vpc peer-link

@@ -1,2 +1,0 @@
-Loopback0 is up
-  Internet address is 10.1.0.11/32

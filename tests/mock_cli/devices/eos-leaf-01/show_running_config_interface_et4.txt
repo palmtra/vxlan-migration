@@ -1,3 +1,0 @@
-interface Ethernet4
-   description web-02 server
-   switchport access vlan 300

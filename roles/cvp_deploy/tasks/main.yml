@@ -36,7 +36,7 @@
 
 - name: Determine CVP target devices from the local VLAN DB
   ansible.builtin.set_fact:
-    _cvp_target_devices: "{{ _vlan_to_migrate.target_switches | default([]) }}"
+    _cvp_target_devices: "{{ _vlan_to_migrate | vlan_config_hosts }}"
   delegate_to: localhost
   become: false
   run_once: true

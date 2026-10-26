@@ -293,8 +293,9 @@ def analyze_l2_domains(vlan_id, devices, endpoint_hosts):
     dual = [group for group in groups if group["status"] == "dual_attached"]
     if interconnects and dual:
         issues.append(
-            "VLAN %s has a direct fabric-legacy interconnect (%s) and non-VTEP switches attached to "
-            "both domains (%s). That is an L2 loop between EVPN and legacy unless STP blocks one path."
+            "Confirm STP blocks one path for VLAN %s until cutover: it has a direct fabric-legacy "
+            "interconnect (%s) and non-VTEP switches attached to both domains (%s), which is an L2 "
+            "loop between EVPN and legacy otherwise."
             % (
                 vlan_id,
                 ", ".join("%s %s - %s" % (i["vtep"], i["vtep_if"], i["mls"]) for i in interconnects),

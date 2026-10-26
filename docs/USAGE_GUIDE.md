@@ -44,12 +44,12 @@ Each VLAN record requires `service_type`. The type says where the gateway will l
 
 | Value | Use when |
 |---|---|
-| `l3` | The gateway moves into the VXLAN fabric. Name those leaves in `gateway_leafs`. |
+| `l3` | The gateway moves into the VXLAN fabric (on every participating leaf by default). |
 | `l2` | The gateway stays outside the fabric. The fabric provides Layer-2 transport only. |
 
 Discovery always queries SVI; ARP runs when an SVI is present. A discovered SVI is recorded as a source gateway. It is not copied into `gateway_leafs`. For a probe (a VLAN not yet in the DB), discovery picks the type: an active SVI on a discovered switch means `l3`, no SVI means `l2` (external gateway). Pass `-e discovery_probe_service_type=l2|l3` to force it. An explicit `service_type` on a DB record always wins; when it disagrees with discovery, the report lists it under **Action items**.
 
-For `l3`, also set `gateway_mode`: `distributed_anycast` (every participating leaf hosts the anycast gateway) or `centralized_anycast` (a leaf pair named in `gateway_leafs`).
+For `l3`, `gateway_mode` defaults to `distributed_anycast` (every participating leaf hosts the anycast gateway). Set `centralized_anycast` and name the leaf pair in `gateway_leafs` to host it on two leaves only.
 
 Full guide: **[VXLAN_SERVICE_TYPES.md](VXLAN_SERVICE_TYPES.md)**.
 
@@ -59,7 +59,7 @@ Full guide: **[VXLAN_SERVICE_TYPES.md](VXLAN_SERVICE_TYPES.md)**.
 
 **Playbook:** `playbooks/core/discover_vlan.yml`
 
-Collects VLAN, MAC, SVI, ARP, trunks, LLDP/CDP neighbors, spanning tree, and (on L3-capable devices) VRF, HSRP/VRRP/VARP/anycast, DHCP relay, ACL, PBR, OSPF, BGP, statics, prefix-lists, and route-maps. Writes reports under `reports/<dc>/<vlan_name>/`. What each command feeds is in [WORKFLOWS.md § Discovery](WORKFLOWS.md#discovery--what-it-collects).
+Collects VLAN, MAC, SVI, ARP, trunks, LLDP/CDP neighbors, spanning tree, and (on L3-capable devices) VRF, HSRP/VRRP/VARP/anycast, DHCP relay, ACL, PBR, BGP, statics, prefix-lists, and route-maps. Writes reports under `reports/<dc>/<vlan_name>/`. What each command feeds is in [WORKFLOWS.md § Discovery](WORKFLOWS.md#discovery--what-it-collects).
 
 ### Required extra vars
 
@@ -78,7 +78,9 @@ Collects VLAN, MAC, SVI, ARP, trunks, LLDP/CDP neighbors, spanning tree, and (on
 | `discovery_allow_probe` | `true` in discover playbook | Allow discovering a VLAN **not yet** in the DC database |
 | `discovery_probe_service_type` | empty | Empty lets discovery choose `l2`/`l3` for probe records. Set it to force a type |
 | `vlan_discovery_backup_enabled` | `false` | Capture config backup before discovery |
-| `discovery_collect_prune_context` | `true` | Collect static routes, BGP, OSPF, prefix-lists, and route-maps (EOS and NXOS) as **L3 discovery** (not prune actions) |
+| `discovery_collect_prune_context` | `true` | Collect static routes, BGP, prefix-lists, and route-maps (EOS and NXOS) as **L3 discovery** (not prune actions). OSPF is not collected |
+| `discovery_model_routing_detail` | `false` | The model YAML and VLAN DB snippet carry condensed routing (`advertised` prefix / VRF / ASN / how / to whom, `static_routes`, `bgp_peers`). `true` adds the full per-switch `routing.associated` detail the reports show |
+| `discovery_scan_all_switches` | `false` | With a VLAN record, discovery covers the record's switches plus the DC's border leaves. `true` scans every switch |
 | `migration_tier` (inventory group/host var) | `eos_devices`: `fabric`; `nxos_devices`: `legacy`; `ios_devices`: `access` | `fabric`: Arista leaf (a VTEP when Vxlan1 exists, otherwise a non-VTEP switch). `legacy`: the MLS / core being retired. `access`: a non-VTEP L2 switch that stays and must attach through a VTEP. Set `access` per host for any switch in the discovery list that is not a VTEP |
 | `vni_ranges` / `vni_default_customer_type` | Lisle 20000 / 22000, Omaha 10000 / 11000 / `external` | Per-DC VNI ranges for `internal` and `external` customers (`inventory/group_vars/all/vni_ranges.yml`). A VLAN record without `vni` gets the next free VNI in its DC and `customer_type`, skipping VNIs in the DC's VLAN DB and VNIs (L2 and L3) already mapped on discovered switches. Proposed, never written: confirm it into the SSOT |
 | `vtep_source_interface` | `Loopback1` | Expected VTEP source on fabric leaves (AVD default). Also the source for underlay pings in verify |
@@ -136,16 +138,16 @@ ansible-playbook -i inventory/hosts.yml playbooks/core/discover_vlan.yml \
 | `<vlan>_discovery_<ts>.md` | Short report: summary, action items, switch table, gateway objects to rebuild, routing objects, active endpoints, prune order |
 | `<vlan>_endpoints_<ts>.csv` | Endpoint baseline: one row per active IP (ARP) or MAC-only endpoint, with its edge switch and port. Use it for pre/post-migration tests |
 | `<vlan>_discovery_<ts>.csv` | One row per switch, including `placement` |
-| `<vlan>_discovery_<ts>.yml` | Deployable VLAN model (routing, EVPN, placement) |
+| `<vlan>_discovery_<ts>.yml` | Deployable VLAN model (condensed routing, EVPN, placement) |
 | `<vlan>_discovery_<ts>.json` | LLM analysis payload: the model, placement evidence, and discovery facts |
 | `<vlan>_prune_<ts>.md` | Human prune report: EOS session + commit timer, NXOS checkpoint |
 | `<vlan>_prune_<ts>.json` | Execution-shaped prune payload (`apply_automated: false`) |
-| `0100_legacy_web.yml` | Starter deploy model for `vars/vlans/<dc>/` (VNI and `gateway_leafs` still need an engineer) |
+| `{vid}_{slug}.yml` | Starter deploy model for `vars/vlans/<dc>/` (confirm the proposed VNI; `gateway_leafs` only for `centralized_anycast`) |
 
 Key **discovery** fields:
 
-- `action_items` — everything an engineer must resolve: switches not discovered (unreachable or failed), failed commands, gateway warnings, `review` switches, STP root outside scope, VNI collisions, endpoints that could not be located
-- `gateway_assessment` — where the gateway lives today (`legacy`, `fabric`, `mixed`, `external`), subnets and VIPs, redundancy (HSRP / VRRP / VARP / anycast), what moves with it (DHCP relay, ACL, PBR, IPv6, OSPF, multicast, NAT, uRPF, and any SVI line not understood), firewall/router ports (`external_exits`), and the recommended migration type
+- `action_items` — what to do, one imperative line each: fix reachability, create a missing VRF / L3 VNI on named leaves, rebuild DHCP relay / ACL / PBR on the fabric SVI, recreate statics and BGP peers on the VLAN, re-home firewall ports, review switches, STP root outside scope, VNI collisions, endpoints that could not be located
+- `gateway_assessment` — where the gateway lives today (`legacy`, `fabric`, `mixed`, `external`), subnets and VIPs, redundancy (HSRP / VRRP / VARP / anycast), what moves with it (DHCP relay, ACL, PBR, IPv6, multicast, NAT, uRPF, and any SVI line not understood), firewall/router ports (`external_exits`, report and JSON only), and the recommended migration type
 - `endpoint_table` — active IPs from ARP joined to the MAC table edge port (`edge`, `uplink_only`, `not_in_mac_table`), plus MAC-only endpoints. Gateway and FHRP addresses are flagged
 - `spanning_tree` — root bridge resolved to a discovered switch, or flagged as outside discovery scope
 - `fabric_readiness` — `show interfaces Vxlan1` on each fabric leaf that will carry the VLAN: VTEP source, replication mode, flood list source, and the gateway VRF's L3 VNI. The fabric uses head-end replication with EVPN flood lists only; anything else is an action item
@@ -158,7 +160,8 @@ Key **discovery** fields:
 - `unknown_inventory` — ports that could not be classified. A non-gateway switch with those ports is `review`. A source gateway stays prune-eligible; the unclassified ports are called out on the dry-run
 - Port roles come from LLDP/CDP first (`switch_uplink` for an inventory switch, `downstream_switch` for a switch outside the inventory, `network_service` for a firewall / load balancer / router, `compute`), then from the description. A `network_service` port is a local endpoint: the switch is participating until that device is re-homed. A `downstream_switch` port with MACs is participating; without MACs the switch is `review`, never auto-pruned
 - `deployment_model.placement` — `participating_leafs` (VTEPs only; these become `target_switches`), `gateway_leafs`, `l2_attached_switches` (non-VTEP switches that keep the VLAN, with their VTEP uplinks; never `target_switches`), `prune_eligible_leafs`, `source_gateway_devices`
-- `routing.associated` — statics whose next hop is in the VLAN prefix, that exit via `Vlan<id>`, whose prefix is the VLAN prefix, Null0 discards that cover it, or whose `name` equals an optional `static_route_tags` entry (case-insensitive). Also BGP networks or aggregates of that prefix, `redistribute connected`/`direct`/`static` on the source gateway with the route-map verdict for the VLAN prefix, BGP peers that sit on the VLAN, `bgp_exports` (each peer's outbound route-map verdict), `bgp_live` (`show ip bgp <prefix>`: in the table, and advertised to which peers), and `ospf`. Review items, not prune actions
+- `routing_detail` (report and JSON; in the model only with `discovery_model_routing_detail=true`) — statics whose next hop is in the VLAN prefix, that exit via `Vlan<id>`, whose prefix is the VLAN prefix, Null0 discards that cover it, or whose `name` equals an optional `static_route_tags` entry (case-insensitive). Also BGP networks or aggregates of that prefix, `redistribute connected`/`direct`/`static` on the source gateway with the route-map verdict for the VLAN prefix, BGP peers that sit on the VLAN, `bgp_exports` (each peer's outbound route-map verdict), `bgp_live` (`show ip bgp <prefix>`: in the table, and advertised to which peers), and `bgp_fabric` (border leaves). Review items, not prune actions
+- `deployment_model.routing` — the condensed form: `advertised` (prefix, VRF, ASN, `network` or `redistribute ... route-map`, peers it is sent to), `static_routes`, `bgp_peers`, deduplicated across the gateway pair
 - Route-map verdicts walk prefix-lists in sequence order: `permit`, `deny`, `unknown` (a clause matches on something discovery cannot evaluate, such as a community), or `missing` (route-map not defined)
 
 Key **prune** fields (separate files):
@@ -186,7 +189,7 @@ Loads the VLAN from local SSOT, optionally re-discovers, generates configlets, p
 | `manual_target_vrf` | Target VRF (usually `default`) |
 
 The VLAN must exist in `vars/vlans/<dc>/{vid}_{slug}.yml` with `target_switches`, `vni`, `service_type`, etc.
-See `vars/vlans/README.md` and `vars/vlans/<dc>/_example.yml`.
+See `vars/vlans/README.md`.
 
 ### Config generation
 
