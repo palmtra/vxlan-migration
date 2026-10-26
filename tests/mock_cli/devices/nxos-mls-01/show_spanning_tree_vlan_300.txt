@@ -1,0 +1,9 @@
+VLAN0300
+  Spanning tree enabled protocol rstp
+  Root ID    Priority    24876
+             Address     0023.04ee.be01
+             This bridge is the root
+             Hello Time  2  sec  Max Age 20 sec  Forward Delay 15 sec
+
+  Bridge ID  Priority    24876  (priority 24576 sys-id-ext 300)
+             Address     0023.04ee.be01

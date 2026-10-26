@@ -1,0 +1,47 @@
+---
+# Localhost role test: load vars/services fixture via roles/service_db (no containers).
+prerun: false
+role_name_check: 0
+
+dependency:
+  name: galaxy
+  enabled: false
+
+driver:
+  name: default
+  options:
+    managed: false
+    login_cmd_template: bash
+
+platforms:
+  - name: localhost
+
+ansible:
+  cfg:
+    defaults:
+      host_key_checking: false
+      gathering: explicit
+      verbosity: 0
+  env:
+    ANSIBLE_FILTER_PLUGINS: ${MOLECULE_PROJECT_DIRECTORY}/plugins/filter
+    ANSIBLE_ROLES_PATH: ${MOLECULE_PROJECT_DIRECTORY}/roles
+    ANSIBLE_COLLECTIONS_PATH: ${MOLECULE_PROJECT_DIRECTORY}/collections
+  executor:
+    backend: ansible-playbook
+    args:
+      ansible_playbook:
+        - --inventory=${MOLECULE_PROJECT_DIRECTORY}/inventory/hosts.yml
+  playbooks:
+    create: create.yml
+    converge: converge.yml
+    destroy: destroy.yml
+    verify: verify.yml
+
+scenario:
+  name: service_db
+  test_sequence:
+    - syntax
+    - create
+    - converge
+    - verify
+    - destroy

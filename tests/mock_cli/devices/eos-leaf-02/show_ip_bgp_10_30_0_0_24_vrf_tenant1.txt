@@ -1,0 +1,9 @@
+BGP routing table information for VRF TENANT1
+Router identifier 10.1.0.12, local AS number 65101
+BGP routing table entry for 10.30.0.0/24
+ Paths: 1 available
+  65001
+    10.1.0.21 from 10.1.0.21 (10.1.0.21)
+      Origin INCOMPLETE, metric 0, localpref 100, IGP metric 0, weight 0, tag 0
+      Received 12d04h ago, valid, external, best
+      Rx SAFI: Unicast

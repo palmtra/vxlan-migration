@@ -1,0 +1,19 @@
+!Command: show running-config interface Vlan300
+!Running configuration last done at: Wed Oct 14 10:01:02 2026
+
+version 9.3(8) Bios:version 05.45
+
+interface Vlan300
+  description APP_WEB_GW
+  no shutdown
+  mtu 9000
+  vrf member TENANT1
+  no ip redirects
+  ip address 10.30.0.3/24
+  ip access-group ACL_WEB_IN in
+  hsrp version 2
+  hsrp 30
+    preempt
+    priority 100
+    ip 10.30.0.1
+  ip dhcp relay address 10.99.0.10

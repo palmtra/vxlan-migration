@@ -1,0 +1,81 @@
+# VLAN record for tests/run_discovery_mock.sh record-mode run (synthetic).
+# The border leaf eos-leaf-02 is deliberately absent from every placement list,
+# and gateway.mode is unset so the distributed_anycast default applies.
+evpn:
+  l2:
+    rt: ''
+    vni: 20000
+  l3:
+    rt_export: ''
+    rt_import: ''
+    vni: null
+gateway:
+  location: legacy
+  mtu: 9000
+  redundancy: hsrp
+  services:
+    acls:
+    - direction: in
+      name: ACL_WEB_IN
+    dhcp_relay:
+    - server: 10.99.0.10
+      vrf: ''
+  source_devices:
+  - nxos-mls-01
+  - nxos-mls-02
+  subnets:
+  - gateway_ip: 10.30.0.1
+    prefix: 10.30.0.0/24
+    secondary: false
+  svi_mtu: 9000
+  virtual_ip: 10.30.0.1
+migration:
+  protected_vlan: false
+  type: l3
+ownership:
+  owner: ''
+  tenant: ''
+placement:
+  gateway_leafs: []
+  l2_attached_switches:
+  - hostname: acc-sw-01
+    vtep_uplinks:
+    - eos-leaf-01 Ethernet10
+  participating_leafs:
+  - asn: '65101'
+    hostname: eos-leaf-01
+    rd: 10.1.0.11:300
+    router_id: 10.1.0.11
+    vtep: 10.1.1.11
+  prune_eligible_leafs: []
+  source_gateway_devices:
+  - hostname: nxos-mls-01
+  - hostname: nxos-mls-02
+routing:
+  advertised:
+  - asn: '65001'
+    prefix: 10.30.0.0/24
+    to:
+    - 10.30.0.254 AS 65099
+    via: redistribute connected route-map RM_CONN
+    vrf: TENANT1
+  bgp_peers:
+  - description: FW-DMZ
+    neighbor: 10.30.0.254
+    remote_as: '65099'
+    vrf: TENANT1
+  gateway_ip: 10.30.0.1
+  prefixes:
+  - 10.30.0.0/24
+  static_routes:
+  - name: fw_dmz
+    next_hop: 10.30.0.254
+    prefix: 10.40.0.0/16
+    vrf: TENANT1
+  vrf: TENANT1
+site:
+  data_center: lisle
+  vlan:
+    description: APP_WEB_GW
+    id: 300
+    name: APP_WEB

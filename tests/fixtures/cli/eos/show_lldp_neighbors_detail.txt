@@ -1,0 +1,39 @@
+Interface Ethernet1 detected 1 LLDP neighbors:
+
+  Neighbor 001c.7300.0021/Ethernet1/49, age 4 seconds
+  Discovered 2 days, 1:02:03 ago; Last changed 2 days, 1:02:03 ago
+  - Chassis ID type: MAC address (4)
+    Chassis ID     : 001c.7300.0021
+  - Port ID type: Interface name (5)
+    Port ID        : "Ethernet1/49"
+  - Time To Live: 120 seconds
+  - Port Description: "to eos-leaf-lis-01"
+  - System Name: "nxos-mls-lis-01.example.net"
+  - System Description: "Cisco Nexus Operating System (NX-OS) Software 9.3(8)"
+  - System Capabilities : Bridge, Router
+    Enabled Capabilities: Bridge, Router
+  - Management Address Subtype: IPv4 (1)
+    Management Address        : 10.1.0.21
+
+Interface Ethernet3 detected 1 LLDP neighbors:
+
+  Neighbor 0050.56ab.1001/vmnic2, age 12 seconds
+  - Chassis ID type: MAC address (4)
+    Chassis ID     : 0050.56ab.1001
+  - Port ID type: Interface name (5)
+    Port ID        : "vmnic2"
+  - System Name: "esx-web-01"
+  - System Description: "VMware ESX Releasebuild-21495797"
+  - System Capabilities : Bridge
+    Enabled Capabilities: Bridge
+
+Interface Ethernet7 detected 1 LLDP neighbors:
+
+  Neighbor 0090.0b11.2233/ethernet1/1, age 30 seconds
+  - Port ID        : "ethernet1/1"
+  - System Name: "lis-fw01"
+  - System Description: "Palo Alto Networks PA-5220 firewall"
+  - System Capabilities : Router
+    Enabled Capabilities: Router
+
+Interface Ethernet9 detected 0 LLDP neighbors:

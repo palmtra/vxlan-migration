@@ -1,0 +1,10 @@
+---
+# Test-only shadow of ansible.netcommon. It answers cli_command from canned
+# CLI text so playbooks/core/discover_vlan.yml runs end to end without devices.
+# Never put this directory on a production collections path.
+namespace: ansible
+name: netcommon
+version: 0.0.0-mock
+readme: README.md
+authors:
+  - vxlan-migration tests

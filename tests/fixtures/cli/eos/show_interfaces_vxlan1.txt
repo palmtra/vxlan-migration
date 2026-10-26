@@ -1,0 +1,18 @@
+Vxlan1 is up, line protocol is up (connected)
+  Hardware is Vxlan
+  Description: eos-leaf-lis-01_VTEP
+  Source interface is Loopback1 and is active with 10.1.1.11
+  Listening on UDP port 4789
+  Replication/Flood Mode is headend with Flood List Source: EVPN
+  Remote MAC learning via EVPN
+  VNI mapping to VLANs
+  Static VLAN to VNI mapping is
+    [100, 10100]      [200, 10200]
+  Dynamic VLAN to VNI mapping for 'evpn' is
+    [4097, 50001]
+  Note: All Dynamic VLANs used by VCS are internal VLANs.
+        Use 'show vxlan vni' for details.
+  Static VRF to VNI mapping is
+   [TENANT1, 50001]
+   [TENANT2, 50002]
+  Shared Router MAC is 0000.0000.0000

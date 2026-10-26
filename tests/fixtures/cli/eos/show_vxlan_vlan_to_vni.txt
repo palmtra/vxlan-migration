@@ -1,0 +1,5 @@
+VLAN       VNI          Source       Interface       802.1Q Tag
+---------- ------------ ------------ --------------- ----------
+200        10200        static       Vxlan1          200
+300*       50100        evpn         Vxlan1          300
+Note: * indicates a Dynamic VLAN

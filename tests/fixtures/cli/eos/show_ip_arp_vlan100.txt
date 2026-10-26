@@ -1,0 +1,4 @@
+Address         Age (sec)  Hardware Addr   Interface
+Internet  10.10.100.10           12   0050.56ab.1001  Vlan100
+Internet  10.10.100.11           8    0050.56ab.1002  Vlan100
+Internet  10.10.100.1            0    001c.7300.aa01  Vlan100

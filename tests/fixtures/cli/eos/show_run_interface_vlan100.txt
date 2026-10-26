@@ -1,0 +1,5 @@
+interface Vlan100
+   description legacy_web
+   mtu 1500
+   ip address 10.10.100.2/24
+   ip virtual-router address 10.10.100.1

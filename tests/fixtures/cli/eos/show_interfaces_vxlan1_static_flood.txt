@@ -1,0 +1,9 @@
+Vxlan1 is up, line protocol is up (connected)
+  Hardware is Vxlan
+  Source interface is Loopback0 and is active with 10.1.0.12
+  Listening on UDP port 4789
+  Replication/Flood Mode is headend with Flood List Source: CLI
+  Static VLAN to VNI mapping is
+    [100, 10100]
+  Headend replication flood vtep list is:
+   100 10.1.1.11       10.1.1.13

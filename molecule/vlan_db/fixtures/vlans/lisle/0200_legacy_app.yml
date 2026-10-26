@@ -1,0 +1,18 @@
+---
+id: 200
+name: legacy_app
+action: migrate
+service_type: l3
+# Name the fabric leaves that will host the gateway. Discovery will not infer this.
+gateway_leafs: []
+vlan_name: APP_VXLAN
+vni: 50200
+vrf: default
+target_switches:
+  - chi01-blf01
+  - chi01-blf02
+discovery_switches:
+  - chi01-blf01
+  - chi01-blf02
+  - fnts-chi01-aggpe-ml01
+  - fnts-chi01-aggpe-ml02

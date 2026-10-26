@@ -1,0 +1,15 @@
+
+VLAN Name                             Status    Ports
+---- -------------------------------- --------- -------------------------------
+100  WEB_VXLAN                        active    Po1, Po10, Eth1/5, Eth1/6
+
+VLAN Type         Vlan-mode
+---- -----        ----------
+100  enet         CE
+
+Remote SPAN VLAN
+----------------
+Disabled
+
+Primary  Secondary  Type             Ports
+-------  ---------  ---------------  -------------------------------------------

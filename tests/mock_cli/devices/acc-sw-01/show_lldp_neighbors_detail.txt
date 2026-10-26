@@ -1,0 +1,19 @@
+Interface Ethernet5 detected 1 LLDP neighbors:
+
+  Neighbor 0050.56ab.3077/eth0, age 9 seconds
+  - System Name: "app-db-07"
+  - System Description: "Ubuntu 22.04.4 LTS Linux 5.15.0"
+
+Interface Ethernet48 detected 1 LLDP neighbors:
+
+  Neighbor 0023.04ee.be02/Ethernet1/31, age 4 seconds
+  - Port ID        : "Ethernet1/31"
+  - System Name: "nxos-mls-02"
+  - System Description: "Cisco Nexus Operating System (NX-OS) Software 9.3(8)"
+
+Interface Ethernet49 detected 1 LLDP neighbors:
+
+  Neighbor 001c.7300.0011/Ethernet10, age 4 seconds
+  - Port ID        : "Ethernet10"
+  - System Name: "eos-leaf-01"
+  - System Description: "Arista Networks EOS version 4.31.2F"

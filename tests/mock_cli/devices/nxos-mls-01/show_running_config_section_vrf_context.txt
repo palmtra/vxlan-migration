@@ -1,0 +1,2 @@
+vrf context TENANT1
+  ip route 10.40.0.0/16 10.30.0.254 name fw_dmz

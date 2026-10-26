@@ -1,0 +1,10 @@
+---
+# Overrides inventory/group_vars/all (network_cli) for the mock run.
+ansible_connection: local
+ansible_python_interpreter: "{{ ansible_playbook_python }}"
+network_facts_module: ansible.builtin.debug
+mock_cli_root: "{{ inventory_dir }}/.."
+vni_ranges:
+  lisle:
+    internal: {start: 10000, end: 19999}
+    external: {start: 20000, end: 29999}

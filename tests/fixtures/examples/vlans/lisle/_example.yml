@@ -1,0 +1,55 @@
+---
+# =============================================================================
+# VLAN database record template (NOT loaded by automation)
+# =============================================================================
+# Copy this file to vars/vlans/<data_center>/{vid:04d}_{slug}.yml
+#
+# Naming rules
+# ------------
+# - Filename:  {vid:04d}_{slug}.yml
+#   - vid: 4+ digit zero-padded VLAN ID (0100, 2911, 01234)
+#   - slug: lowercase snake_case from the VLAN name (legacy_web, customer_acme)
+# - Examples:
+#     0100_legacy_web.yml
+#     0200_legacy_app.yml
+#     2911_customer_acme_wifi.yml
+#
+# Files ignored by the loader
+# ---------------------------
+# - _example.yml, example.yml, and any file starting with _
+#
+# Required fields (migration)
+# ---------------------------
+# id, name, action, service_type, vni, vrf, target_switches
+#
+# service_type: l2 | l3  (see docs/VXLAN_SERVICE_TYPES.md)
+# gateway_leafs: fabric leaves that will host the gateway (L3 only; never inferred)
+# action: migrate (future: decommission)
+# =============================================================================
+
+_meta:
+  example: true
+  schema_version: 1
+
+# --- example record (remove _meta block and edit values in real files) ---
+
+id: 100
+name: legacy_web
+action: migrate
+service_type: l3
+vlan_name: WEB_VXLAN
+vni: 50100
+vrf: default
+gateway: 10.10.100.1       # optional; discovery fills from VR / HSRP
+prefixes:                  # optional; derived from SVI CIDRs
+  - 10.10.100.0/24
+# static_route_tags:       # optional; case-insensitive match against `ip route ... name`
+#   - cust_a
+target_switches:
+  - chi01-blf01
+  - chi01-blf02
+discovery_switches:
+  - chi01-blf01
+  - chi01-blf02
+  - fnts-chi01-aggpe-ml01
+  - fnts-chi01-aggpe-ml02

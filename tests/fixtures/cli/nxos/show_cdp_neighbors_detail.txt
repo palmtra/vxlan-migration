@@ -1,0 +1,24 @@
+----------------------------------------
+Device ID:nxos-mls-lis-02(FOX1234ABCD)
+System Name: nxos-mls-lis-02
+
+Interface address(es):
+    IPv4 Address: 10.1.0.22
+Platform: N9K-C93180YC-EX, Capabilities: Router Switch IGMP Filtering Supports-STP-Dispute
+Interface: Ethernet1/53, Port ID (outgoing port): Ethernet1/53
+Holdtime: 140 sec
+
+Version:
+Cisco Nexus Operating System (NX-OS) Software, Version 9.3(8)
+
+Advertisement Version: 2
+----------------------------------------
+Device ID:lis-asa01
+Interface address(es):
+    IPv4 Address: 10.10.1.1
+Platform: ASA5585, Capabilities: Router
+Interface: Ethernet1/20, Port ID (outgoing port): TenGigabitEthernet0/8
+Holdtime: 150 sec
+
+Version:
+Cisco Adaptive Security Appliance Software Version 9.12(4)
