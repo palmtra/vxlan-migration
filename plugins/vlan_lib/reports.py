@@ -6,7 +6,7 @@ import re
 from ansible.errors import AnsibleFilterError
 
 from vlan_lib.common import _str_equal, sanitize_report_slug
-from vlan_lib.parsers import network_prefix, normalize_mac_address
+from vlan_lib.parsers import _normalize_interface_name, network_prefix, normalize_mac_address
 from vlan_lib.placement import (
     PRUNE_STATUS_BY_ROLE,
     attach_associated_routes,
@@ -16,7 +16,7 @@ from vlan_lib.placement import (
     vlan_gateway_hosts,
 )
 from vlan_lib.vni import allocate_vni, used_vnis, vni_range_problems
-from vlan_lib.prune import _trunk_remove_cli, build_device_prune_plan, build_prune_execution
+from vlan_lib.prune import _prune_action, _trunk_remove_cli, build_device_prune_plan, build_prune_execution
 
 _PLACEHOLDER_VLAN_NAME = re.compile(r"^vlan[_-]?\d+$", re.I)
 
@@ -609,6 +609,53 @@ def fabric_readiness(report):
     return {"checked": checked, "issues": issues, "vrf": vrf if l3 else ""}
 
 
+def _prune_idle_ports(plan, device, decision, vlan_id):
+    """Prune a switch whose endpoint-facing ports carry no MACs on the VLAN.
+
+    Idle trunk ports lose the VLAN with the uplinks; every idle port is named
+    in ``warnings``. Endpoint ports without MACs no longer block the plan.
+    """
+    plan = dict(plan)
+    actions = list(plan.get("actions") or [])
+    done = {
+        _normalize_interface_name(action.get("interface") or "")
+        for action in actions
+        if action.get("op") == "trunk_remove_vlans"
+    }
+    trunks = {_normalize_interface_name(iface): iface for iface in device.get("trunk_ports") or []}
+    os_family = plan.get("os_family") or device.get("os_family") or "eos"
+    extra = []
+    for iface in decision.get("idle_port_names") or []:
+        trunk = trunks.get(_normalize_interface_name(iface))
+        if trunk and _normalize_interface_name(trunk) not in done:
+            done.add(_normalize_interface_name(trunk))
+            extra.append(
+                _prune_action(
+                    "trunk_remove_vlans",
+                    interface=trunk,
+                    vlans=[int(vlan_id)],
+                    cli=_trunk_remove_cli(trunk, [int(vlan_id)], os_family),
+                    source="discovery",
+                    confidence="medium",
+                    note="idle port: no MACs on the VLAN",
+                )
+            )
+    if extra:
+        first_vlan_op = next(
+            (index for index, action in enumerate(actions) if action.get("op") in ("no_interface_vlan", "no_vlan")),
+            len(actions),
+        )
+        actions = actions[:first_vlan_op] + extra + actions[first_vlan_op:]
+        plan["actions"] = actions
+        plan["execution"] = build_prune_execution(os_family, [int(vlan_id)], actions)
+    if actions and plan.get("status") == "blocked_by_compute_endpoints":
+        plan["status"] = "candidate"
+    plan["warnings"] = [
+        "No MACs on VLAN %s, pruned anyway: %s." % (vlan_id, ", ".join(decision.get("idle_ports") or []))
+    ]
+    return plan
+
+
 def _rebuild_items(report):
     """L3 objects the generated VLAN configlet does not carry; rebuilt by hand."""
     if report.get("migration_type") != "l3":
@@ -697,6 +744,12 @@ def build_action_items(report):
         if plan.get("status") == "blocked_until_gateway_moved":
             items.append("Teardown of %s is blocked: %s." % (plan["hostname"], plan.get("blocked_reason") or ""))
     for item in (report.get("placement_analysis") or {}).get("switches") or []:
+        if item.get("role") == "prune_eligible" and item.get("idle_ports"):
+            items.append(
+                "Confirm nothing needs VLAN %s on %s before pruning: these ports face endpoints or other "
+                "devices but carry no MACs on the VLAN, and the prune removes it from them: %s."
+                % (report.get("vlan_id"), item.get("hostname"), ", ".join(item["idle_ports"]))
+            )
         if item.get("role") == "review":
             items.append(
                 "Review %s before migrating: %s" % (item.get("hostname"), "; ".join(item.get("nonqualifying") or []))
@@ -752,7 +805,9 @@ def build_action_items(report):
     return items
 
 
-def build_vlan_discovery_reports(vlans, play_hosts, hostvars, all_hosts=None, vni_allocation=None):
+def build_vlan_discovery_reports(
+    vlans, play_hosts, hostvars, all_hosts=None, vni_allocation=None, placement_options=None
+):
     """Build one aggregated discovery report dict per VLAN in *vlans*.
 
     *all_hosts* (``ansible_play_hosts_all``) lets the report name switches
@@ -761,8 +816,14 @@ def build_vlan_discovery_reports(vlans, play_hosts, hostvars, all_hosts=None, vn
 
     *vni_allocation* (``{ranges, records, default_pool}``) proposes a VNI for
     a VLAN without one: the next free VNI in its DC and pool.
+
+    *placement_options* (``{keep_idle_endpoint_ports}``): true keeps a switch
+    whose endpoint-facing ports carry no MACs on the VLAN; the default prunes
+    it with a warning naming those ports.
     """
     vni_allocation = vni_allocation if isinstance(vni_allocation, dict) else {}
+    placement_options = placement_options if isinstance(placement_options, dict) else {}
+    keep_idle = str(placement_options.get("keep_idle_endpoint_ports") or "").lower() in ("true", "yes", "1")
     vni_ranges = vni_allocation.get("ranges") or {}
     range_problems = vni_range_problems(vni_ranges)
     taken_vnis = used_vnis(list(vni_allocation.get("records") or []) + list(vlans))
@@ -941,7 +1002,7 @@ def build_vlan_discovery_reports(vlans, play_hosts, hostvars, all_hosts=None, vn
         # Classify before prune. Participating leaves and named gateway leaves
         # are withheld. Source gateways with no local endpoints stay
         # prune-eligible and are ordered first.
-        placement = build_vlan_placement(vlan, devices)
+        placement = build_vlan_placement(vlan, devices, keep_idle)
         by_placement = placement["by_hostname"]
 
         # VLAN-scoped prune plans (routing objects stay in l3_review, never actions).
@@ -1045,6 +1106,8 @@ def build_vlan_discovery_reports(vlans, play_hosts, hostvars, all_hosts=None, vn
             else:
                 device_plan["placement_role"] = "prune_eligible"
                 device_plan["source_gateway"] = bool(decision.get("source_gateway"))
+                if decision.get("idle_port_names"):
+                    device_plan = _prune_idle_ports(device_plan, device, decision, vlan_id)
             if (
                 device_plan.get("actions")
                 or device_plan.get("l3_review")

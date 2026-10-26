@@ -17,6 +17,9 @@ Roll back with the checkpoint command printed under each switch.
 
 Status: {{ plan.status | default('') }}
 Placement: {{ plan.placement_role | default('') }}
+{% for warning in plan.warnings | default([]) %}
+Warning: {{ warning }}
+{% endfor %}
 
 ```
 {{ plan.execution.full_cli | default('') | trim }}

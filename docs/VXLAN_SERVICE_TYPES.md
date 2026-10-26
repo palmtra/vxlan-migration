@@ -64,7 +64,7 @@ Set `vrf` to the target VRF. The VLAN VNI is `evpn.l2.vni`. When it is empty, di
 | `prune_eligible_leafs` | VLAN exists today and there are no local endpoints. Source gateways are included and listed first. |
 | `source_gateway_devices` | Current SVI owners. The same host is also prune-eligible when it has no local endpoints. |
 
-A switch is participating only when endpoint-facing interfaces are found locally (server, mainframe OSA, storage, hypervisor, or appliance ports; or MAC/ARP tied to those ports), or when it is listed in `gateway_leafs`.
+A switch is participating only when the VLAN is **in use** there: MACs learned on endpoint-facing ports (server, mainframe OSA, storage, hypervisor, UCS fabric interconnect, firewall / load balancer / router, or a switch outside the inventory), ARP tied to those MACs, or a NetBox endpoint mapping. Or when it is listed in `gateway_leafs`.
 
 These do **not** qualify:
 
@@ -72,8 +72,9 @@ These do **not** qualify:
 - The VLAN allowed on a trunk
 - The VLAN present in the VLAN database
 - Transit aggregation
+- Endpoint-facing, fabric-interconnect, firewall / load balancer, unclassified or outside-switch ports **with no MACs on the VLAN**. The switch is prune-eligible, the report lists those idle ports as an action item, and the prune removes the VLAN from them (idle trunks get `switchport trunk allowed vlan remove`). `-e discovery_keep_idle_endpoint_ports=true` keeps such switches instead.
 
-A UCS fabric interconnect on a leaf **does** qualify: the blades behind it are endpoints, so that leaf keeps the VLAN.
+A failed MAC-table query never proves a port idle: that switch keeps the old rule (endpoint ports keep it, unclassified or outside-switch ports put it in `review`).
 
 ---
 

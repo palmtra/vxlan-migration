@@ -56,7 +56,10 @@ Do **not** put prune CLI in the discovery report. Keep this file for operators.
 - **Blocked:** {{ plan.blocked_reason }}. Deploy the VNI, re-run discovery, then apply.
 {% endif %}
 {% endif %}
-{% if plan.endpoint_ports | default([]) | length > 0 %}
+{% for warning in plan.warnings | default([]) %}
+- **Warning:** {{ warning }}
+{% endfor %}
+{% if plan.endpoint_ports | default([]) | length > 0 and plan.status | default('') == 'blocked_by_compute_endpoints' %}
 - **Blocked:** compute / unknown ports still attached: {{ plan.endpoint_ports | join(', ') }}
 {% endif %}
 

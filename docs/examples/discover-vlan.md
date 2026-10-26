@@ -196,7 +196,7 @@ Two reports:
 
 1. **Discovery** — read top to bottom:
    - **Summary**: VLAN name, where the gateway is (legacy MLS, fabric, or external firewall), subnets and VIP, VRF, migration type, gateway mode, counts, STP root.
-   - **Action items**: resolve every line before migrating (unreachable switches, failed commands, firewall still on the MLS, `review` switches, missing VRF / L3 VNI on a leaf, objects to rebuild by hand, VNI to confirm, endpoints that could not be located).
+   - **Action items**: resolve every line before migrating (unreachable switches, failed commands, firewall still on the MLS, idle endpoint ports that will be pruned, `review` switches, missing VRF / L3 VNI on a leaf, objects to rebuild by hand, VNI to confirm, endpoints that could not be located).
    - **Switches**: one row per switch carrying the VLAN with its tier, role, local endpoint ports, VLAN trunks, and SVI.
    - **Gateway objects to rebuild in the fabric**: addresses, HSRP/VRRP, DHCP relay, ACL, PBR, multicast, IPv6, and any SVI line discovery did not recognise.
    - **Routing objects tied to the VLAN**: statics, BGP networks and redistribution (with route-map verdicts), BGP peers on the VLAN, what each peer is sent, the live BGP table, and the border leaves' fabric BGP view.

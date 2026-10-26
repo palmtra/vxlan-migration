@@ -17,6 +17,12 @@ discovery_write_vlan_db_snippet: true
 # prefix / VRF / ASN, statics, BGP peers on the VLAN). true adds the full
 # per-switch BGP and static detail the reports show.
 discovery_model_routing_detail: false
+# A switch is kept for the VLAN only when MACs are learned on its endpoint-facing
+# ports (or ARP / NetBox ties endpoints to it). Endpoint, fabric-interconnect,
+# firewall / load balancer, unclassified and outside-switch ports with no MACs
+# make it prune-eligible, with a warning naming them. true keeps such switches
+# (participating, or review for unclassified / outside-switch ports).
+discovery_keep_idle_endpoint_ports: false
 
 # Collect static routes + BGP as first-class L3 discovery (EOS/NXOS/IOS).
 # Visibility only - never prune actions (especially default VRF / shared VRF).
