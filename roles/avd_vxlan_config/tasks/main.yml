@@ -78,7 +78,7 @@
     _target_device: "{{ item }}"
     _is_borderleaf: "{{ item is match(avd_borderleaf_regex) }}"
 
-# AVD 5+/6+: validate_inputs writes validated JSON under tmp_dir; eos_cli_config_gen
+# AVD 6: validate_inputs writes validated JSON under tmp_dir; eos_cli_config_gen
 # reads that JSON. Older args (structured_config_filename, read_structured_config_from_file)
 # are no longer accepted and tmp_dir is required.
 - name: Validate AVD structured configs (eos_config schema)

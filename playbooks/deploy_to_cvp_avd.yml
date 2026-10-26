@@ -3,15 +3,20 @@
 # deploy_to_cvp_avd.yml
 # -----------------------------------------------------------------------------
 # Standalone playbook that generates CVP configlets for an Arista VXLAN
-# migration using the Arista AVD eos_cli_config_gen role.
+# migration using the Arista AVD eos_cli_config_gen role. It reads the VLAN
+# record from the local VLAN DB (vars/vlans/<dc>/) and does not run discovery
+# or log in to any switch. Per-leaf ASN and RD come from the record (discovery
+# model) or, failing that, from inventory bgp_as / router_id.
 #
 # Usage:
 #   ansible-playbook -i inventory/hosts.yml playbooks/deploy_to_cvp_avd.yml \
 #     --limit dc_lisle \
 #     -e target_vlan_id=100 \
 #     -e target_data_center=lisle \
-#     -e target_vrf=default \
 #     -e cvp_apply_configlets=false
+#
+# target_vrf is optional and defaults to the VLAN record's vrf. Configlets are
+# generated only for the record's target_switches.
 #
 # When cvp_apply_configlets=true and CVP credentials are available, the
 # generated configlets are pushed to CVP as a pending change control.
@@ -22,15 +27,47 @@
   hosts: eos_devices
   gather_facts: false
 
+  vars:
+    _cvp_hosts: "{{ hostvars['localhost']['_workflow_cvp_target_switches'] | default([]) }}"
+    # Extra vars win over play vars, so -e target_vrf= still overrides this.
+    target_vrf: "{{ hostvars['localhost']['_target_vlan_record']['vrf'] | default('default', true) }}"
+
   pre_tasks:
     - name: Validate required input
       ansible.builtin.fail:
-        msg: "target_vlan_id, target_data_center, and target_vrf are required."
-      when:
-        - target_vlan_id is not defined or not target_vlan_id
-        - target_data_center is not defined or not target_data_center
-        - target_vrf is not defined or not target_vrf
+        msg: "target_vlan_id and target_data_center are required."
+      when: >-
+        target_vlan_id | default('', true) | string | length == 0
+        or target_data_center | default('', true) | string | length == 0
       run_once: true
+
+    # Runs on the first EOS host and delegates to localhost: a play on
+    # localhost would be skipped by --limit dc_<dc>.
+    - name: Load the target VLAN from the local VLAN DB on the control node
+      run_once: true
+      delegate_to: localhost
+      delegate_facts: true
+      block:
+        - name: Include vlan_db role
+          ansible.builtin.include_role:
+            name: vlan_db
+          vars:
+            target_vlan_ids: "{{ [target_vlan_id | int] }}"
+
+    - name: Fail when a target switch is not an EOS host in this run
+      ansible.builtin.fail:
+        msg: >-
+          VLAN {{ target_vlan_id }} lists target_switches {{ _missing }} that are not
+          EOS hosts in this run (check eos_devices in the inventory and --limit).
+          No configlet would be generated for them.
+      vars:
+        _missing: "{{ _cvp_hosts | difference(ansible_play_hosts_all) }}"
+      when: _missing | length > 0
+      run_once: true
+
+    - name: Limit config generation to target_switches from the VLAN DB
+      ansible.builtin.meta: end_host
+      when: inventory_hostname not in _cvp_hosts
 
   roles:
     - avd_vxlan_config

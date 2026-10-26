@@ -109,11 +109,13 @@ ansible-playbook -i inventory/hosts.yml playbooks/deploy_to_cvp.yml \
 ansible-playbook -i inventory/hosts.yml playbooks/deploy_to_cvp_avd.yml \
   -e target_vlan_id=100 \
   -e target_data_center=lisle \
-  -e target_vrf=default \
-  -e use_avd=true \
   -e cvp_apply_configlets=false \
   --limit dc_lisle
 ```
+
+Reads the record from `vars/vlans/<dc>/` and renders only its `target_switches`; no switch login.
+`target_vrf` defaults to the record's `vrf`. Per-leaf ASN and RD come from the discovery model, else
+inventory `bgp_as` / `router_id`.
 
 ---
 
