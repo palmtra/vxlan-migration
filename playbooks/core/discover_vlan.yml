@@ -29,6 +29,14 @@
     discovery_scan_all_switches: "{{ hostvars['localhost']['_discovery_scan_all_switches'] | default(false) | bool }}"
 
   pre_tasks:
+    # Discovery may probe VLANs not yet in the DB unless the caller turns it off.
+    # set_fact (not a task var) so the default can read the caller's value
+    # without referring to itself; not delegated, so vlan_db sees it.
+    - name: Default discovery_allow_probe to true for this run
+      ansible.builtin.set_fact:
+        discovery_allow_probe: "{{ discovery_allow_probe | default(true) | bool }}"
+      run_once: true
+
     - name: Load optional service bundle and per-DC VLAN database on control node
       delegate_to: localhost
       delegate_facts: true
@@ -40,11 +48,6 @@
         - name: Include vlan_db role
           ansible.builtin.include_role:
             name: vlan_db
-          vars:
-            # Known issue, left as is by the lint-only CI fix: this value refers to
-            # itself, so unless -e discovery_allow_probe=... is passed Ansible stops
-            # with "recursive loop detected in template string".
-            discovery_allow_probe: "{{ discovery_allow_probe | default(true) | bool }}"  # noqa: jinja[invalid]
 
     - name: Mark switches outside the VLAN DB scope as skipped on purpose
       ansible.builtin.set_fact:
