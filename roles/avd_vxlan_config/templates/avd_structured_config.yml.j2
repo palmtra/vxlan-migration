@@ -14,18 +14,13 @@
 {% set _bgp_as = _vtep_bgp.asn | default(avd_default_bgp_as | default(''), true) %}
 {% set _router_id = _vtep_bgp.router_id %}
 
-# VLAN object for AVD schema validation.
+# AVD renders the VLAN; eos_cli below carries the rest and must not repeat it.
 vlans:
   - id: {{ target_vlan_id | int }}
     name: {{ _vlan_name }}
-    state: active
 
 # Migration configlet CLI (same intent as roles/cvp_deploy leaf/border templates).
 eos_cli: |
-  !
-  vlan {{ target_vlan_id }}
-   name {{ _vlan_name }}
-  !
 {% if _is_gateway %}
   interface Vlan{{ target_vlan_id }}
 {% if _svi_description | length > 0 %}

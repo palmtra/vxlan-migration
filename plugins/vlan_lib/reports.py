@@ -13,6 +13,7 @@ from vlan_lib.placement import (
     build_vlan_placement,
     condense_associated_routes,
     device_tier,
+    vlan_gateway_hosts,
 )
 from vlan_lib.vni import allocate_vni, used_vnis, vni_range_problems
 from vlan_lib.prune import _trunk_remove_cli, build_device_prune_plan, build_prune_execution
@@ -523,7 +524,9 @@ def fabric_readiness(report):
 
     The fabric is Arista EOS built by AVD. BUM is head-end replication with
     an EVPN flood list, sourced from the VTEP loopback. For an L3 migration
-    the gateway VRF must already have an L3 VNI on the fabric.
+    the gateway VRF must already have an L3 VNI on each leaf that hosts the
+    SVI: every participating leaf (distributed_anycast) or the gateway leaf
+    pair (centralized_anycast).
     """
     devices = {device.get("hostname"): device for device in report.get("devices") or []}
     placement = (report.get("deployment_model") or {}).get("placement") or {}
@@ -536,6 +539,14 @@ def fabric_readiness(report):
     gateway = report.get("gateway_assessment") or {}
     vrf = gateway.get("vrf") or ""
     l3 = report.get("migration_type") == "l3" and vrf not in ("", "default")
+    svi_hosts = vlan_gateway_hosts(
+        {
+            "service_type": report.get("migration_type"),
+            "gateway_mode": gateway.get("mode"),
+            "target_switches": placement.get("participating_leafs"),
+            "gateway_leafs": placement.get("gateway_leafs"),
+        }
+    )
     checked = []
     issues = []
     missing_vrf = []
@@ -559,6 +570,7 @@ def fabric_readiness(report):
             "replication_mode": vxlan.get("replication_mode") or "",
             "flood_list_source": vxlan.get("flood_list_source") or "",
             "l3_vni": (vxlan.get("vrf_vni") or {}).get(vrf) if vrf else None,
+            "svi_host": hostname in svi_hosts,
         }
         checked.append(row)
         if not row["present"]:
@@ -582,7 +594,7 @@ def fabric_readiness(report):
                 "Change the VTEP source on %s to %s: it is %s."
                 % (hostname, expected, row["source_interface"] or "unset")
             )
-        if l3 and row["l3_vni"] is None:
+        if l3 and row["l3_vni"] is None and hostname in svi_hosts:
             missing_vrf.append(hostname)
     if missing_vrf:
         subject = {1: "the leaf does not have", 2: "neither leaf has"}.get(
