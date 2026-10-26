@@ -5,13 +5,12 @@ Each data center has its own directory of **one YAML file per VLAN**.
 ```text
 vars/vlans/
   lisle/
-    _example.yml          # template + naming docs (not loaded)
-    0100_legacy_web.yml
-    0200_legacy_app.yml
+    0810_legacy_web.yml
   omaha/
-    _example.yml
-    0100_legacy_web.yml
+    3014_network_mgmt_servers.yml
 ```
+
+Only real VLAN records belong here. Sample and test records live on the `test` branch.
 
 ## Filename convention
 
@@ -28,7 +27,7 @@ Rules:
 
 - **vid**: zero-padded to at least 4 digits
 - **slug**: lowercase snake_case derived from `name`
-- Files starting with `_` are ignored (including `_example.yml`)
+- Files starting with `_` are ignored
 
 ## Record format
 
@@ -39,8 +38,8 @@ id: 100
 name: legacy_web
 action: migrate
 service_type: l3          # l2 | l3 - see docs/VXLAN_SERVICE_TYPES.md
-gateway_leafs: []         # L3: fabric leaves that will host the gateway (never inferred)
-gateway_mode: ""          # L3: distributed_anycast | centralized_anycast
+gateway_mode: distributed_anycast  # L3: default; centralized_anycast needs gateway_leafs
+gateway_leafs: []         # L3 centralized_anycast: the leaf pair (never inferred)
 vni: 50100
 vrf: default
 gateway: 10.10.100.1      # optional; discovery fills from VR / HSRP
@@ -54,7 +53,7 @@ discovery_switches:
   - fnts-chi01-aggpe-ml01
 ```
 
-Records are validated against [`schemas/vlan_record.schema.json`](../../schemas/vlan_record.schema.json) on load (`jsonschema` required). Discovery writes a deployable model (routing, EVPN, participating leaves, prune-eligible leaves). **VNI must still be assigned** before migrate, and **gateway_leafs must be named** for an L3 cutover. A discovered SVI is a source gateway, not a fabric gateway leaf. L3 objects in a shared VRF are in the JSON analysis payload but are not unique to this VLAN.
+Records are validated against [`schemas/vlan_record.schema.json`](../../schemas/vlan_record.schema.json) on load (`jsonschema` required). Discovery writes a deployable model (routing, EVPN, participating leaves, prune-eligible leaves). **Confirm the proposed VNI** before migrate. L3 defaults to `distributed_anycast`; name `gateway_leafs` only for `centralized_anycast`. A discovered SVI is a source gateway, not a fabric gateway leaf. L3 objects in a shared VRF are in the JSON analysis payload but are not unique to this VLAN.
 
 | Field | Required | Notes |
 |---|---|---|
@@ -62,8 +61,8 @@ Records are validated against [`schemas/vlan_record.schema.json`](../../schemas/
 | `gateway` | no | Anycast / HSRP / virtual-router address |
 | `prefixes` | no | Subnets from SVI CIDRs |
 | `static_route_tags` | no | Name tags. A static is associated when a tag equals `ip route ... name`, ignoring case |
-| `gateway_leafs` | L3 | Fabric gateway leaves. Engineer-supplied |
-| `gateway_mode` | L3 | `distributed_anycast` or `centralized_anycast`. Engineer-supplied |
+| `gateway_mode` | L3 | `distributed_anycast` (default, SVI on every participating leaf) or `centralized_anycast` |
+| `gateway_leafs` | centralized L3 | The leaf pair hosting the gateway. Engineer-supplied |
 | `gateway_location` | no | Filled by discovery: `legacy`, `fabric`, `mixed`, `external` |
 | `customer_type` | no | `internal` or `external`. Picks the DC's VNI range when discovery proposes a VNI: Lisle 20000 / 22000, Omaha 10000 / 11000 (default `vni_default_customer_type`) |
 | `external_gateway_leafs` | no | L2 VLANs with an external gateway (firewall) only. Leaves the gateway attaches to when it is not the DC's border leaf pair. Manual override; without it the VLAN also goes on the border pair |

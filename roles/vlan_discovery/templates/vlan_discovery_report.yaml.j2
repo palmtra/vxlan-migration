@@ -1,3 +1,5 @@
-# Deployable VLAN model. Assign EVPN VNIs, then use this file to build the new environment.
-# gateway_leafs are engineer-supplied. The JSON report is the analysis payload, not this file.
-{{ report.deployment_model | to_nice_yaml }}
+# Deployable VLAN model. Confirm the VNI, then use this file to build the new environment.
+# Routing is condensed (advertised prefixes, statics, BGP peers); the full per-switch
+# detail is in the .md and .json reports (-e discovery_model_routing_detail=true adds it here).
+{{ (report.deployment_model | combine({'routing': {'associated': report.routing_detail}}, recursive=True)
+    if discovery_model_routing_detail | bool else report.deployment_model) | to_nice_yaml }}

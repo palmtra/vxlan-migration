@@ -89,6 +89,8 @@ def _protected_vlan(vlan):
 
 
 GATEWAY_MODES = ("distributed_anycast", "centralized_anycast")
+# L3 VLANs without a gateway_mode get this one.
+DEFAULT_GATEWAY_MODE = "distributed_anycast"
 
 def _unique(items):
     found = []
@@ -146,7 +148,6 @@ def assess_gateway(vlan, devices):
             "dhcp_relay": list(details.get("dhcp_relay") or []),
             "acls": list(details.get("acls") or []),
             "pbr": list(details.get("pbr") or []),
-            "ospf": list(details.get("ospf") or []),
             "multicast": list(details.get("multicast") or []),
             "nat": list(details.get("nat") or []),
             "urpf": list(details.get("urpf") or []),
@@ -176,13 +177,13 @@ def assess_gateway(vlan, devices):
         )
         if location == "mixed":
             warnings.append(
-                "Active SVIs exist on both legacy and fabric switches. Only one gateway may "
-                "answer for the subnet during cutover."
+                "Make sure only one gateway answers for the subnet during cutover: active SVIs "
+                "exist on both legacy and fabric switches."
             )
 
     vrfs = _unique(entry["vrf"] for entry in active)
     if len(vrfs) > 1:
-        warnings.append("Active SVIs disagree on VRF: %s." % ", ".join(vrfs))
+        warnings.append("Pick one VRF for the gateway: active SVIs disagree (%s)." % ", ".join(vrfs))
     for entry in inactive:
         warnings.append(
             "SVI on %s is %s; remove it with the VLAN, it is not a gateway."
@@ -237,7 +238,6 @@ def assess_gateway(vlan, devices):
             "acls",
             "pbr",
             "ipv6_addresses",
-            "ospf",
             "multicast",
             "nat",
             "urpf",
@@ -646,6 +646,37 @@ def bgp_vlan_evpn(record, hostname, host_asn="", host_router_id=""):
     return result
 
 
+def _host_list(items):
+    hosts = []
+    for item in items or []:
+        hostname = _hostname_of(item) if isinstance(item, dict) else str(item or "").strip()
+        if hostname and hostname not in hosts:
+            hosts.append(hostname)
+    return hosts
+
+
+def vlan_gateway_hosts(record):
+    """Leaves that host the fabric SVI for a VLAN record.
+
+    distributed_anycast (the default): every participating leaf plus any named
+    gateway leaf. centralized_anycast: the gateway leaves only. L2: none.
+    """
+    if not isinstance(record, dict) or str(record.get("service_type") or "").lower() != "l3":
+        return []
+    gateway_leafs = _host_list(record.get("gateway_leafs"))
+    mode = str(record.get("gateway_mode") or DEFAULT_GATEWAY_MODE).strip().lower()
+    if mode == "centralized_anycast":
+        return gateway_leafs
+    return _host_list(_host_list(record.get("target_switches")) + gateway_leafs)
+
+
+def vlan_config_hosts(record):
+    """Leaves that get the VLAN configlet: target_switches plus gateway leaves."""
+    if not isinstance(record, dict):
+        return []
+    return _host_list(_host_list(record.get("target_switches")) + _host_list(record.get("gateway_leafs")))
+
+
 def normalize_static_route_tags(items):
     """Engineer tags used to match ``ip route ... name``. Case-insensitive, optional."""
     tags = []
@@ -680,8 +711,88 @@ def empty_associated_routes():
         "bgp_exports": [],
         "bgp_live": [],
         "bgp_fabric": [],
-        "ospf": [],
     }
+
+
+def _append_unique(items, value):
+    if value and value not in items:
+        items.append(value)
+
+
+def condense_associated_routes(associated, devices):
+    """Short routing summary for the deployable model.
+
+    One entry per VRF and prefix, merged across the gateway pair: what is
+    advertised (and by which ASN, how, to whom), the statics, and the BGP peers
+    on the VLAN. The full per-switch detail stays in the discovery reports.
+    """
+    associated = associated if isinstance(associated, dict) else {}
+    asn_by_host = {
+        device.get("hostname"): str(device.get("bgp_as") or "").strip()
+        for device in devices or []
+        if isinstance(device, dict)
+    }
+    advertised = {}
+    for item in associated.get("bgp_networks") or []:
+        if item.get("kind") == "network":
+            prefixes = [item.get("prefix")] if item.get("prefix") else []
+            via = "network"
+        else:
+            prefixes = [v.get("prefix") for v in item.get("verdicts") or [] if v.get("verdict") == "permit"]
+            source, route_map = _redistribute_parts(item.get("method"))
+            via = "redistribute %s" % source if source else "redistribute"
+            if route_map:
+                via += " route-map %s" % route_map
+        for prefix in prefixes:
+            if not prefix:
+                continue
+            key = (item.get("vrf") or "default", prefix)
+            entry = advertised.setdefault(key, {"prefix": prefix, "vrf": key[0], "asn": [], "via": [], "to": []})
+            _append_unique(entry["asn"], asn_by_host.get(item.get("hostname")) or "")
+            _append_unique(entry["via"], via)
+    for item in associated.get("bgp_exports") or []:
+        entry = advertised.get((item.get("vrf") or "default", item.get("prefix")))
+        if entry is not None and item.get("verdict") == "permit":
+            peer = item.get("neighbor") or ""
+            if item.get("remote_as"):
+                peer += " AS %s" % item["remote_as"]
+            _append_unique(entry["to"], peer)
+    summary = {}
+    if advertised:
+        summary["advertised"] = []
+        for entry in advertised.values():
+            row = {
+                "prefix": entry["prefix"],
+                "vrf": entry["vrf"],
+                "asn": ", ".join(entry["asn"]),
+                "via": "; ".join(entry["via"]),
+            }
+            if entry["to"]:
+                row["to"] = entry["to"]
+            summary["advertised"].append(row)
+    statics = []
+    for item in associated.get("static_routes") or []:
+        row = {
+            key: item.get(key)
+            for key in ("prefix", "next_hop", "interface", "vrf", "name")
+            if item.get(key) and not (key == "interface" and item.get(key) == item.get("next_hop"))
+        }
+        if row not in statics:
+            statics.append(row)
+    if statics:
+        summary["static_routes"] = statics
+    peers = []
+    for item in associated.get("bgp_neighbors") or []:
+        row = {
+            key: item.get(key)
+            for key in ("neighbor", "remote_as", "vrf", "description")
+            if item.get(key)
+        }
+        if row not in peers:
+            peers.append(row)
+    if peers:
+        summary["bgp_peers"] = peers
+    return summary
 
 
 def _redistribute_parts(method):
@@ -781,9 +892,8 @@ def _ip_in_prefixes(ip_text, prefixes):
 def _prefix_relation(candidate, vlan_prefixes):
     """How *candidate* relates to the VLAN prefixes.
 
-    ``equal`` and ``more_specific`` are VLAN routes. ``covers`` (a shorter
-    prefix containing the VLAN prefix) is only used for OSPF network
-    statements, which enable OSPF on the SVI. Default route is never ``covers``.
+    ``equal`` and ``more_specific`` are VLAN routes. ``covers`` is a shorter
+    prefix containing the VLAN prefix. Default route is never ``covers``.
     """
     parsed = _prefix_tuple(candidate)
     if not parsed:
@@ -1048,7 +1158,7 @@ def attach_associated_routes(model, vlan_id, devices):
                 }
             )
 
-    exports, live, ospf = _advertisement_view(vlan_id, devices, prefixes, vrfs, networks)
+    exports, live = _advertisement_view(prefixes, devices, networks)
     associated = {
         "static_routes": statics,
         "bgp_networks": networks,
@@ -1056,7 +1166,6 @@ def attach_associated_routes(model, vlan_id, devices):
         "bgp_exports": exports,
         "bgp_live": live,
         "bgp_fabric": fabric_bgp_view(devices),
-        "ospf": ospf,
     }
     routing["associated"] = associated
     return associated
@@ -1116,14 +1225,12 @@ def fabric_bgp_view(devices):
     return rows
 
 
-def _advertisement_view(vlan_id, devices, prefixes, vrfs, networks):
+def _advertisement_view(prefixes, devices, networks):
     """Who advertises the VLAN prefix today, and to whom.
 
     ``bgp_exports``: on a switch that originates the prefix in BGP, each peer
     in the SVI VRF with the verdict of its outbound route-map.
     ``bgp_live``: ``show ip bgp <prefix>`` on the SVI owners.
-    ``ospf``: OSPF networks covering the prefix, redistribution on the SVI
-    owner, and OSPF lines on the SVI itself.
     """
     originators = {
         (item["hostname"], item["vrf"])
@@ -1137,7 +1244,6 @@ def _advertisement_view(vlan_id, devices, prefixes, vrfs, networks):
     }
     exports = []
     live = []
-    ospf = []
     for device in devices or []:
         if not isinstance(device, dict):
             continue
@@ -1176,56 +1282,7 @@ def _advertisement_view(vlan_id, devices, prefixes, vrfs, networks):
                         "advertised_to": list(item.get("advertised_to") or []),
                     }
                 )
-        owns_svi = bool(device.get("svi_present"))
-        svi_ospf = (device.get("svi_details") or {}).get("ospf") or []
-        if owns_svi and svi_ospf:
-            ospf.append(
-                {
-                    "hostname": hostname,
-                    "vrf": _norm_vrf_name(device.get("svi_vrf")),
-                    "process": "",
-                    "detail": "; ".join(svi_ospf),
-                    "reason": "OSPF is enabled on Vlan%s" % vlan_id,
-                }
-            )
-        for process in device.get("ospf") or []:
-            if not isinstance(process, dict):
-                continue
-            vrf_name = _norm_vrf_name(process.get("vrf"))
-            if vrf_name not in vrfs:
-                continue
-            for net in process.get("networks") or []:
-                relation, related = _prefix_relation(net.get("prefix"), prefixes)
-                if relation in ("equal", "covers", "more_specific"):
-                    ospf.append(
-                        {
-                            "hostname": hostname,
-                            "vrf": vrf_name,
-                            "process": process.get("process") or "",
-                            "detail": "network %s area %s" % (net.get("prefix"), net.get("area")),
-                            "reason": "covers %s" % related,
-                        }
-                    )
-            if owns_svi:
-                for redist in process.get("redistribute") or []:
-                    if redist.get("source") != "connected":
-                        continue
-                    verdicts = [
-                        _policy(device, redist.get("route_map"), prefix, {"interface": "Vlan%s" % vlan_id})
-                        for prefix in prefixes
-                    ]
-                    ospf.append(
-                        {
-                            "hostname": hostname,
-                            "vrf": vrf_name,
-                            "process": process.get("process") or "",
-                            "detail": "redistribute connected%s"
-                            % (" route-map %s" % redist["route_map"] if redist.get("route_map") else ""),
-                            "reason": "; ".join(item["reason"] for item in verdicts)
-                            or "SVI is connected in this VRF",
-                        }
-                    )
-    return exports, live, ospf
+    return exports, live
 
 
 def _blank_evpn_vni(value):
@@ -1249,7 +1306,11 @@ def _coerce_int(value):
 
 
 def _model_gateway(assessment):
-    """Deployable gateway block: where it is today and what moves with it."""
+    """Deployable gateway block: where it is today and what moves with it.
+
+    Firewall/router ports (external_exits) are report-only: nothing builds
+    config from them, and the report's action items list each one.
+    """
     services = {
         key: value
         for key, value in (assessment.get("services") or {}).items()
@@ -1267,12 +1328,6 @@ def _model_gateway(assessment):
         block["mtu"] = assessment["mtu"]
     if services:
         block["services"] = services
-    exits = [
-        {key: item.get(key) for key in ("hostname", "interface", "neighbor", "description") if item.get(key)}
-        for item in assessment.get("external_exits") or []
-    ]
-    if exits:
-        block["external_exits"] = exits
     return block
 
 
@@ -1414,23 +1469,21 @@ def build_vlan_placement(vlan, devices):
     if migration_type != gateway["recommended_migration_type"]:
         gateway["warnings"].insert(
             0,
-            "The record says %s but discovery recommends %s: %s."
+            "Check the migration type: the record says %s but discovery recommends %s (%s)."
             % (migration_type.upper(), gateway["recommended_migration_type"].upper(), gateway["reason"]),
         )
     if migration_type == "l3":
-        if not gateway["mode"]:
+        if not gateway["mode"] and not gateway["invalid_mode"]:
+            gateway["mode"] = DEFAULT_GATEWAY_MODE
+            gateway["mode_defaulted"] = True
+        if gateway["mode"] == "centralized_anycast" and len(gateway_declared) != 2:
             gateway["warnings"].append(
-                "Choose gateway_mode: distributed_anycast (every participating leaf) or "
-                "centralized_anycast (a leaf pair)."
-            )
-        elif gateway["mode"] == "centralized_anycast" and len(gateway_declared) != 2:
-            gateway["warnings"].append(
-                "centralized_anycast needs exactly two gateway_leafs; %d named."
-                % len(gateway_declared)
+                "Name exactly two placement.gateway_leafs for centralized_anycast (%d named), or set "
+                "gateway.mode to distributed_anycast." % len(gateway_declared)
             )
     if gateway["invalid_mode"]:
         gateway["warnings"].append(
-            "gateway_mode %r is not one of %s." % (gateway["invalid_mode"], ", ".join(GATEWAY_MODES))
+            "Set gateway.mode to %s: %r is not valid." % (" or ".join(GATEWAY_MODES), gateway["invalid_mode"])
         )
 
     by_hostname = {}
@@ -1677,6 +1730,8 @@ def flatten_deployment_model(document):
     gateway = document.get("gateway") if isinstance(document.get("gateway"), dict) else {}
     if gateway.get("mode"):
         record["gateway_mode"] = gateway["mode"]
+    elif service_type == "l3":
+        record["gateway_mode"] = DEFAULT_GATEWAY_MODE
     if gateway.get("location"):
         record["gateway_location"] = gateway["location"]
     if gateway.get("svi_mtu"):

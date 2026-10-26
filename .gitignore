@@ -23,3 +23,7 @@ venv/
 .cache/
 .ansible/
 *.egg-info/
+
+# Test code and synthetic data live on the test branch (make tests-fetch), never on main.
+/tests/
+/molecule/

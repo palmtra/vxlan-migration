@@ -1,9 +1,0 @@
-IP ARP Table for context TENANT1
-Total number of entries: 5
-Address         Age       MAC Address     Interface       Flags
-10.30.0.10      00:01:12  0050.56ab.3010  Vlan300
-10.30.0.11      00:00:40  0050.56ab.3011  Vlan300
-10.30.0.254     00:00:05  00a0.c9aa.0254  Vlan300
-10.30.0.2       00:00:02  0023.04ee.be02  Vlan300
-10.30.0.50      00:12:01  0050.56ab.3050  Vlan300
-10.30.0.77      00:00:30  0050.56ab.3077  Vlan300

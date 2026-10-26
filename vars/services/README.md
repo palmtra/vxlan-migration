@@ -8,11 +8,11 @@ one tenant cutover (for example Aspira `0000822`). Per-VLAN files under
 ```text
 vars/services/
   lisle/
-    _example.yml              # schema template (not loaded)
     aspira_0000822.yml        # real service (example naming)
   omaha/
-    _example.yml
 ```
+
+Only real service files belong here. The schema template and test fixtures live on the `test` branch.
 
 Loaded bundles are validated against [`schemas/service_bundle.schema.json`](../../schemas/service_bundle.schema.json).
 
@@ -50,6 +50,6 @@ statics and BGP are never auto-candidates.
 
 ## Related
 
-- Schema template: [`lisle/_example.yml`](lisle/_example.yml)
+- Schema: [`../../schemas/service_bundle.schema.json`](../../schemas/service_bundle.schema.json)
 - Per-VLAN DB: [`../vlans/README.md`](../vlans/README.md)
 - Discovery prune plans: [`../../docs/examples/discover-vlan.md`](../../docs/examples/discover-vlan.md)

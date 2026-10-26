@@ -1,4 +1,0 @@
-PING 10.30.0.50 (10.30.0.50) 72(100) bytes of data.
-
---- 10.30.0.50 ping statistics ---
-2 packets transmitted, 0 received, 100% packet loss, time 1001ms

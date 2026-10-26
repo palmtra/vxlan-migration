@@ -1,3 +1,0 @@
-BGP routing table information for VRF TENANT1
-Router identifier 10.1.0.17, local AS number 65001
-% Network not in table

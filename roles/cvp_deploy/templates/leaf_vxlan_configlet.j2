@@ -4,7 +4,7 @@
 {% set _svi_description = (_vlan_to_migrate.svi_description | default(_vlan_to_migrate.description, true) | string) %}
 {% set _vni = _vlan_to_migrate.vni | default(_vlan_to_migrate.l3_vni, true) %}
 {% set _vrf = (_vlan_to_migrate.vrf | default('default') | string) %}
-{% set _is_gateway = (_device_hostname in (_vlan_to_migrate.gateway_leafs | default([]))) and ((_vlan_to_migrate.service_type | default('')) == 'l3') %}
+{% set _is_gateway = _device_hostname in (_vlan_to_migrate | vlan_gateway_hosts) %}
 {% set _virtual = (_vlan_to_migrate.gateway | default('', true) | string) | virtual_gateway_address(_vlan_to_migrate.prefixes | default([])) %}
 {% set _prefixes = _vlan_to_migrate.prefixes | default([]) %}
 !

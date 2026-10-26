@@ -13,7 +13,7 @@ This field is required on every VLAN record under `vars/vlans/<dc>/`. It says wh
 | `service_type` | Gateway after migration | What the fabric does |
 |---|---|---|
 | `l2` | Stays **outside** the VXLAN fabric | Layer-2 transport only |
-| `l3` | Hosted **inside** the VXLAN fabric, on `gateway_leafs` | L2 VNI plus the gateway (centralized or distributed) |
+| `l3` | Hosted **inside** the VXLAN fabric: every participating leaf (default) or the `gateway_leafs` pair | L2 VNI plus the gateway (distributed or centralized) |
 
 `gateway_leafs` are named by the engineer. Discovery never copies a legacy SVI into that list. A discovered SVI is a **source gateway** (today's MLS or aggPE). That device is the root of the legacy L2, so it is prune-eligible unless it also has local endpoints or the engineer named it in `gateway_leafs`.
 
@@ -33,7 +33,7 @@ The gateway remains outside the fabric (firewall, router, or another device you 
 
 ## L3 (`service_type: l3`)
 
-The gateway moves into the fabric. It may be centralized on a border-leaf pair or distributed across leaves. Placement is `gateway_leafs`, and those leaves are also participating leaves. Record the choice in `gateway_mode`.
+The gateway moves into the fabric. `gateway_mode` defaults to `distributed_anycast`: every participating leaf hosts the anycast SVI. For `centralized_anycast` the gateway sits on a leaf pair named in `gateway_leafs`, and those leaves also get the VLAN.
 
 ```yaml
 service_type: l3
@@ -45,12 +45,12 @@ gateway_leafs:
 
 | `gateway_mode` | Meaning |
 |---|---|
-| `distributed_anycast` | Every participating leaf hosts the anycast gateway |
+| `distributed_anycast` (default) | Every participating leaf (plus any named gateway leaf) hosts the anycast gateway |
 | `centralized_anycast` | A leaf pair, named in `gateway_leafs`, hosts the anycast gateway. Discovery flags any other count |
 
 Discovery recommends the type. An active SVI on the legacy MLS means `l3`: that gateway must be rebuilt in the fabric. No active SVI on a discovered switch means `l2`: the gateway is external (usually a firewall), and the report lists the ports that face it. For a probe record the recommendation becomes the type. For a DB record the record wins, and a disagreement is an action item.
 
-Set `vrf` to the target VRF. The VLAN VNI is `evpn.l2.vni`. When it is empty, discovery proposes the next free one from the DC's range; the L3 VNI is the VRF's and is never used for the VLAN. Each VTEP gets the VLAN name taken from discovery (`show vlan`), `vxlan vlan <id> vni`, and `router bgp / vlan <id>` with `rd <router-id>:<vlan>` and `route-target both <l2 vni>:<vlan>` (both DCs; `evpn.l2.rt` overrides it). `gateway_leafs` also get the SVI (`vrf`, `ip address virtual`, jumbo MTU) and `router bgp / vrf / network` for the VLAN prefix. The `network` statement is under that VRF, beside the `vlan` block, and the SVI is in the same VRF. A non-gateway VTEP gets the VLAN name, the VXLAN VNI, and the BGP VLAN block only. The VRF name and the SVI description come from the previous gateway. If discovery does not find the VLAN name, that description, or one agreed VRF, the deploy run asks for it. The VRF itself is not created (`cvp_build_borderleaf_config` defaults to `false`). BUM is head-end replication, already on the VTEPs. Do not set `mcast_group`.
+Set `vrf` to the target VRF. The VLAN VNI is `evpn.l2.vni`. When it is empty, discovery proposes the next free one from the DC's range; the L3 VNI is the VRF's and is never used for the VLAN. Each VTEP gets the VLAN name taken from discovery (`show vlan`), `vxlan vlan <id> vni`, and `router bgp / vlan <id>` with `rd <router-id>:<vlan>` and `route-target both <l2 vni>:<vlan>` (both DCs; `evpn.l2.rt` overrides it). The gateway leaves (every participating leaf for `distributed_anycast`, the `gateway_leafs` pair for `centralized_anycast`) also get the SVI (`vrf`, `ip address virtual`, jumbo MTU) and `router bgp / vrf / network` for the VLAN prefix. The `network` statement is under that VRF, beside the `vlan` block, and the SVI is in the same VRF. A non-gateway VTEP gets the VLAN name, the VXLAN VNI, and the BGP VLAN block only. The VRF name and the SVI description come from the previous gateway. If discovery does not find the VLAN name, that description, or one agreed VRF, the deploy run asks for it. The VRF itself is not created (`cvp_build_borderleaf_config` defaults to `false`); when a leaf lacks the VRF's L3 VNI, the report's action items say to create it there first. BUM is head-end replication, already on the VTEPs. Do not set `mcast_group`.
 
 ---
 

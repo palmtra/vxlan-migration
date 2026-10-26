@@ -17,7 +17,13 @@ _PLUGINS_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 if _PLUGINS_DIR not in sys.path:
     sys.path.insert(0, _PLUGINS_DIR)
 
-from vlan_lib.placement import bgp_vlan_evpn, host_vtep_bgp, virtual_gateway_address  # noqa: E402
+from vlan_lib.placement import (  # noqa: E402
+    bgp_vlan_evpn,
+    host_vtep_bgp,
+    virtual_gateway_address,
+    vlan_config_hosts,
+    vlan_gateway_hosts,
+)
 from vlan_lib.avd_services import (  # noqa: E402
     avd_leaf_pairs,
     avd_service_entries,
@@ -61,7 +67,6 @@ from vlan_lib import (  # noqa: E402,F401
     collect_command_errors,
     parse_cdp_neighbors,
     parse_lldp_neighbors,
-    parse_ospf_context,
     parse_port_channel_members,
     parse_prefix_lists,
     parse_route_maps,
@@ -150,12 +155,13 @@ class FilterModule(object):
             "bgp_vlan_evpn": bgp_vlan_evpn,
             "host_vtep_bgp": host_vtep_bgp,
             "virtual_gateway_address": virtual_gateway_address,
+            "vlan_config_hosts": vlan_config_hosts,
+            "vlan_gateway_hosts": vlan_gateway_hosts,
             "merge_discovered_labels": merge_discovered_labels,
             "union_vlan_discovery_hosts": union_vlan_discovery_hosts,
             "collect_command_errors": collect_command_errors,
             "parse_cdp_neighbors": parse_cdp_neighbors,
             "parse_lldp_neighbors": parse_lldp_neighbors,
-            "parse_ospf_context": parse_ospf_context,
             "parse_port_channel_members": parse_port_channel_members,
             "parse_prefix_lists": parse_prefix_lists,
             "parse_route_maps": parse_route_maps,

@@ -1,4 +1,0 @@
-!Command: show running-config interface Vlan100
-!Running configuration last done at: Wed Oct 14 10:01:02 2026
-
-version 9.3(8) Bios:version 05.45

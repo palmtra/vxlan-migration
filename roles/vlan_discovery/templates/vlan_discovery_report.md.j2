@@ -28,7 +28,7 @@
 | VRF | {{ gw.vrf or report.vrf | default('default') }} |
 | Migration type | **{{ report.migration_type | upper }}** - {{ cell(report.migration_reason) }} |
 {% if report.migration_type == 'l3' %}
-| Gateway mode | {{ gw.mode if gw.mode else '**not set** (distributed_anycast or centralized_anycast)' }}{% if placement.gateway_leafs | default([]) | length > 0 %}; gateway leaves {{ placement.gateway_leafs | map(attribute='hostname') | join(', ') }}{% endif %} |
+| Gateway mode | {{ gw.mode or '**invalid** (' ~ gw.invalid_mode | default('') ~ ')' }}{% if gw.mode_defaulted | default(false) %} (default: SVI on every participating leaf; set gateway.mode: centralized_anycast for a leaf pair){% endif %}{% if placement.gateway_leafs | default([]) | length > 0 %}; gateway leaves {{ placement.gateway_leafs | map(attribute='hostname') | join(', ') }}{% endif %} |
 {% endif %}
 | VLAN present on | {{ report.switches_vlan_defined | default([]) | length }} switches |
 | VNI targets (VTEPs) | {{ short_list(placement.participating_leafs | default([]) | map(attribute='hostname') | list) or 'none' }} |
@@ -111,7 +111,7 @@ Fabric-legacy interconnects for this VLAN: {% for i in l2a.interconnects %}{{ i.
 {% if svi.ipv6_addresses | length > 0 %}
 - IPv6: {{ svi.ipv6_addresses | join(', ') }}
 {% endif %}
-{% for key, label in [('ospf', 'OSPF'), ('multicast', 'Multicast routing (PIM/IGMP)'), ('nat', 'NAT'), ('urpf', 'uRPF')] %}
+{% for key, label in [('multicast', 'Multicast routing (PIM/IGMP)'), ('nat', 'NAT'), ('urpf', 'uRPF')] %}
 {% if svi[key] | length > 0 %}
 - {{ label }}: {{ svi[key] | join('; ') }}
 {% endif %}
@@ -126,8 +126,8 @@ Fabric-legacy interconnects for this VLAN: {% for i in l2a.interconnects %}{{ i.
 Inactive SVIs (remove with the VLAN): {% for svi in gw.inactive_svis %}{{ svi.hostname }}{{ ', ' if not loop.last }}{% endfor %}.
 
 {% endif %}
-{% set assoc = model.routing.associated | default({}) %}
-{% set route_rows = (assoc.static_routes | default([])) + (assoc.bgp_networks | default([])) + (assoc.bgp_neighbors | default([])) + (assoc.ospf | default([])) %}
+{% set assoc = report.routing_detail | default({}) %}
+{% set route_rows = (assoc.static_routes | default([])) + (assoc.bgp_networks | default([])) + (assoc.bgp_neighbors | default([])) %}
 
 ## Routing objects tied to the VLAN
 
@@ -153,9 +153,6 @@ None found{% if report.migration_type == 'l2' %} (expected for an external gatew
 {% endfor %}
 {% for item in assoc.bgp_fabric | default([]) %}
 | {{ item.hostname }} | {{ item.vrf }} | bgp fabric view | {{ item.prefix }}{% if not item.present %} **not in the fabric's BGP table**{% else %} {{ item.best.kind }} from {{ item.best.from }}{% if item.best.as_path %} (AS path {{ item.best.as_path }}){% endif %}, best{% for path in item.paths if not path.best %}; also {{ path.kind }} from {{ path.from }}{% endfor %}{% endif %} | border leaf{% if item.bgp_as %} AS {{ item.bgp_as }}{% endif %}, live `show ip bgp`, exact prefix only |
-{% endfor %}
-{% for item in assoc.ospf | default([]) %}
-| {{ item.hostname }} | {{ item.vrf }} | ospf{% if item.process %} {{ item.process }}{% endif %} | {{ cell(item.detail) }} | {{ cell(item.reason) }} |
 {% endfor %}
 {% endif %}
 

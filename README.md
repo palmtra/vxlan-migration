@@ -10,6 +10,7 @@ The fabric is all Arista, built with AVD; BUM is head-end replication (EVPN floo
 - **NetBox export** is a standalone utility, not part of the migration run.
 - **Safety:** CVP generate-only by default; deploy goes through CloudVision, not a direct device push; auto-rollback off; secrets tasks use `no_log`.
 - **CI:** `.github/workflows/ci.yml` runs yamllint, unit tests, an end-to-end discovery run against canned CLI output (`make mock`), Molecule (`vlan_db`/`service_db`), syntax-check, ansible-lint (`make ci`).
+- **Test code and synthetic data live on the `test` branch, never on `main`.** CI pulls them from `origin/test`; locally run `make tests-fetch` first. `tests/` and `molecule/` are gitignored here, and CI fails a PR that tracks them.
 
 ## Documentation
 
@@ -78,7 +79,7 @@ ansible-playbook -i inventory/hosts.yml playbooks/core/discover_vlan.yml \
 
 Reports are written under `reports/<dc>/<vlan_name>/` (auto-created, gitignored). `target_vlan_ids` accepts ranges (`300-310,400`).
 The Markdown report opens with a summary and **Action items**; `<vlan>_endpoints_<ts>.csv` is the endpoint test baseline.
-Copy the generated snippet into `vars/vlans/<dc>/{vid}_{slug}.yml` and fill in `vni`, `vrf`, and `target_switches`.
+Copy the generated snippet into `vars/vlans/<dc>/{vid}_{slug}.yml` and confirm `evpn.l2.vni` and `routing.vrf`. L3 `gateway.mode` defaults to `distributed_anycast` (SVI on every participating leaf); set `centralized_anycast` and two `placement.gateway_leafs` for a leaf pair.
 
 More discovery examples: [docs/examples/discover-vlan.md](docs/examples/discover-vlan.md)
 
@@ -201,8 +202,8 @@ id: 100
 name: legacy_web
 action: migrate
 service_type: l3          # l2 | l3 - see docs/VXLAN_SERVICE_TYPES.md
-gateway_leafs: []         # L3 only; name the fabric gateway leaves, do not infer them
-gateway_mode: ""          # L3 only; distributed_anycast | centralized_anycast
+gateway_mode: distributed_anycast   # L3 only; default. centralized_anycast needs two gateway_leafs
+gateway_leafs: []         # L3 centralized_anycast: the leaf pair hosting the gateway (never inferred)
 vni: 50100
 vrf: default
 gateway: 10.10.100.1     # optional; filled from SVI VR / HSRP by discovery

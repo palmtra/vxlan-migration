@@ -1,3 +1,0 @@
-interface Port-Channel1
-   description uplink to nxos-mls-01
-   switchport mode trunk

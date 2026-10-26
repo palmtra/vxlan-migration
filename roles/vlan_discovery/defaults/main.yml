@@ -13,6 +13,10 @@ discovery_write_json: true
 # YAML is the deployable model. JSON is the LLM analysis payload. Markdown is the short report.
 discovery_write_yaml: true
 discovery_write_vlan_db_snippet: true
+# The model YAML and VLAN DB snippet carry condensed routing (advertised
+# prefix / VRF / ASN, statics, BGP peers on the VLAN). true adds the full
+# per-switch BGP and static detail the reports show.
+discovery_model_routing_detail: false
 
 # Collect static routes + BGP as first-class L3 discovery (EOS/NXOS/IOS).
 # Visibility only - never prune actions (especially default VRF / shared VRF).

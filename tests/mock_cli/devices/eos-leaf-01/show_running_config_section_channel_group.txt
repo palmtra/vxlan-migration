@@ -1,2 +1,0 @@
-interface Ethernet49
-   channel-group 1 mode active

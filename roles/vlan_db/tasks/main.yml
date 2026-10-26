@@ -191,10 +191,24 @@
     _workflow_discovery_hosts: >-
       {{ hostvars['localhost']['_target_vlan_record'].discovery_switches
       | default(hostvars['localhost']['_target_vlan_record'].target_switches) }}
-    _workflow_cvp_target_switches: "{{ hostvars['localhost']['_target_vlan_record'].target_switches }}"
+    _workflow_cvp_target_switches: "{{ hostvars['localhost']['_target_vlan_record'] | vlan_config_hosts }}"
   when:
     - hostvars['localhost']['_target_vlan_record'] | default({}) | length > 0
     - not (hostvars['localhost']['_discovery_probe_mode'] | default(false) | bool)
+  delegate_facts: true
+
+# The border pair holds the fabric BGP view (and external gateways attach
+# there), so it is discovered even when no VLAN record names it. An empty
+# host list means every switch is scanned already.
+- name: Always discover the data center's border leaves
+  ansible.builtin.set_fact:
+    _workflow_discovery_hosts: "{{ hostvars['localhost']['_workflow_discovery_hosts'] | union(_border_leaves) }}"
+  vars:
+    _border_leaves: >-
+      {{ groups['all'] | map('extract', hostvars) | selectattr('border_leaf', 'defined') | selectattr('border_leaf')
+      | selectattr('data_center', 'defined') | selectattr('data_center', 'equalto', hostvars['localhost']['_vlan_db_data_center'])
+      | map(attribute='inventory_hostname') | list }}
+  when: hostvars['localhost']['_workflow_discovery_hosts'] | default([]) | length > 0
   delegate_facts: true
 
 - name: Assert VLAN DB bootstrap produced required localhost facts

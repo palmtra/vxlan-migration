@@ -1,5 +1,0 @@
-PING 10.30.0.10 (10.30.0.10) 72(100) bytes of data.
-80 bytes from 10.30.0.10: icmp_seq=1 ttl=64 time=0.4 ms
-
---- 10.30.0.10 ping statistics ---
-2 packets transmitted, 2 received, 0% packet loss, time 1ms

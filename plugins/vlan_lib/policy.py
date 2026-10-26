@@ -9,7 +9,7 @@ community, tag on a connected route) gives ``unknown`` instead of a guess.
 
 import re
 
-from vlan_lib.parsers import _dotted_mask_to_prefix_len, network_prefix
+from vlan_lib.parsers import network_prefix
 
 _PREFIX_ENTRY_RE = re.compile(
     r"^(?:seq\s+(?P<seq>\d+)\s+)?(?P<action>permit|deny)\s+(?P<prefix>\d+\.\d+\.\d+\.\d+/\d+)"
@@ -250,72 +250,6 @@ def evaluate_route_map(name, prefix, route_maps, prefix_lists, context=None):
     return {"verdict": "deny", "reason": "%s has no clause for %s (implicit deny)" % (name, prefix)}
 
 
-def parse_ospf_context(text):
-    """Parse ``router ospf`` blocks: networks, redistribution, passive interfaces.
-
-    NXOS ``redistribute direct`` is reported as source ``connected``.
-    """
-    processes = []
-    current = None
-    vrf_indent = None
-    base = None
-    for raw_line in str(text or "").splitlines():
-        if not raw_line.strip() or raw_line.strip().startswith("!"):
-            continue
-        indent = len(raw_line) - len(raw_line.lstrip())
-        line = raw_line.strip()
-        head = re.match(r"^router\s+ospf\s+(\S+)(?:\s+vrf\s+(\S+))?", line, re.I)
-        if head and indent == 0:
-            base = {"process": head.group(1), "vrf": head.group(2) or "default"}
-            current = dict(base, networks=[], redistribute=[], passive=[])
-            processes.append(current)
-            vrf_indent = None
-            continue
-        if indent == 0:
-            current = None
-            base = None
-            continue
-        if current is None:
-            continue
-        vrf = re.match(r"^vrf\s+(\S+)$", line, re.I)
-        if vrf:
-            current = dict(base, vrf=vrf.group(1), networks=[], redistribute=[], passive=[])
-            processes.append(current)
-            vrf_indent = indent
-            continue
-        if vrf_indent is not None and indent <= vrf_indent:
-            vrf_indent = None
-        net = re.match(
-            r"^network\s+(\d+\.\d+\.\d+\.\d+)(?:/(\d+)|\s+(\d+\.\d+\.\d+\.\d+))\s+area\s+(\S+)",
-            line,
-            re.I,
-        )
-        if net:
-            if net.group(2):
-                prefix = network_prefix("%s/%s" % (net.group(1), net.group(2)))
-            else:
-                wildcard = _ipv4_int(net.group(3))
-                mask = "%d.%d.%d.%d" % tuple(
-                    255 - int(part) for part in net.group(3).split(".")
-                ) if wildcard is not None else ""
-                plen = _dotted_mask_to_prefix_len(mask) if mask else None
-                prefix = network_prefix("%s/%s" % (net.group(1), plen)) if plen is not None else net.group(1)
-            current["networks"].append({"prefix": prefix, "area": net.group(4)})
-            continue
-        redist = re.match(r"^redistribute\s+(\S+)(?:.*?\broute-map\s+(\S+))?", line, re.I)
-        if redist:
-            source = redist.group(1).lower()
-            current["redistribute"].append(
-                {
-                    "source": "connected" if source == "direct" else source,
-                    "route_map": redist.group(2) or "",
-                }
-            )
-            continue
-        passive = re.match(r"^passive-interface\s+(\S+)", line, re.I)
-        if passive:
-            current["passive"].append(passive.group(1))
-    return processes
 
 
 _BGP_ENTRY_RE = re.compile(r"(?i)BGP routing table entry for\s+(\S+?)(?:,|\s|$)")

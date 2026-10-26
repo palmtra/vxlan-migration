@@ -1,4 +1,0 @@
-VLAN  Name                             Status    Ports
------ -------------------------------- --------- -------------------------------
-100   WEB_VXLAN                        active    Cpu, Et3, Po1, PEt10, PPo20,
-                                                 Vx1
