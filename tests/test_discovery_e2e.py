@@ -259,10 +259,18 @@ class DiscoveryEndToEndTests(unittest.TestCase):
         )
         self.assertEqual(
             [leaf["hostname"] for leaf in placement["prune_eligible_leafs"]],
-            ["nxos-mls-lis-01", "eos-leaf-lis-02"],
+            ["nxos-mls-lis-01", "nxos-mls-lis-02", "eos-leaf-lis-02"],
         )
-        roles = {item["hostname"]: item["role"] for item in self.report["placement_analysis"]["switches"]}
-        self.assertEqual(roles["nxos-mls-lis-02"], "review")
+        # The silent trunk to acc-sw-12 (outside the inventory, no MACs) no longer
+        # holds nxos-mls-lis-02 back: it is pruned with a warning, and its teardown
+        # still waits for the gateway to move.
+        mls2 = next(s for s in self.report["placement_analysis"]["switches"] if s["hostname"] == "nxos-mls-lis-02")
+        self.assertEqual(mls2["role"], "prune_eligible")
+        self.assertEqual(mls2["idle_ports"], ["Po20 (acc-sw-12 Ethernet1)"])
+        plan = next(p for p in self.report["prune_plans"] if p["hostname"] == "nxos-mls-lis-02")
+        self.assertEqual(plan["status"], "blocked_until_gateway_moved")
+        self.assertEqual(plan["warnings"], ["No MACs on VLAN 100, pruned anyway: Po20 (acc-sw-12 Ethernet1)."])
+        self.assertIn("interface Po20\n  switchport trunk allowed vlan remove 100\n", plan["execution"]["full_cli"])
 
     def test_lldp_overrides_missing_descriptions(self):
         leaf1 = next(d for d in self.report["devices"] if d["hostname"] == "eos-leaf-lis-01")
@@ -338,7 +346,11 @@ class DiscoveryEndToEndTests(unittest.TestCase):
         self.assertEqual(self.report["not_discovered"], ["nxos-mls-lis-99"])
         items = " | ".join(self.report["action_items"])
         self.assertIn("Fix reachability to nxos-mls-lis-99 and re-run discovery: it was not discovered", items)
-        self.assertIn("Review nxos-mls-lis-02 before migrating", items)
+        self.assertIn(
+            "Confirm nothing needs VLAN 100 on nxos-mls-lis-02 before pruning: these ports face endpoints or other "
+            "devices but carry no MACs on the VLAN, and the prune removes it from them: Po20 (acc-sw-12 Ethernet1).",
+            items,
+        )
         self.assertNotIn("gateway_mode", items)
         self.assertIn("Rebuild on the fabric SVI by hand, the VLAN configlet does not carry them: DHCP relay 10.99.0.10", items)
         self.assertIn("Recreate in the fabric before the gateway moves, the VLAN configlet does not carry them: "

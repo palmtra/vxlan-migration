@@ -47,11 +47,17 @@ def _att(interface, role, *peers):
 
 
 def _per_vlan(attachments, **kwargs):
+    """Per-VLAN discovery for one switch. Each compute port has one MAC learned (active)."""
+    compute = [a["interface"] for a in attachments if a["role"] == "compute"]
     record = {
         "vlan_id": 50,
         "vlan_present": True,
         "port_attachments": attachments,
-        "compute_ports": [a["interface"] for a in attachments if a["role"] == "compute"],
+        "compute_ports": compute,
+        "mac_entries": [
+            {"mac": "00:50:56:00:01:%02x" % index, "interface": port, "vlan": 50, "attachment_role": "compute"}
+            for index, port in enumerate(compute, 1)
+        ],
         "switch_uplink_ports": [a["interface"] for a in attachments if a["role"] == "switch_uplink"],
         "trunk_ports": [a["interface"] for a in attachments if a["role"] == "switch_uplink"],
     }

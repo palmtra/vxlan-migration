@@ -42,7 +42,9 @@ expect "$REPORT" "nxos-mls-02: \`show mac address-table dynamic vlan 300\` faile
 expect "$REPORT" "nxos-mls-01 Ethernet1/20 faces a firewall/router (lis-asa01 TenGigabitEthernet0/8)"
 expect "$REPORT" "| eos-leaf-01 | VTEP | participating | Ethernet3, Ethernet4 [2 MAC]"
 expect "$REPORT" "endpoint-facing interfaces: Ethernet3, Ethernet4; local MAC"
+# nxos-mls-02's MAC-table query failed, so its silent trunk is not provably idle: kept for review.
 expect "$REPORT" "| nxos-mls-02 | legacy | review | port-channel20 (switch)"
+expect "$REPORT" "MAC table not read, so idle ports cannot be told apart: kept as before"
 expect "$REPORT" "1 active IP(s) are in ARP but not in any MAC table"
 expect "$REPORT" "| 1 | nxos-mls-02 | port-channel30 toward acc-sw-01 | blocked_until_vni_live"
 expect "$REPORT" "| 2 | acc-sw-01 | Ethernet48 toward nxos-mls-02 | blocked_until_vni_live"

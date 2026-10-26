@@ -25,7 +25,16 @@ from vlan_lib.placement import build_vlan_placement, vlan_config_hosts, vlan_gat
 from vlan_lib.reports import build_vlan_discovery_reports  # noqa: E402
 
 
-def _device(hostname, **kwargs):
+def _compute_macs(ports):
+    """One MAC learned on each compute port: the endpoint is active."""
+    return [
+        {"mac": "00:50:56:00:00:%02x" % index, "interface": port, "attachment_role": "compute", "port_role": "compute"}
+        for index, port in enumerate(ports, 1)
+    ]
+
+
+def _device(hostname, idle=False, **kwargs):
+    """A discovered switch. Compute ports carry a MAC unless *idle*."""
     device = {
         "hostname": hostname,
         "os_family": "eos",
@@ -45,6 +54,8 @@ def _device(hostname, **kwargs):
         "bgp_as": "",
     }
     device.update(kwargs)
+    if not idle and device["compute_ports"] and "endpoint_mac_entries" not in kwargs:
+        device["endpoint_mac_entries"] = _compute_macs(device["compute_ports"])
     return device
 
 
@@ -128,7 +139,12 @@ class PlacementTests(unittest.TestCase):
                     switch_uplink_ports=["Po10"],
                     trunk_ports=["Po10"],
                 ),
-                _device("leaf01", access_ports=["Ethernet1"], svi_present=True),
+                _device(
+                    "leaf01",
+                    access_ports=["Ethernet1"],
+                    svi_present=True,
+                    endpoint_mac_entries=_compute_macs(["Ethernet1"]),
+                ),
             ],
         )
         self.assertEqual(placement["prune_order"], ["mls01", "agg02"])
@@ -204,7 +220,9 @@ class PlacementTests(unittest.TestCase):
             "MACs behind a switch outside discovery scope: port-channel20 (acc-sw-12 Gi1/0/48)",
             mls02["evidence"],
         )
-        self.assertEqual(placement["by_hostname"]["mls03"]["role"], "review")
+        mls03 = placement["by_hostname"]["mls03"]
+        self.assertEqual(mls03["role"], "prune_eligible")
+        self.assertEqual(mls03["idle_ports"], ["port-channel20 (acc-sw-12 Gi1/0/48)"])
 
     def test_protected_vlan_is_not_prune_eligible(self):
         placement = build_vlan_placement(
@@ -214,26 +232,39 @@ class PlacementTests(unittest.TestCase):
         self.assertEqual(placement["prune_order"], [])
         self.assertEqual(placement["by_hostname"]["agg01"]["role"], "protected")
 
-    def test_fabric_interconnect_keeps_the_vlan_on_its_leaf(self):
-        placement = build_vlan_placement(
-            {"id": 1, "name": "fi", "service_type": "l2"},
-            [
-                _device(
-                    "tor01",
-                    port_attachments=[
-                        {
-                            "interface": "Ethernet10",
-                            "role": "fabric_interconnect",
-                            "description": "fabric interconnect A",
-                        }
-                    ],
-                )
-            ],
-        )
-        self.assertEqual(placement["by_hostname"]["tor01"]["role"], "participating")
-        self.assertIn(
-            "UCS fabric interconnect: Ethernet10 (fabric interconnect A)",
-            placement["by_hostname"]["tor01"]["evidence"],
+    def _fi_switch(self, macs):
+        fi = {"interface": "Ethernet10", "role": "fabric_interconnect", "description": "fabric interconnect A"}
+        entries = [{"mac": "00:25:b5:00:00:01", "interface": "Ethernet10", "attachment_role": "fabric_interconnect"}]
+        return _device("tor01", port_attachments=[fi], endpoint_mac_entries=entries if macs else [])
+
+    def test_fabric_interconnect_with_macs_keeps_the_vlan_on_its_leaf(self):
+        tor01 = build_vlan_placement({"id": 1, "name": "fi", "service_type": "l2"}, [self._fi_switch(True)])["by_hostname"]["tor01"]
+        self.assertEqual(tor01["role"], "participating")
+        self.assertIn("UCS fabric interconnect: Ethernet10 (fabric interconnect A)", tor01["evidence"])
+
+    def test_idle_fabric_interconnect_is_pruned_with_a_warning(self):
+        tor01 = build_vlan_placement({"id": 1, "name": "fi", "service_type": "l2"}, [self._fi_switch(False)])["by_hostname"]["tor01"]
+        self.assertEqual(tor01["role"], "prune_eligible")
+        self.assertEqual(tor01["idle_ports"], ["Ethernet10 (fabric interconnect A)"])
+        self.assertIn("no MACs on the VLAN: UCS fabric interconnect: Ethernet10 (fabric interconnect A)", tor01["nonqualifying"])
+
+    def test_failed_mac_table_never_proves_a_port_idle(self):
+        vlan = {"id": 3771, "name": "lb", "service_type": "l2"}
+        failed = [{"command": "show mac address-table dynamic vlan 3771", "error": "command timeout"}]
+        leaf = _device("sw13", idle=True, compute_ports=["Ethernet7"], errors=failed)
+        record = build_vlan_placement(vlan, [leaf])["by_hostname"]["sw13"]
+        self.assertEqual(record["role"], "participating")
+        self.assertIn("MAC table not read, so idle ports cannot be told apart: kept as before", record["nonqualifying"])
+
+    def test_keep_idle_endpoint_ports_restores_the_old_rule(self):
+        vlan = {"id": 1, "name": "fi", "service_type": "l2"}
+        tor01 = build_vlan_placement(vlan, [self._fi_switch(False)], keep_idle_endpoint_ports=True)["by_hostname"]["tor01"]
+        self.assertEqual(tor01["role"], "participating")
+        idle_lb = _device("lb-leaf", idle=True, compute_ports=["Ethernet7"])
+        self.assertEqual(build_vlan_placement(vlan, [idle_lb])["by_hostname"]["lb-leaf"]["role"], "prune_eligible")
+        self.assertEqual(
+            build_vlan_placement(vlan, [idle_lb], keep_idle_endpoint_ports=True)["by_hostname"]["lb-leaf"]["role"],
+            "participating",
         )
 
     def test_prune_eligible_switch_keeps_prune_actions(self):
@@ -286,6 +317,46 @@ class PlacementTests(unittest.TestCase):
         self.assertIn("trunk_remove_vlans", ops)
         self.assertIn("no_vlan", ops)
         self.assertNotIn("deployment_model", report["discovery_export"])
+
+    def _lb_leaf_report(self, keep_idle=False):
+        """A leaf whose only reason to keep the VLAN is an LB-facing trunk with no MACs (VLAN 3771 case)."""
+        lb = {"interface": "Port-Channel150", "role": "network_service", "neighbor": "lb01 eth1", "description": ""}
+        per_vlan = {
+            "vlan_id": 3771,
+            "os_family": "eos",
+            "vlan_present": True,
+            "switch_uplink_ports": ["Port-Channel40"],
+            "trunk_ports": ["Port-Channel40", "Port-Channel150"],
+            "service_ports": ["Port-Channel150"],
+            "port_attachments": [lb],
+            "mac_entries": [],
+            "svi_details": {},
+        }
+        hostvars = {"sw13": {"_vlan_discovery": {"hostname": "sw13", "os_family": "eos", "per_vlan": [per_vlan], "prune_plan": {}}}}
+        return build_vlan_discovery_reports(
+            [{"id": 3771, "name": "sumt_lbp2p_vlan", "service_type": "l2"}],
+            ["sw13"],
+            hostvars,
+            placement_options={"keep_idle_endpoint_ports": keep_idle},
+        )[0]
+
+    def test_idle_lb_trunk_is_pruned_with_a_warning(self):
+        report = self._lb_leaf_report()
+        plan = next(p for p in report["prune_plans"] if p["hostname"] == "sw13")
+        self.assertEqual(plan["placement_role"], "prune_eligible")
+        self.assertEqual(plan["status"], "candidate")
+        self.assertEqual(plan["warnings"], ["No MACs on VLAN 3771, pruned anyway: Port-Channel150 (lb01 eth1)."])
+        trunks = [a["interface"] for a in plan["actions"] if a["op"] == "trunk_remove_vlans"]
+        self.assertEqual(trunks, ["Port-Channel40", "Port-Channel150"])
+        self.assertLess(
+            plan["execution"]["full_cli"].index("Port-Channel150"), plan["execution"]["full_cli"].index("no vlan 3771")
+        )
+        self.assertTrue(any(item.startswith("Confirm nothing needs VLAN 3771 on sw13") for item in report["action_items"]))
+
+    def test_idle_lb_trunk_is_kept_with_keep_idle_endpoint_ports(self):
+        report = self._lb_leaf_report(keep_idle=True)
+        roles = {s["hostname"]: s["role"] for s in report["placement_analysis"]["switches"]}
+        self.assertEqual(roles["sw13"], "participating")
 
 
 class GatewayHostTests(unittest.TestCase):
