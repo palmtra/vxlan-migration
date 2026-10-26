@@ -24,7 +24,7 @@ sys.path.insert(0, os.path.join(_REPO, "plugins"))
 
 from vlan_lib.discovery import extract_vlan_targeted_discovery  # noqa: E402
 from vlan_lib.placement import flatten_deployment_model  # noqa: E402
-from vlan_lib.reports import build_action_items, build_vlan_discovery_reports  # noqa: E402
+from vlan_lib.reports import build_action_items, build_vlan_discovery_reports, fabric_readiness  # noqa: E402
 
 
 def _report(svi_text):
@@ -63,6 +63,49 @@ class GatewayFabricTests(unittest.TestCase):
         self.assertTrue(
             any("Nothing to do: legacy SVI MTU 9216 is above the EOS maximum" in item for item in build_action_items(report))
         )
+
+
+class FabricReadinessModeTests(unittest.TestCase):
+    """The gateway VRF's L3 VNI is only required where the SVI goes."""
+
+    def _report(self, mode):
+        def leaf(hostname, l3_vni):
+            return {
+                "hostname": hostname,
+                "os_family": "eos",
+                "expected_vtep_source": "Loopback1",
+                "vxlan_interface": {
+                    "present": True,
+                    "source_interface": "Loopback1",
+                    "replication_mode": "headend",
+                    "flood_list_source": "EVPN",
+                    "vrf_vni": {"v0000001b": l3_vni} if l3_vni else {},
+                },
+            }
+
+        return {
+            "migration_type": "l3",
+            "gateway_assessment": {"vrf": "v0000001b", "mode": mode},
+            "deployment_model": {
+                "placement": {
+                    "participating_leafs": [{"hostname": "sw11"}, {"hostname": "sw13"}],
+                    "gateway_leafs": [{"hostname": "sw13"}],
+                }
+            },
+            "devices": [leaf("sw11", None), leaf("sw13", None)],
+        }
+
+    def test_distributed_needs_the_vrf_on_every_participating_leaf(self):
+        issues = fabric_readiness(self._report("distributed_anycast"))["issues"]
+        self.assertEqual(len(issues), 1)
+        self.assertIn("Create VRF v0000001b on sw13, sw11 first: neither leaf has", issues[0])
+
+    def test_centralized_needs_the_vrf_on_the_gateway_leafs_only(self):
+        readiness = fabric_readiness(self._report("centralized_anycast"))
+        self.assertEqual(len(readiness["issues"]), 1)
+        self.assertIn("Create VRF v0000001b on sw13 first: the leaf does not have", readiness["issues"][0])
+        rows = {row["hostname"]: row["svi_host"] for row in readiness["checked"]}
+        self.assertEqual(rows, {"sw11": False, "sw13": True})
 
 
 if __name__ == "__main__":

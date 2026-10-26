@@ -121,6 +121,7 @@ CFG="$REC/reports/cvp_configlets/avd/configs/eos-leaf-01.cfg"
 expect "$CFG" "interface Vlan300"
 expect "$CFG" "ip address virtual 10.30.0.1/24"
 expect "$CFG" "vxlan vlan 300 vni 20000"
+if [ "$(grep -c '^vlan 300$' "$CFG")" -ne 1 ]; then echo "FAIL: $CFG defines vlan 300 more than once" >&2; fail=1; fi
 
 if [ "$fail" -ne 0 ]; then
   echo "--- report ---"; cat "$REPORT"; echo "--- endpoints ---"; cat "$ENDPOINTS"
