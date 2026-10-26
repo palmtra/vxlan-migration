@@ -1,9 +1,12 @@
 # Runtime Python deps for control node / EE (pin floors + soft upper bounds).
+# ansible-core 2.18 runs on Python 3.11-3.13 (not 3.14). arista.cvp caps it below 2.19.
+ansible-core>=2.18.0,<2.19.0
 cvprac>=2.2.0,<4.0.0
 pynetbox>=7.0.0,<8.0.0
 
 # Arista AVD Python dependencies
-pyavd>=4.0.0,<6.0.0
+# Must equal the arista.avd version in collections/requirements.yml.
+pyavd==6.4.0
 jsonschema>=4.0.0,<5.0.0
 deepmerge>=1.0.0,<3.0.0
 netaddr>=0.8.0,<2.0.0
