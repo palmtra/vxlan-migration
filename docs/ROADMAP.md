@@ -71,7 +71,7 @@ Open features and planned work. Completed items are kept for context.
 - [x] VNI proposal from per-DC internal/customer ranges (ranges still placeholders)
 - [x] Legacy SVI MTU carried (capped at 9214); secondary subnets flagged, not migrated; DHCP relay not migrated
 - [x] Verify pings every baseline endpoint from a gateway leaf
-- [x] AVD services repo (palmtra/avd-vxlan-repo): services-only, per-DC tenants, rendered with pyavd, CVaaS Static Configuration Studio manifest with change control left pending approval
+- [x] AVD services repo (palmtra/avd-vxlan-repo): services-only, per-DC tenants, rendered with pyavd, CVaaS Static Configuration Studio manifest with change control left pending approval (parked, see below)
 - [x] `export_avd_services.yml`: VLAN record to AVD SVI / l2vlan (distributed and centralized anycast, external gateway), router-id/ASN drift check against the AVD repo
 
 ### Pending decisions (see the open-questions doc)
@@ -86,15 +86,18 @@ Open features and planned work. Completed items are kept for context.
 - [x] Routing discovery matches the VLAN prefix or a more-specific only (no covering /16, no next hop outside the subnet)
 - [x] Border-leaf BGP view of each legacy subnet (same AS as the MLS): advertised over iBGP from the MLS, by a fabric leaf, or not at all
 - [ ] NetBox as the VNI allocator: next free per DC and customer_type
-- [ ] CVaaS: fabric config in Static Configuration Studio? `hostname:` tag query, or serial numbers per leaf
-- [ ] Open the AVD repo PR from the migration automatically (today: export + manual commit/PR)
-- [ ] Retire the legacy `cv_configlet_v3` deploy path once the AVD repo path is proven
+- [ ] One config generator for production: Jinja (`roles/cvp_deploy`) or AVD (`roles/avd_vxlan_config`). Both deploy through `cv_configlet_v3`; retire the one not chosen
 - [ ] Sample outputs from the N7K and an EOS leaf (B9) for parser fixtures
 - [ ] Teams / email notification on change control (J4)
 
 ### Parked / hold (do not implement until there is a use-case)
 
 - [ ] Default-VRF static route + BGP neighbor **prune candidates** (shown as L3 review only; not actions)
+- [ ] AVD services repo (palmtra/avd-vxlan-repo): parked until the migration is mature. Production migrations use this repo's deploy (`workflow_deploy.yml`, `cv_configlet_v3`). When it is picked up again:
+  - [ ] Fill it from the committed `vars/vlans/` records with `export_avd_services.yml`
+  - [ ] Replace each leaf's per-VLAN configlets (`vxlan_vlan<id>_<leaf>`) with its `VXLAN-MIGRATION_<leaf>` configlet in one change control
+  - [ ] CVaaS: fabric config in Static Configuration Studio? `hostname:` tag query, or serial numbers per leaf
+  - [ ] Open the AVD repo PR from the migration automatically (today: export + manual commit/PR)
 
 Discovery never deletes. Prune apply is `playbooks/core/prune_vlan.yml`: dry-run unless `prune_apply=true` and `prune_approval=approve`.
 

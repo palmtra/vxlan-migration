@@ -116,24 +116,20 @@ Output: `reports/cvp_configlets/` (Jinja) or `reports/cvp_configlets/avd/` (AVD 
 
 More generate-only options: [docs/examples/generate-config-without-cvp-push.md](docs/examples/generate-config-without-cvp-push.md)
 
-**AVD services repo (target path):** the migration's services live in
-[palmtra/avd-vxlan-repo](https://github.com/palmtra/avd-vxlan-repo), one SVI or
-l2vlan per migrated VLAN, rendered by AVD into one configlet per leaf and sent to
-CVaaS as a change control left pending approval. Write the VLAN into a clone of
-that repo, then build and open a PR there:
+**Production path:** VLANs are migrated with this repo's deploy
+(`playbooks/core/workflow_deploy.yml`, steps 2 and 3). It writes one CVP configlet
+per VLAN per leaf (`vxlan_vlan<id>_<leaf>`). The VLAN record under
+`vars/vlans/<dc>/` is the record of what was migrated, so commit one for every
+migration.
 
-```bash
-ansible-playbook -i inventory/hosts.yml playbooks/core/export_avd_services.yml \
-  -e manual_data_center=lisle \
-  -e manual_vlan_id=810 \
-  -e avd_repo_dir=../avd-vxlan-repo
-cd ../avd-vxlan-repo && python -m avd_services build   # commit services + intended/, open PR
-```
-
-The export stops without writing when the VLAN cannot be placed. That happens
-when the VLAN has no VNI, when a leaf is not in any leaf pair, when there is no
-anycast address, or when the router-id or ASN found on a switch differs from the
-AVD repo's fabric facts.
+**AVD services repo (parked):**
+[palmtra/avd-vxlan-repo](https://github.com/palmtra/avd-vxlan-repo) holds the
+migration's services as AVD tenants, rendered into one configlet per leaf. It is
+parked until the migration is mature and is not used for production changes.
+`playbooks/core/export_avd_services.yml` still writes VLAN records into a clone of
+that repo, so it can be filled from `vars/vlans/` when it is picked up again.
+Moving to it means replacing each leaf's per-VLAN configlets with its single
+`VXLAN-MIGRATION_<leaf>` configlet in the same change control.
 
 ### 3. Deploy (push to CVP)
 
