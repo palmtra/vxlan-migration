@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""VLAN records to NetBox route targets (roles/netbox_export)."""
+"""VLAN records to NetBox route targets, and NetBox request errors (roles/netbox_export)."""
 
 import os
 import sys
@@ -23,7 +23,7 @@ sys.path.insert(0, os.path.join(_REPO, "plugins"))
 
 import yaml  # noqa: E402
 
-from vlan_lib.netbox import ROUTE_TARGET_DESCRIPTION, netbox_route_target  # noqa: E402
+from vlan_lib.netbox import ROUTE_TARGET_DESCRIPTION, netbox_request_error, netbox_route_target  # noqa: E402
 
 RECORD = {
     "id": 1521,
@@ -100,6 +100,44 @@ class RouteTarget(unittest.TestCase):
     def test_non_numeric_tenant_is_refused(self):
         rt = netbox_route_target(record(ownership={"tenant": "Rewards Trust", "owner": "Rewards Trust"}))
         self.assertEqual(rt["problems"], ["VLAN 1521 tenant 'Rewards Trust' is not a numeric tenant id"])
+
+
+class RequestError(unittest.TestCase):
+    def test_expected_status_is_not_an_error(self):
+        self.assertEqual(netbox_request_error({"status": 200}, 200), "")
+        self.assertEqual(netbox_request_error({"status": 201}), "")
+
+    def test_skipped_request_is_not_an_error(self):
+        self.assertEqual(netbox_request_error({"skipped": True}, 200), "")
+
+    def test_untrusted_certificate(self):
+        msg = "Request failed: <urlopen error [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed>"
+        reason = netbox_request_error({"status": -1, "msg": msg}, 200)
+        self.assertIn("TLS certificate is not trusted", reason)
+        self.assertIn("netbox_validate_certs: false", reason)
+
+    def test_refused_token(self):
+        result = {"status": 403, "msg": "HTTP Error 403: Forbidden", "json": {"detail": "Invalid token"}}
+        self.assertEqual(netbox_request_error(result, 200), "HTTP 403: Invalid token. Check netbox_token and its permissions")
+
+    def test_wrong_url(self):
+        reason = netbox_request_error({"status": 404, "msg": "HTTP Error 404: Not Found"}, 200)
+        self.assertTrue(reason.startswith("HTTP 404 (HTTP Error 404: Not Found)"))
+        self.assertIn("without /api", reason)
+
+    def test_validation_errors_are_shown(self):
+        result = {"status": 400, "msg": "HTTP Error 400", "json": {"name": ["route target with this name already exists."]}}
+        self.assertEqual(
+            netbox_request_error(result, 201),
+            'HTTP 400: {"name": ["route target with this name already exists."]}',
+        )
+
+    def test_no_answer(self):
+        reason = netbox_request_error({"status": -1, "msg": "Request failed: <urlopen error [Errno 111] Connection refused>"}, 200)
+        self.assertEqual(reason, "no HTTP answer from NetBox: Request failed: <urlopen error [Errno 111] Connection refused>")
+
+    def test_unexpected_success_code_is_an_error(self):
+        self.assertEqual(netbox_request_error({"status": 200, "msg": "OK"}, 201), "HTTP 200 (OK)")
 
 
 if __name__ == "__main__":
