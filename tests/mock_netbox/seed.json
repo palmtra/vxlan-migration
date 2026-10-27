@@ -1,0 +1,15 @@
+{
+  "tenancy/tenants": [
+    {"id": 11, "name": "0000964", "slug": "0000964"},
+    {"id": 12, "name": "0000001", "slug": "0000001"}
+  ],
+  "users/owners": [
+    {"id": 21, "name": "Rewards Trust"},
+    {"id": 22, "name": "FNTS"}
+  ],
+  "ipam/route-targets": [
+    {"id": 31, "name": "22010:1521", "tenant": null, "owner": null, "description": "Rewards Trust"}
+  ],
+  "dcim/sites": [],
+  "ipam/vlans": []
+}

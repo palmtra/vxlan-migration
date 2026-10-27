@@ -1,0 +1,9 @@
+# Synthetic, for tests/run_netbox_rt_mock.sh. Not migrated, so it gets no
+# route target even without a VNI, tenant or owner.
+id: 960
+name: old_mgmt
+action: decommission
+service_type: l2
+vrf: default
+target_switches:
+  - eos-leaf-01

@@ -1,0 +1,14 @@
+# Synthetic, for tests/run_netbox_rt_mock.sh. The owner is not in the mock
+# NetBox, so the run fails and nothing is written for this VLAN.
+id: 952
+name: unknown_owner
+vlan_name: APP_952
+action: migrate
+service_type: l2
+vni: 20952
+vrf: default
+target_switches:
+  - eos-leaf-01
+ownership:
+  tenant: "0000001"
+  owner: Unknown Co
