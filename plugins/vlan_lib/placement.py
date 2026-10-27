@@ -29,8 +29,9 @@ _UPLINK_MAC_ROLES = frozenset(
 
 _PLACEMENT_RULES = [
     "participating_leafs are where the VLAN/VNI must exist after migration.",
-    "A switch is participating when it has local endpoint attachment, or when the engineer listed it in gateway_leafs.",
-    "VLAN database presence, trunk allowance, uplink-only MAC learning, and transit aggregation do not qualify. A UCS fabric interconnect does: the blades behind it are endpoints.",
+    "A switch is participating when MACs are learned on its endpoint-facing ports (or ARP / NetBox ties endpoints to it), or when the engineer listed it in gateway_leafs.",
+    "Endpoint-facing ports, UCS fabric interconnects and firewall / load balancer / router ports with no MACs on the VLAN do not keep it: the switch is prune-eligible and the idle ports are listed as a warning (discovery_keep_idle_endpoint_ports=true keeps them).",
+    "VLAN database presence, trunk allowance, uplink-only MAC learning, and transit aggregation do not qualify.",
     "prune_eligible_leafs carry the VLAN today and have no local endpoints. Source gateways are included and listed first: they are the root of the legacy L2.",
     "A source gateway that also has local endpoints, or that the engineer named in gateway_leafs, stays participating and is not pruned.",
     "gateway_leafs are explicit. Discovery never infers fabric gateway ownership from an SVI.",
@@ -361,14 +362,21 @@ def _arp_matches_local_macs(device, endpoint_macs):
     return False
 
 
-def local_endpoint_evidence(device):
-    """Return ``(qualifying, nonqualifying)`` evidence strings for one switch.
+def local_endpoint_evidence(device, keep_idle_ports=False):
+    """Return ``(qualifying, nonqualifying, idle_ports)`` for one switch.
 
-    Qualifying evidence is local endpoint attachment only. Trunk allowance,
-    VLAN-database presence, uplink MACs, and fabric interconnects do not qualify.
+    Qualifying evidence is local endpoint use. MACs learned on endpoint-facing
+    ports (or ARP tied to them, MACs behind a switch outside the inventory, a
+    NetBox mapping) always qualify. Endpoint-facing ports, UCS fabric
+    interconnects and firewall / load balancer / router ports qualify only
+    alongside that activity, unless *keep_idle_ports* is set: with no MACs on
+    the VLAN they are returned as ``idle_ports`` and the switch can be pruned.
+    Trunk allowance, VLAN-database presence and uplink MACs never qualify.
     """
     device = device or {}
     qualifying = []
+    port_evidence = []
+    idle_ports = []
     interfaces = []
     seen_norm = set()
     for key in ("compute_ports", "access_ports"):
@@ -380,7 +388,7 @@ def local_endpoint_evidence(device):
                 seen_norm.add(norm)
                 interfaces.append(iface)
     if interfaces:
-        qualifying.append(
+        port_evidence.append(
             "endpoint-facing interfaces: %s" % ", ".join(interfaces)
         )
     fis = [
@@ -389,10 +397,10 @@ def local_endpoint_evidence(device):
         if isinstance(item, dict) and item.get("role") == "fabric_interconnect" and item.get("interface")
     ]
     if fis:
-        qualifying.append("UCS fabric interconnect: %s" % ", ".join(_ports_with_neighbor(device, fis)))
+        port_evidence.append("UCS fabric interconnect: %s" % ", ".join(_ports_with_neighbor(device, fis)))
     services = _ports_with_neighbor(device, device.get("service_ports"))
     if services:
-        qualifying.append("firewall / load balancer / router: %s" % ", ".join(services))
+        port_evidence.append("firewall / load balancer / router: %s" % ", ".join(services))
 
     endpoint_macs = _endpoint_macs(device)
     mac_ifaces = []
@@ -426,6 +434,13 @@ def local_endpoint_evidence(device):
         qualifying.append("NetBox endpoint mapping")
 
     nonqualifying = []
+    if qualifying or keep_idle_ports:
+        qualifying = port_evidence + qualifying
+    elif port_evidence:
+        for iface in interfaces + fis + list(device.get("service_ports") or []):
+            if iface not in idle_ports:
+                idle_ports.append(iface)
+        nonqualifying.append("no MACs on the VLAN: %s" % "; ".join(port_evidence))
     if _uplink_only_macs(device, endpoint_macs):
         nonqualifying.append("MAC learned only on an uplink")
     if not qualifying:
@@ -433,7 +448,7 @@ def local_endpoint_evidence(device):
             nonqualifying.append("VLAN allowed on a trunk")
         elif device.get("vlan_present"):
             nonqualifying.append("VLAN present in the VLAN database")
-    return qualifying, nonqualifying
+    return qualifying, nonqualifying, idle_ports
 
 
 def _ports_with_neighbor(device, ports):
@@ -448,6 +463,15 @@ def _ports_with_neighbor(device, ports):
         label = labels.get(iface, "")
         found.append("%s (%s)" % (iface, label) if label else iface)
     return found
+
+
+def mac_table_failed(device):
+    """True when the switch's MAC-table query failed: "no MACs" is then unknown."""
+    return any(
+        "mac address-table" in str((error or {}).get("command") or "").lower()
+        for error in (device or {}).get("errors") or []
+        if isinstance(error, dict)
+    )
 
 
 def silent_downstream_switch_ports(device):
@@ -1442,7 +1466,7 @@ def build_deployment_model(vlan, devices, placement):
     return model
 
 
-def build_vlan_placement(vlan, devices):
+def build_vlan_placement(vlan, devices, keep_idle_endpoint_ports=False):
     """Classify discovered switches and return the deployment model plus analysis.
 
     ``devices`` are the per-switch discovery dicts already normalized by
@@ -1501,14 +1525,19 @@ def build_vlan_placement(vlan, devices):
     for hostname in gateway_declared:
         _add_participating(hostname)
 
+    # Idle ports are only provable from a MAC table that was read. Where the
+    # query failed, idle ports keep the switch as before.
+    keep_idle_by_host = {}
     evidence_by_host = {}
     for device in devices:
         if isinstance(device, dict) and device.get("hostname"):
-            evidence_by_host[device["hostname"]] = local_endpoint_evidence(device)
+            keep_idle = keep_idle_endpoint_ports or mac_table_failed(device)
+            keep_idle_by_host[device["hostname"]] = keep_idle
+            evidence_by_host[device["hostname"]] = local_endpoint_evidence(device, keep_idle)
     l2 = analyze_l2_domains(
         vlan.get("id"),
         devices,
-        {host for host, (qualifying, _non) in evidence_by_host.items() if qualifying},
+        {host for host, (qualifying, _non, _idle) in evidence_by_host.items() if qualifying},
     )
     l2_groups_by_host = {
         host: group for group in l2["groups"] for host in group["members"]
@@ -1520,9 +1549,10 @@ def build_vlan_placement(vlan, devices):
         hostname = device.get("hostname") or ""
         if not hostname:
             continue
-        qualifying, nonqualifying = evidence_by_host[hostname]
+        qualifying, nonqualifying, idle_ports = evidence_by_host[hostname]
         qualifying = list(qualifying)
         nonqualifying = list(nonqualifying)
+        idle_ports = list(idle_ports)
         switch_role = l2["roles"].get(hostname, "vtep")
         if switch_role == "vtep":
             # A VTEP that a non-VTEP switch with endpoints hangs off must keep the VLAN.
@@ -1547,6 +1577,9 @@ def build_vlan_placement(vlan, devices):
             ]
 
         silent_downstream = silent_downstream_switch_ports(device)
+        keep_idle = keep_idle_by_host[hostname]
+        if keep_idle and not keep_idle_endpoint_ports and (silent_downstream or unknown_ports or qualifying):
+            nonqualifying.append("MAC table not read, so idle ports cannot be told apart: kept as before")
 
         if switch_role == "l2_switch" and hostname in l2["attached_hosts"]:
             # Not a VTEP: keep the VLAN as plain L2 behind a VTEP, never a VNI target.
@@ -1567,7 +1600,7 @@ def build_vlan_placement(vlan, devices):
             _add_participating(hostname)
         elif is_protected and vlan_present:
             role = "protected"
-        elif vlan_present and silent_downstream:
+        elif vlan_present and silent_downstream and keep_idle:
             role = "review"
             nonqualifying.append(
                 "trunk to a switch outside discovery scope, no MACs learned: %s"
@@ -1581,7 +1614,7 @@ def build_vlan_placement(vlan, devices):
                 nonqualifying.append(
                     "unclassified ports need review: %s" % ", ".join(unknown_ports)
                 )
-        elif vlan_present and unknown_ports:
+        elif vlan_present and unknown_ports and keep_idle:
             role = "review"
             nonqualifying.append(
                 "unclassified ports need review: %s" % ", ".join(unknown_ports)
@@ -1589,8 +1622,23 @@ def build_vlan_placement(vlan, devices):
         elif vlan_present and not has_endpoints:
             role = "prune_eligible"
             other_prune_order.append(hostname)
+            if unknown_ports:
+                nonqualifying.append("unclassified ports, no MACs learned: %s" % ", ".join(unknown_ports))
         else:
             role = "absent"
+
+        # Ports that face something but carried no MACs: pruned with a warning.
+        if role == "prune_eligible":
+            if silent_downstream:
+                nonqualifying.append(
+                    "trunk to a switch outside discovery scope, no MACs learned: %s"
+                    % ", ".join(_ports_with_neighbor(device, silent_downstream))
+                )
+            for iface in silent_downstream + unknown_ports:
+                if iface not in idle_ports:
+                    idle_ports.append(iface)
+        else:
+            idle_ports = []
 
         if role == "prune_eligible" and is_source_gateway:
             nonqualifying.insert(0, "source gateway, legacy L2 root")
@@ -1613,6 +1661,8 @@ def build_vlan_placement(vlan, devices):
             "protected": is_protected,
             "evidence": evidence,
             "nonqualifying": nonqualifying,
+            "idle_ports": _ports_with_neighbor(device, idle_ports),
+            "idle_port_names": idle_ports,
         }
         by_hostname[hostname] = record
         analysis_switches.append(record)

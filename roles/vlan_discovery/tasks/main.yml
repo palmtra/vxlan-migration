@@ -74,7 +74,8 @@
   ansible.builtin.set_fact:
     _vlan_discovery_reports: >-
       {{ _effective_vlans_for_reports
-         | build_vlan_discovery_reports(ansible_play_hosts, hostvars, ansible_play_hosts_all, _vni_allocation)
+         | build_vlan_discovery_reports(ansible_play_hosts, hostvars, ansible_play_hosts_all, _vni_allocation,
+                                         {'keep_idle_endpoint_ports': discovery_keep_idle_endpoint_ports | default(false) | bool})
          | map('combine', {'data_center': _report_data_center}) | list }}
   vars:
     _effective_vlans_for_reports: "{{ hostvars['localhost']['_effective_vlans'] | default(_effective_vlans | default([])) }}"

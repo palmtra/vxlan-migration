@@ -40,7 +40,7 @@
 | Active IP endpoints | {{ et_summary.active_ips | default(0) }}{% if et_summary.mac_only | default(0) %} (+{{ et_summary.mac_only }} MAC only){% endif %}{% if not et_summary.arp_available | default(false) %} (no SVI on a discovered switch, so no ARP; MACs only){% endif %} |
 {% set fr = report.fabric_readiness | default({}) %}
 {% if fr.checked | default([]) | length > 0 %}
-| Fabric VTEPs | {% for row in fr.checked %}{{ row.hostname }} {{ (row.source_interface ~ ' ' ~ row.source_ip ~ ', ' ~ row.replication_mode ~ '/' ~ row.flood_list_source) if row.present else 'no Vxlan interface' }}{% if fr.vrf %}, L3 VNI {{ row.l3_vni if row.l3_vni is not none else 'missing' }}{% endif %}{{ '; ' if not loop.last }}{% endfor %} |
+| Fabric VTEPs | {% for row in fr.checked %}{{ row.hostname }} {{ (row.source_interface ~ ' ' ~ row.source_ip ~ ', ' ~ row.replication_mode ~ '/' ~ row.flood_list_source) if row.present else 'no Vxlan interface' }}{% if fr.vrf %}, L3 VNI {{ row.l3_vni if row.l3_vni is not none else ('missing' if row.svi_host | default(true) else 'none (not needed, no SVI here)') }}{% endif %}{{ '; ' if not loop.last }}{% endfor %} |
 {% endif %}
 {% if stp.present | default(false) %}
 | STP root | {{ stp.root_hostname or '**outside discovery scope**' }} ({{ stp.root_address }}, priority {{ stp.root_priority }}) |
