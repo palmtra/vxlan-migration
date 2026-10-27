@@ -20,8 +20,8 @@ ansible-playbook -i inventory/hosts.yml playbooks/export_vlan_to_netbox.yml \
 ```
 
 Requires `netbox_url` and `netbox_token` in vault or AAP credentials.
-Add `-e netbox_validate_certs=false` when NetBox's certificate is signed by a CA the control node
-does not trust. A failed NetBox request reports its HTTP status and reason; see
+NetBox's certificate is self-signed, so it is not verified (`netbox_validate_certs: false` in
+`inventory/group_vars/all/main.yml`). A failed NetBox request reports its HTTP status and reason; see
 [USAGE_GUIDE.md](../USAGE_GUIDE.md#when-a-netbox-request-fails).
 
 ## Route targets

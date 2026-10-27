@@ -31,7 +31,7 @@
     headers:
       Authorization: "Token {{ netbox_token }}"
       Accept: "application/json"
-    validate_certs: "{{ netbox_validate_certs | default(true) | bool }}"
+    validate_certs: "{{ netbox_validate_certs | default(false) | bool }}"
     timeout: "{{ netbox_export_timeout | int }}"
     status_code: 200
   register: _netbox_site_lookup
