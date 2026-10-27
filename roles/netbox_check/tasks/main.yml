@@ -128,8 +128,10 @@
   ansible.builtin.debug:
     msg:
       - "Primary SSOT: {{ _ssot_source | default('local_registry') }}"
-      - "NetBox sync status: {{ _netbox_sync_status | default('not_configured') }}{{ (' (' ~ _netbox_sync_error ~ ')') if _netbox_sync_error | default('') else '' }}"
+      - "NetBox sync status: {{ _netbox_sync_status | default('not_configured') }}{{ _sync_reason }}"
       - "Local VLAN record: {{ _ssot_vlan.name | default('unknown') }} (VID {{ _ssot_vlan.id | default(target_vlan_id) }})"
+  vars:
+    _sync_reason: "{{ (' (' ~ _netbox_sync_error ~ ')') if _netbox_sync_error | default('') else '' }}"
   delegate_to: localhost
   become: false
   run_once: true
