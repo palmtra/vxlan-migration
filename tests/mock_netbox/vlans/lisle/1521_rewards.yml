@@ -1,0 +1,14 @@
+# Synthetic, for tests/run_netbox_rt_mock.sh. Its route target 22010:1521
+# already exists in the mock NetBox with a hand-written description.
+id: 1521
+name: rewards
+vlan_name: REWARDS_APP
+action: migrate
+service_type: l2
+vni: 22010
+vrf: default
+target_switches:
+  - eos-leaf-01
+ownership:
+  tenant: "0000964"
+  owner: Rewards Trust

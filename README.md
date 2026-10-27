@@ -9,6 +9,7 @@ accident.
 |---|---|
 | `tests/` | Unit tests (`python -m unittest discover -s tests`) and the end-to-end mock run (`tests/run_discovery_mock.sh`) |
 | `tests/fixtures/cli/` | Canned EOS / NXOS command output for parser tests |
+| `tests/mock_netbox/` | Mock NetBox API (`server.py`), its seed objects and the VLAN records for `tests/run_netbox_rt_mock.sh` (route-target export) |
 | `tests/mock_cli/` | Mock fabric: inventory, per-device command output, a shadow `ansible.netcommon` that answers `cli_command` from it, and a VLAN record for the record-mode run |
 | `tests/fixtures/examples/` | The old `_example.yml` VLAN and service templates (reference only) |
 | `molecule/` | Localhost scenarios for `vlan_db` and `service_db`, with their own fixture VLAN DB and service bundle |

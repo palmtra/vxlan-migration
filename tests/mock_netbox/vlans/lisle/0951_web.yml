@@ -1,0 +1,13 @@
+# Synthetic, for tests/run_netbox_rt_mock.sh. Flat tenant/owner; its route
+# target is not in the mock NetBox yet.
+id: 951
+name: web
+vlan_name: WEB
+action: migrate
+service_type: l3
+vni: 20951
+vrf: v0000001a
+target_switches:
+  - eos-leaf-01
+tenant: "0000001"
+owner: FNTS
