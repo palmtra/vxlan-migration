@@ -1,6 +1,6 @@
 # Prune eligible switches
 
-Remove a VLAN from switches that carry it and have no local endpoints. Source gateways are included and come first: they are the root of the legacy L2. Participating leaves and engineer-named gateway leaves are not touched. A source gateway that still has local endpoints stays with the participating leaves.
+Remove a VLAN from switches that carry it and have no local endpoints in use. A switch whose endpoint-facing ports (servers, load balancers, firewalls, UCS fabric interconnects, switches outside the inventory) carry **no MACs** on the VLAN is pruned too: the dry run prints `Warning: No MACs on VLAN <id>, pruned anyway: <ports>` and removes the VLAN from those idle trunks as well. Set `-e discovery_keep_idle_endpoint_ports=true` to keep such switches. If a switch's MAC-table query fails, its idle ports cannot be proven idle and it is kept. Source gateways are included and come first: they are the root of the legacy L2. Participating leaves and engineer-named gateway leaves are not touched. A source gateway that still has local endpoints stays with the participating leaves.
 
 The playbook discovers first, then prunes from that classification. It does not read an old report file.
 
