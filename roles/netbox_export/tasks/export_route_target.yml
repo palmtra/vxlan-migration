@@ -22,7 +22,7 @@
     headers:
       Authorization: "Token {{ netbox_token }}"
       Accept: "application/json"
-    validate_certs: "{{ netbox_validate_certs | default(true) | bool }}"
+    validate_certs: "{{ netbox_validate_certs | default(false) | bool }}"
     timeout: "{{ netbox_export_timeout | int }}"
     status_code: 200
   loop:
@@ -42,9 +42,9 @@
     _rt_hits: "{{ _rt_hits | combine({item.item.kind: item.json.results | default([])}) }}"
     _rt_lookup_errors: >-
       {{ _rt_lookup_errors
-         + ([] if item.status | default(0) == 200
-            else ['VLAN %s: NetBox answered %s looking up %s %s'
-                  | format(_rt.vlan_id, item.status | default('nothing'), item.item.kind, item.item.value)]) }}
+         + ([] if not item | netbox_request_error(200)
+            else ['VLAN %s: looking up %s %s in NetBox failed: %s'
+                  | format(_rt.vlan_id, item.item.kind, item.item.value, item | netbox_request_error(200))]) }}
   loop: "{{ _rt_lookup.results | default([]) | rejectattr('skipped', 'defined') | list }}"
   loop_control:
     label: "{{ item.item.kind }}"
@@ -114,13 +114,14 @@
       Content-Type: "application/json"
     body_format: json
     body: "{{ _rt_payload }}"
-    validate_certs: "{{ netbox_validate_certs | default(true) | bool }}"
+    validate_certs: "{{ netbox_validate_certs | default(false) | bool }}"
     timeout: "{{ netbox_export_timeout | int }}"
     status_code:
       - 201
   register: _rt_create
   delegate_to: localhost
   become: false
+  failed_when: false
   when:
     - _rt_problems | length == 0
     - not netbox_export_dry_run | bool
@@ -137,18 +138,39 @@
       Content-Type: "application/json"
     body_format: json
     body: "{{ _rt_payload }}"
-    validate_certs: "{{ netbox_validate_certs | default(true) | bool }}"
+    validate_certs: "{{ netbox_validate_certs | default(false) | bool }}"
     timeout: "{{ netbox_export_timeout | int }}"
     status_code:
       - 200
   register: _rt_update
   delegate_to: localhost
   become: false
+  failed_when: false
   when:
     - _rt_problems | length == 0
     - not netbox_export_dry_run | bool
     - _rt_exists | bool
   no_log: true
+
+# A refused write fails this VLAN like a missing tenant does, with the reason
+# no_log would otherwise hide.
+- name: "Record route target NetBox refused for VLAN {{ _rt_vlan.id }}"
+  ansible.builtin.set_fact:
+    _rt_problems: "{{ [_rt_refused] }}"
+    _netbox_rt_results: "{{ _netbox_rt_results + [{'vlan_id': _rt.vlan_id, 'route_target': _rt.name, 'netbox_status': 'failed', 'problems': [_rt_refused]}] }}"
+  vars:
+    _rt_write_error: >-
+      {{ (_rt_create | default({'skipped': true}) | netbox_request_error(201))
+         ~ (_rt_update | default({'skipped': true}) | netbox_request_error(200)) }}
+    _rt_refused: >-
+      {{ 'VLAN %s: NetBox refused to %s route target %s: %s'
+         | format(_rt.vlan_id, 'update' if _rt_exists | bool else 'create', _rt.name, _rt_write_error) }}
+  delegate_to: localhost
+  become: false
+  when:
+    - _rt_problems | length == 0
+    - not netbox_export_dry_run | bool
+    - _rt_write_error | length > 0
 
 - name: "Record applied route target result for VLAN {{ _rt_vlan.id }}"
   ansible.builtin.set_fact:

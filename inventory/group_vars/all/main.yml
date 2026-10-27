@@ -72,6 +72,9 @@ avd_default_bgp_as: ""
 # NetBox read-only lookup performed by roles/netbox_check.
 netbox_url: ""
 netbox_token: ""
+# NetBox uses a self-signed certificate, so it is not verified. Set true
+# once the control node trusts the CA that signs NetBox's certificate.
+netbox_validate_certs: false
 
 # Arista CVP / CVAAS endpoint used by roles/cvp_deploy.
 # CVaaS tenant (us-central1-c). The token stays in Vault / AAP credentials.

@@ -31,7 +31,7 @@
     headers:
       Authorization: "Token {{ netbox_token }}"
       Accept: "application/json"
-    validate_certs: "{{ netbox_validate_certs | default(true) | bool }}"
+    validate_certs: "{{ netbox_validate_certs | default(false) | bool }}"
     timeout: "{{ netbox_export_timeout | int }}"
     status_code: 200
   register: _netbox_site_lookup
@@ -55,8 +55,11 @@
 - name: Warn when NetBox site was not found
   ansible.builtin.debug:
     msg: >-
-      NetBox site slug '{{ _netbox_site_slug }}' was not found.
+      {{ ("NetBox site lookup failed: " ~ _site_error) if _site_error
+         else ("NetBox site slug '" ~ _netbox_site_slug ~ "' was not found.") }}
       VLAN export will proceed without a site association unless you create the site first.
+  vars:
+    _site_error: "{{ _netbox_site_lookup | netbox_request_error(200) }}"
   delegate_to: localhost
   become: false
   run_once: true

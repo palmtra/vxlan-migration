@@ -9,7 +9,8 @@
 
 netbox_url: ""
 netbox_token: ""
-netbox_validate_certs: true
+# NetBox uses a self-signed certificate. true to verify it.
+netbox_validate_certs: false
 netbox_timeout: 30
 netbox_return_facts: true
 netbox_create_missing_vlan: false
