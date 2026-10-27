@@ -20,7 +20,7 @@
 
 # no_log hides the request's own failure (the request carries the token), so
 # the status and reason are reported here instead.
-- name: "Fail when NetBox VLAN VID {{ _export_vlan.id }} could not be looked up"
+- name: "Fail when NetBox could not look up VLAN VID {{ _export_vlan.id }}"
   ansible.builtin.fail:
     msg: "NetBox VLAN lookup for VID {{ _export_vlan.id }} failed: {{ _netbox_vlan_search | netbox_request_error(200) }}"
   delegate_to: localhost
