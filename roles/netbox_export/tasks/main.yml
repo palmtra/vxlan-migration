@@ -65,6 +65,7 @@
 - name: Initialize export results
   ansible.builtin.set_fact:
     _netbox_export_results: []
+    _netbox_rt_results: []
   delegate_to: localhost
   become: false
   run_once: true
@@ -76,6 +77,15 @@
     loop_var: _export_vlan
     label: "VLAN {{ _export_vlan.id }} ({{ _export_vlan.name }})"
   run_once: true
+
+- name: Export each migrated VLAN's route target to NetBox
+  ansible.builtin.include_tasks: export_route_target.yml
+  loop: "{{ _effective_vlans | default([]) | selectattr('action', 'equalto', 'migrate') | list }}"
+  loop_control:
+    loop_var: _rt_vlan
+    label: "VLAN {{ _rt_vlan.id }} ({{ _rt_vlan.name }})"
+  run_once: true
+  when: netbox_export_route_targets | bool
 
 - name: Ensure NetBox export artifact directory exists
   ansible.builtin.file:
@@ -95,7 +105,8 @@
     mode: '0644'
     content: >-
       {{ {'data_center': target_data_center, 'dry_run': netbox_export_dry_run | bool,
-      'results': _netbox_export_results | default([])} | to_nice_json }}
+      'results': _netbox_export_results | default([]),
+      'route_targets': _netbox_rt_results | default([])} | to_nice_json }}
   delegate_to: localhost
   become: false
   run_once: true
@@ -106,7 +117,23 @@
     msg:
       - "NetBox export complete (dry_run={{ netbox_export_dry_run | bool }})."
       - "Records processed: {{ _netbox_export_results | default([]) | length }}"
-      - "{{ _netbox_export_results | default([]) | map(attribute='status') | list }}"
+      - "{{ _netbox_export_results | default([]) | map(attribute='netbox_status') | list }}"
+      - "Route targets: {{ _rt_summary }}"
+  vars:
+    _rt_summary: >-
+      {{ _netbox_rt_results | default([]) | map(attribute='route_target')
+         | zip(_netbox_rt_results | default([]) | map(attribute='netbox_status'))
+         | map('join', ' ') | list }}
   delegate_to: localhost
   become: false
   run_once: true
+
+- name: Fail when a route target could not be exported
+  ansible.builtin.fail:
+    msg: "Route targets not exported: {{ _rt_failed | map(attribute='problems') | flatten | join(' | ') }}"
+  vars:
+    _rt_failed: "{{ _netbox_rt_results | default([]) | selectattr('netbox_status', 'equalto', 'failed') | list }}"
+  delegate_to: localhost
+  become: false
+  run_once: true
+  when: _rt_failed | length > 0

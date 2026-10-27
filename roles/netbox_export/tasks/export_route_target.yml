@@ -1,0 +1,170 @@
+---
+# Export one migrated VLAN's route target to NetBox (/ipam/route-targets/).
+# Name <l2 vni>:<vlan id>, tenant = the record's numeric tenant id, owner =
+# the customer name, description "<vlan name> - <marker>". An existing route
+# target with the same name (NetBox names are unique) is updated in place.
+
+- name: "Build route target for VLAN {{ _rt_vlan.id }}"
+  ansible.builtin.set_fact:
+    _rt: "{{ _rt_vlan | netbox_route_target(netbox_export_rt_description_marker) }}"
+    _rt_hits: {}
+    _rt_lookup_errors: []
+  delegate_to: localhost
+  become: false
+
+# A refused lookup (for example a token without view permission on owners)
+# fails this VLAN with the HTTP status rather than stopping the run, so the
+# message is readable despite no_log.
+- name: "Look up NetBox tenant, owner and route target for VLAN {{ _rt_vlan.id }}"
+  ansible.builtin.uri:
+    url: "{{ netbox_url }}/api/{{ item.path }}/?name={{ item.value | urlencode }}"
+    method: GET
+    headers:
+      Authorization: "Token {{ netbox_token }}"
+      Accept: "application/json"
+    validate_certs: "{{ netbox_validate_certs | default(true) | bool }}"
+    timeout: "{{ netbox_export_timeout | int }}"
+    status_code: 200
+  loop:
+    - {kind: tenant, path: tenancy/tenants, value: "{{ _rt.tenant }}"}
+    - {kind: owner, path: users/owners, value: "{{ _rt.owner }}"}
+    - {kind: route_target, path: ipam/route-targets, value: "{{ _rt.name }}"}
+  register: _rt_lookup
+  delegate_to: localhost
+  become: false
+  changed_when: false
+  failed_when: false
+  when: _rt.problems | length == 0
+  no_log: true
+
+- name: "Collect NetBox lookups for VLAN {{ _rt_vlan.id }}"
+  ansible.builtin.set_fact:
+    _rt_hits: "{{ _rt_hits | combine({item.item.kind: item.json.results | default([])}) }}"
+    _rt_lookup_errors: >-
+      {{ _rt_lookup_errors
+         + ([] if item.status | default(0) == 200
+            else ['VLAN %s: NetBox answered %s looking up %s %s'
+                  | format(_rt.vlan_id, item.status | default('nothing'), item.item.kind, item.item.value)]) }}
+  loop: "{{ _rt_lookup.results | default([]) | rejectattr('skipped', 'defined') | list }}"
+  loop_control:
+    label: "{{ item.item.kind }}"
+  delegate_to: localhost
+  become: false
+
+- name: "Check tenant and owner exist in NetBox for VLAN {{ _rt_vlan.id }}"
+  ansible.builtin.set_fact:
+    _rt_problems: >-
+      {{ _rt.problems + _rt_lookup_errors
+         + ([] if _rt.problems or _rt_lookup_errors or _rt_hits.tenant | length > 0
+            else ['VLAN %s tenant %s is not in NetBox (Tenancy > Tenants)' | format(_rt.vlan_id, _rt.tenant)])
+         + ([] if _rt.problems or _rt_lookup_errors or _rt_hits.owner | length > 0
+            else ['VLAN %s owner %s is not in NetBox (Admin > Owners)' | format(_rt.vlan_id, _rt.owner)]) }}
+  delegate_to: localhost
+  become: false
+
+- name: "Build NetBox route target payload for VLAN {{ _rt_vlan.id }}"
+  ansible.builtin.set_fact:
+    _rt_exists: "{{ _rt_hits.route_target | length > 0 }}"
+    _rt_payload:
+      name: "{{ _rt.name }}"
+      tenant: "{{ (_rt_hits.tenant | first).id }}"
+      owner: "{{ (_rt_hits.owner | first).id }}"
+      description: "{{ _rt.description }}"
+  delegate_to: localhost
+  become: false
+  when: _rt_problems | length == 0
+
+- name: "Record route target that cannot be written for VLAN {{ _rt_vlan.id }}"
+  ansible.builtin.set_fact:
+    _netbox_rt_results: "{{ _netbox_rt_results + [_rt_result] }}"
+  vars:
+    _rt_result:
+      vlan_id: "{{ _rt.vlan_id }}"
+      route_target: "{{ _rt.name }}"
+      netbox_status: failed
+      problems: "{{ _rt_problems }}"
+  delegate_to: localhost
+  become: false
+  when: _rt_problems | length > 0
+
+- name: "Record dry-run route target result for VLAN {{ _rt_vlan.id }}"
+  ansible.builtin.set_fact:
+    _netbox_rt_results: "{{ _netbox_rt_results + [_rt_result] }}"
+  vars:
+    _rt_result:
+      vlan_id: "{{ _rt.vlan_id }}"
+      route_target: "{{ _rt.name }}"
+      netbox_status: "{{ 'dry_run_would_update' if _rt_exists | bool else 'dry_run_would_create' }}"
+      tenant: "{{ _rt.tenant }}"
+      owner: "{{ _rt.owner }}"
+      payload: "{{ _rt_payload }}"
+  delegate_to: localhost
+  become: false
+  when:
+    - _rt_problems | length == 0
+    - netbox_export_dry_run | bool
+
+- name: "Create NetBox route target {{ _rt.name }}"
+  ansible.builtin.uri:
+    url: "{{ netbox_url }}/api/ipam/route-targets/"
+    method: POST
+    headers:
+      Authorization: "Token {{ netbox_token }}"
+      Accept: "application/json"
+      Content-Type: "application/json"
+    body_format: json
+    body: "{{ _rt_payload }}"
+    validate_certs: "{{ netbox_validate_certs | default(true) | bool }}"
+    timeout: "{{ netbox_export_timeout | int }}"
+    status_code:
+      - 201
+  register: _rt_create
+  delegate_to: localhost
+  become: false
+  when:
+    - _rt_problems | length == 0
+    - not netbox_export_dry_run | bool
+    - not _rt_exists | bool
+  no_log: true
+
+- name: "Update NetBox route target {{ _rt.name }}"
+  ansible.builtin.uri:
+    url: "{{ netbox_url }}/api/ipam/route-targets/{{ (_rt_hits.route_target | first).id }}/"
+    method: PATCH
+    headers:
+      Authorization: "Token {{ netbox_token }}"
+      Accept: "application/json"
+      Content-Type: "application/json"
+    body_format: json
+    body: "{{ _rt_payload }}"
+    validate_certs: "{{ netbox_validate_certs | default(true) | bool }}"
+    timeout: "{{ netbox_export_timeout | int }}"
+    status_code:
+      - 200
+  register: _rt_update
+  delegate_to: localhost
+  become: false
+  when:
+    - _rt_problems | length == 0
+    - not netbox_export_dry_run | bool
+    - _rt_exists | bool
+  no_log: true
+
+- name: "Record applied route target result for VLAN {{ _rt_vlan.id }}"
+  ansible.builtin.set_fact:
+    _netbox_rt_results: "{{ _netbox_rt_results + [_rt_result] }}"
+  vars:
+    _rt_result:
+      vlan_id: "{{ _rt.vlan_id }}"
+      route_target: "{{ _rt.name }}"
+      netbox_status: "{{ 'updated' if _rt_exists | bool else 'created' }}"
+      netbox_route_target_id: >-
+        {{ (_rt_hits.route_target | first).id if _rt_exists | bool else _rt_create.json.id | default('') }}
+      tenant: "{{ _rt.tenant }}"
+      owner: "{{ _rt.owner }}"
+      payload: "{{ _rt_payload }}"
+  delegate_to: localhost
+  become: false
+  when:
+    - _rt_problems | length == 0
+    - not netbox_export_dry_run | bool

@@ -18,6 +18,14 @@ netbox_export_site_map:
 # Optional NetBox tenant slug applied to exported VLANs.
 netbox_export_tenant_slug: ""
 
+# Route targets (/ipam/route-targets/): one per migrated VLAN, named
+# <l2 vni>:<vlan id>, with the record's tenant (numeric id) and owner
+# (customer name) and the description "<vlan name> - <marker>". An existing
+# route target with that name is updated, description included. A VLAN whose
+# tenant or owner is missing from the record or from NetBox fails the run.
+netbox_export_route_targets: true
+netbox_export_rt_description_marker: "Created by Ansible VXLAN Automation"
+
 # NetBox API timeout (seconds).
 netbox_export_timeout: 30
 

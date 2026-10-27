@@ -126,6 +126,7 @@ Discovery never deletes. Prune apply is `playbooks/core/prune_vlan.yml`: dry-run
 ### NetBox
 
 - [x] Standalone export role/playbook (dry-run default)
+- [x] Route targets: `<vni>:<vlan id>` with tenant, owner and a standard description; existing ones updated
 - [ ] VRF and tenant mapping in NetBox export
 - [ ] Drift report comparing local DB vs NetBox before sync
 - [ ] Mark local record `synced_to_netbox: true` with timestamp
