@@ -34,7 +34,7 @@ export_run() {
     -e target_vlan_ids="$vlans" \
     -e netbox_export_dry_run="$dry_run" \
     -e netbox_url="http://127.0.0.1:$PORT" \
-    -e netbox_token=test \
+    -e netbox_token="$token" \
     -e netbox_validate_certs=false \
     -e vlan_db_dir="$ROOT/tests/mock_netbox/vlans" \
     -e reports_dir="$OUT/$name" \
