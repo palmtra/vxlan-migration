@@ -10,6 +10,7 @@
 # Sets:
 #   _netbox_sync_status: not_configured | unreachable | found | missing
 #   _netbox_vlan:        NetBox object when found
+#   _netbox_sync_error:  why NetBox was unreachable (HTTP status or TLS error)
 # -----------------------------------------------------------------------------
 
 - name: Determine whether NetBox is configured
@@ -61,6 +62,7 @@
 - name: Record NetBox unreachable status
   ansible.builtin.set_fact:
     _netbox_sync_status: unreachable
+    _netbox_sync_error: "{{ _netbox_vlan_lookup | netbox_request_error(200) }}"
   delegate_to: localhost
   become: false
   run_once: true
@@ -126,7 +128,7 @@
   ansible.builtin.debug:
     msg:
       - "Primary SSOT: {{ _ssot_source | default('local_registry') }}"
-      - "NetBox sync status: {{ _netbox_sync_status | default('not_configured') }}"
+      - "NetBox sync status: {{ _netbox_sync_status | default('not_configured') }}{{ (' (' ~ _netbox_sync_error ~ ')') if _netbox_sync_error | default('') else '' }}"
       - "Local VLAN record: {{ _ssot_vlan.name | default('unknown') }} (VID {{ _ssot_vlan.id | default(target_vlan_id) }})"
   delegate_to: localhost
   become: false

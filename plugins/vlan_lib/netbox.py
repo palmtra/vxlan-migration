@@ -13,6 +13,7 @@ discovery model). The description is the VLAN name followed by a fixed
 marker, so every route target this repo writes reads the same.
 """
 
+import json
 from collections.abc import Mapping
 
 from .placement import _vlan_route_target
@@ -73,3 +74,40 @@ def netbox_route_target(record, marker=ROUTE_TARGET_DESCRIPTION):
         "description": description,
         "problems": problems,
     }
+
+
+def netbox_request_error(result, expected=(200, 201)):
+    """Why a NetBox ``uri`` request failed, or ``""`` when it did not.
+
+    For a task that keeps ``no_log`` (the request carries the token): the
+    status, NetBox's own ``detail`` and the module's message hold no token,
+    so they can be shown. A skipped request is not an error.
+    """
+    result = result if isinstance(result, Mapping) else {}
+    if result.get("skipped"):
+        return ""
+    status = result.get("status", -1)
+    expected = [expected] if isinstance(expected, int) else list(expected)
+    if status in expected:
+        return ""
+    msg = str(result.get("msg") or "").strip()
+    body = result.get("json") if isinstance(result.get("json"), Mapping) else {}
+    # NetBox puts a refusal in "detail" and validation errors under each field.
+    detail = str(body.get("detail") or "").strip() or (json.dumps(body, sort_keys=True)[:300] if body else "")
+    if "CERTIFICATE_VERIFY_FAILED" in msg:
+        return (
+            "the NetBox TLS certificate is not trusted (%s). Install the CA that signed it on this host, "
+            "or set netbox_validate_certs: false" % msg
+        )
+    if not isinstance(status, int) or status <= 0:
+        return "no HTTP answer from NetBox: %s" % (msg or "unknown error")
+    reason = "HTTP %s" % status
+    if detail:
+        reason += ": %s" % detail
+    elif msg:
+        reason += " (%s)" % msg
+    if status in (401, 403):
+        reason += ". Check netbox_token and its permissions"
+    elif status == 404:
+        reason += ". Check netbox_url: it should be the NetBox address without /api"
+    return reason

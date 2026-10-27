@@ -347,6 +347,7 @@ ansible-playbook -i inventory/hosts.yml playbooks/advanced/workflow_verify.yml \
 | `netbox_export_create_missing` | `true` | POST new VLAN records |
 | `netbox_export_update_existing` | `true` | PATCH existing records |
 | `netbox_export_site_map` | `{lisle: lisle, omaha: omaha}` | DC → NetBox site slug |
+| `netbox_validate_certs` | `true` | Verify the NetBox TLS certificate. `false` for a certificate signed by a CA this host does not trust |
 | `netbox_export_route_targets` | `true` | Export a route target for every `action: migrate` VLAN |
 | `netbox_export_rt_description_marker` | `Created by Ansible VXLAN Automation` | Text after the VLAN name in the route target description |
 
@@ -370,6 +371,25 @@ VLAN listed. Tenants and owners are never created by the export. Quote the tenan
 The NetBox token needs view permission on tenants and owners and add/change permission on route
 targets. Owners need NetBox 4.5 or later. The `netbox.netbox` collection has no owner option, so the
 role uses the REST API directly.
+
+### When a NetBox request fails
+
+The requests carry the token, so their own output is hidden (`no_log`). A failed request is
+reported by the next task instead, with the HTTP status and NetBox's reason:
+
+| Message | Fix |
+|---|---|
+| `the NetBox TLS certificate is not trusted` | Install the CA that signed it on the control node, or `-e netbox_validate_certs=false` |
+| `HTTP 401` / `HTTP 403` | Check `netbox_token` and its permissions |
+| `HTTP 404` | `netbox_url` is the NetBox address without `/api` |
+| `no HTTP answer from NetBox` | DNS, firewall or proxy between the control node and NetBox |
+
+To test the connection by hand (`curl -k` skips the certificate check, as `netbox_validate_certs=false` does):
+
+```bash
+curl -sS -o /dev/null -w '%{http_code}
+' -H "Authorization: Token <token>" "<netbox_url>/api/ipam/vlans/?vid=100"
+```
 
 ### Examples
 
