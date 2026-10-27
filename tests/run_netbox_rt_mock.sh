@@ -5,6 +5,7 @@
 #   1. dry run, VLANs 951, 1521, 960: nothing written
 #   2. apply, same VLANs: 22010:1521 updated, 20951:951 created, 960 ignored
 #   3. apply, VLANs 951, 952: fails on 952's unknown owner, nothing written for it
+#   4. apply with a token NetBox refuses: fails with HTTP 403 and the reason
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
@@ -26,7 +27,7 @@ for _ in $(seq 50); do
 done
 
 export_run() {
-  local name="$1" vlans="$2" dry_run="$3"
+  local name="$1" vlans="$2" dry_run="$3" token="${4:-test}"
   local rc=0
   ansible-playbook -i tests/mock_cli/inventory/hosts.yml playbooks/export_vlan_to_netbox.yml \
     -e manual_data_center=lisle \
@@ -92,6 +93,16 @@ writes = [json.loads(line) for line in open(sys.argv[1]) if line.strip()]
 if any(w["body"].get("name") == "20952:952" for w in writes):
     sys.exit("FAIL: route target 20952:952 was written despite the unknown owner")
 EOF
+
+: > "$WRITES"
+rc="$(export_run bad_token 951 false refused-token-7731)"
+if [ "$rc" -eq 0 ]; then echo "FAIL: run with a refused token succeeded" >&2; fail=1; fi
+for want in "NetBox VLAN lookup for VID 951 failed: HTTP 403" "NetBox site lookup failed: HTTP 403" "Invalid token"; do
+  grep -qF "$want" "$OUT/bad_token.log" \
+    || { cat "$OUT/bad_token.log"; echo "FAIL: refused token not reported: $want" >&2; fail=1; }
+done
+if grep -qF "refused-token-7731" "$OUT/bad_token.log"; then echo "FAIL: the token appears in the output" >&2; fail=1; fi
+if [ -s "$WRITES" ]; then echo "FAIL: run with a refused token wrote to NetBox" >&2; fail=1; fi
 
 if [ "$fail" -ne 0 ]; then exit 1; fi
 echo "OK: NetBox route-target export against the mock NetBox"
