@@ -30,6 +30,7 @@ from vlan_lib.avd_services import (  # noqa: E402
     avd_services_file_text,
     merge_avd_services,
 )
+from vlan_lib.netbox import netbox_route_target  # noqa: E402
 from vlan_lib import (  # noqa: E402,F401
     analyze_trunk_vlan_carriage,
     arp_discovery_command,
@@ -104,6 +105,7 @@ class FilterModule(object):
             "avd_service_entries": avd_service_entries,
             "avd_services_file_text": avd_services_file_text,
             "merge_avd_services": merge_avd_services,
+            "netbox_route_target": netbox_route_target,
             "select_vlans_for_run": select_vlans_for_run,
             "border_bgp_targets": border_bgp_targets,
             "extract_vlan_discovery": extract_vlan_discovery,

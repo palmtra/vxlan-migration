@@ -59,6 +59,9 @@ jobs:
           molecule test -s vlan_db
           molecule test -s service_db
 
+      - name: NetBox route-target export (mock NetBox)
+        run: tests/run_netbox_rt_mock.sh
+
       - name: Ansible syntax-check (core playbooks)
         run: |
           set -e

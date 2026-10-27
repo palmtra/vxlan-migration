@@ -164,7 +164,7 @@ Per-DC VLAN databases: `vars/vlans/<data_center>/*.yml` - one file per VLAN (see
 ## Standalone utilities
 
 ```bash
-# Export VLAN attributes to NetBox (dry-run by default)
+# Export VLAN attributes and route targets to NetBox (dry-run by default)
 ansible-playbook -i inventory/hosts.yml playbooks/export_vlan_to_netbox.yml \
   -e manual_data_center=lisle \
   -e manual_vlan_id=100 \

@@ -335,7 +335,7 @@ ansible-playbook -i inventory/hosts.yml playbooks/advanced/workflow_verify.yml \
 
 ## 5. NetBox export (standalone)
 
-**Not part of Core or Advanced migration.** Run when you want to push local VLAN DB attributes to NetBox.
+**Not part of Core or Advanced migration.** Run when you want to push local VLAN DB attributes and route targets to NetBox.
 
 **Playbook:** `playbooks/export_vlan_to_netbox.yml`
 
@@ -347,6 +347,29 @@ ansible-playbook -i inventory/hosts.yml playbooks/advanced/workflow_verify.yml \
 | `netbox_export_create_missing` | `true` | POST new VLAN records |
 | `netbox_export_update_existing` | `true` | PATCH existing records |
 | `netbox_export_site_map` | `{lisle: lisle, omaha: omaha}` | DC → NetBox site slug |
+| `netbox_export_route_targets` | `true` | Export a route target for every `action: migrate` VLAN |
+| `netbox_export_rt_description_marker` | `Created by Ansible VXLAN Automation` | Text after the VLAN name in the route target description |
+
+### Route targets
+
+Each migrated VLAN gets one route target in NetBox (IPAM > Route Targets):
+
+| NetBox field | Value |
+|---|---|
+| Name | `<vni>:<vlan id>` (or the record's `l2_rt`), the route target the configlets use |
+| Tenant | `ownership.tenant`, the numeric tenant id, matched to the NetBox tenant of that name |
+| Owner | `ownership.owner`, the customer name, matched to the NetBox owner of that name |
+| Description | `<vlan_name or name> - Created by Ansible VXLAN Automation` |
+
+NetBox route target names are unique, so a route target that already exists is updated in place:
+its tenant, owner and description are replaced. A VLAN with no VNI, no tenant or no owner, or whose
+tenant or owner is not in NetBox, is not written, and the run fails after the export with every such
+VLAN listed. Tenants and owners are never created by the export. Quote the tenant id in the record
+(`tenant: "0000001"`): unquoted, YAML reads an id made only of the digits 0-7 as an octal number.
+
+The NetBox token needs view permission on tenants and owners and add/change permission on route
+targets. Owners need NetBox 4.5 or later. The `netbox.netbox` collection has no owner option, so the
+role uses the REST API directly.
 
 ### Examples
 
