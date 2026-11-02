@@ -175,7 +175,8 @@ Vlan    Mac Address       Type        Ports
         self.assertNotIn("Ethernet22", prune_ifaces)
         self.assertIn("configure session", plan["execution"]["full_cli"])
         self.assertIn("commit timer 00:10:00", plan["execution"]["full_cli"])
-        self.assertIn("configure confirm", plan["execution"]["confirm"])
+        session = plan["execution"]["session_name"]
+        self.assertEqual(plan["execution"]["confirm"], "configure session %s commit" % session)
         self.assertFalse(plan["apply_automated"])
 
 
@@ -204,7 +205,9 @@ class PruneExecutionTests(unittest.TestCase):
         commands = prune_apply_commands(plan["execution"])
         self.assertTrue(commands[0].startswith("configure session"))
         self.assertIn("commit timer 00:10:00", commands)
-        self.assertNotIn("configure confirm", commands)
+        # Apply stops at the timer: the operator commits the session on the switch.
+        self.assertNotIn(plan["execution"]["confirm"], commands)
+        self.assertEqual(plan["execution"]["confirm"], "configure session prune_v1107 commit")
 
     def test_nxos_checkpoint_wraps_config(self):
         plan = build_device_prune_plan(

@@ -47,6 +47,48 @@ expect "$REPORT" "| 3 | fntc-aggacc-sw05 | trunks, VLAN 3000 | ready |"
 expect "$REPORT" "Not present on: oma01-blf01, oma01-blf02."
 expect "$ENDPOINTS" "3000,10.230.0.20,00:50:56:b3:00:20,edge,fntc-aggacc-sw03,Et10,\"acme-db-01\",compute"
 expect "$ENDPOINTS" "3000,10.230.0.40,00:50:56:b3:00:40,not_in_mac_table"
+# Gateway MAC: HSRP v2 group 3000 today, the leaves' ip virtual-router mac-address after.
+expect "$REPORT" "| Gateway MAC | today 00:00:0c:9f:fb:b8 (HSRP); fabric 00:1c:73:00:00:99: **changes at cutover** |"
+expect "$REPORT" "The gateway MAC changes at cutover: hosts cache 10.230.0.1 as 00:00:0c:9f:fb:b8"
+
+# MOP input and run index: valid against the schema, steps in change order.
+MOP="$(ls "$OUT"/reports/omaha/ACME_APP/ACME_APP_mop_input_*.json)"
+RUNIDX="$(ls "$OUT"/reports/omaha/_runs/run_*.json)"
+python3 - "$MOP" "$RUNIDX" "$ROOT/schemas/mop_input.schema.json" <<'PY' || fail=1
+import json, sys
+import jsonschema
+mop, index, schema = (json.load(open(path)) for path in sys.argv[1:4])
+jsonschema.validate(mop, schema)
+problems = []
+def check(ok, text):
+    if not ok:
+        problems.append(text)
+check(mop["vlan"] == {"id": 3000, "name": "ACME_APP", "data_center": "omaha", "migration_type": "l3",
+                      "vrf": "v0000822a", "l2_vni": 11002, "l3_vni": 822, "status": "needs_decisions",
+                      "l3_vni_source": "fabric: VRF v0000822a maps to it on fntc-aggacc-sw01, fntc-aggacc-sw02 (show interfaces Vxlan1)"},
+      "vlan: %s" % mop["vlan"])
+eos = [s for s in mop["steps"] if s["switch"] == "fntc-aggacc-sw05"][0]
+check(eos["confirm"] == "configure session prune_v3000 commit" and "configure session prune_v3000 abort" in eos["rollback"], "EOS teardown confirm/rollback")
+phases = [(s["phase"], s["switch"]) for s in mop["steps"]]
+check(phases == [
+    ("0-prechecks", ""), ("0-prechecks", ""), ("0-prechecks", ""),
+    ("1-deploy", "fntc-aggacc-sw01"), ("1-deploy", "fntc-aggacc-sw02"),
+    ("4-gateway-cutover", "fnts-fntc03-aggpe-mls01"), ("4-gateway-cutover", "fnts-fntc03-aggpe-mls02"),
+    ("5-teardown", "fnts-fntc03-aggpe-mls01"), ("5-teardown", "fnts-fntc03-aggpe-mls02"),
+    ("5-teardown", "fntc-aggacc-sw05"), ("5-teardown", "fntc-aggacc-sw06"), ("6-verify", ""),
+], "steps: %s" % phases)
+cut = [s for s in mop["steps"] if s["phase"] == "4-gateway-cutover"][0]
+check(cut["cli"] == "interface Vlan3000\n  shutdown" and cut["rollback"] == "interface Vlan3000\n  no shutdown", "cutover CLI")
+check(mop["gateway"]["mac_change"]["changes"] is True, "gateway MAC change")
+check([f["id"] for f in mop["findings"] if f["kind"] == "risk" and f["severity"] == "high"] == ["R-01"], "high risks")
+check(mop["coverage"]["complete"] is True, "coverage")
+check(index["order"] == [3000] and index["totals"]["switches_changed"] == 6, "run index: %s" % index["totals"])
+paths = {item["path"] for item in index["files"]}
+check("ACME_APP/" + mop["files"]["mop_input"] in paths and "ACME_APP/3000_ACME_APP.yml" in paths, "manifest")
+if problems:
+    print("FAIL: MOP input: " + "; ".join(problems), file=sys.stderr)
+    sys.exit(1)
+PY
 
 # 2. The engineer's part: paste the snippet as the VLAN record and decide
 #    what discovery leaves open (gateway mode and leaves, the VRF's L3 VNI).
