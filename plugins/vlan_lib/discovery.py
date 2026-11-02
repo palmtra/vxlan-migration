@@ -6,6 +6,7 @@ import re
 from ansible.errors import AnsibleFilterError
 
 from vlan_lib.common import _str_equal, _vlan_present
+from vlan_lib.endpoints import parse_nd_entries
 from vlan_lib.parsers import (
     _normalize_interface_name,
     arp_table_parse_check,
@@ -222,16 +223,34 @@ def extract_vlan_targeted_discovery(vlan, outputs):
     vlan_present = port_membership.get("vlan_present", False)
     svi_present = svi_command_indicates_present(svi_output, vlan_id)
     svi_vrf = parse_svi_vrf(svi_output, platform) if svi_present else ""
-    mac_detail = parse_mac_table_detail(mac_output, vlan_id)
-    mac_entries = [entry for entry in mac_detail["entries"] if entry["port_kind"] == "port"]
-    # Not local endpoints, kept as evidence: MACs the vPC peer learned, and
-    # remote MACs behind another VTEP.
-    peer_link_mac_entries = [entry for entry in mac_detail["entries"] if entry["port_kind"] == "peer_link"]
-    overlay_mac_entries = [entry for entry in mac_detail["entries"] if entry["port_kind"] == "overlay"]
-    arp_entries = parse_arp_entries(arp_output, vlan_id) if svi_present else []
-    parse_checks = {"mac_table": mac_table_parse_check(mac_output, vlan_id)}
-    if svi_present:
-        parse_checks["arp"] = arp_table_parse_check(arp_output, vlan_id)
+    bulk = outputs.get("endpoint_tables") or {}
+    if "mac_entries" in bulk:
+        # Whole-switch JSON tables, already split by VLAN (endpoints.py).
+        collection = {"mode": "bulk", "passes": int(bulk.get("passes") or 1)}
+        mac_entries = [dict(entry) for entry in bulk.get("mac_entries") or []]
+        peer_link_mac_entries = list(bulk.get("peer_link_mac_entries") or [])
+        overlay_mac_entries = list(bulk.get("overlay_mac_entries") or [])
+        arp_entries = list(bulk.get("arp_entries") or []) if svi_present else []
+        nd_entries = list(bulk.get("nd_entries") or []) if svi_present else []
+        parse_checks = {
+            "bulk": {"ok": not bulk.get("problems"), "problems": list(bulk.get("problems") or [])}
+        }
+    else:
+        collection = {"mode": "per_vlan", "passes": 1}
+        mac_detail = parse_mac_table_detail(mac_output, vlan_id)
+        mac_entries = [entry for entry in mac_detail["entries"] if entry["port_kind"] == "port"]
+        # Not local endpoints, kept as evidence: MACs the vPC peer learned, and
+        # remote MACs behind another VTEP.
+        peer_link_mac_entries = [entry for entry in mac_detail["entries"] if entry["port_kind"] == "peer_link"]
+        overlay_mac_entries = [entry for entry in mac_detail["entries"] if entry["port_kind"] == "overlay"]
+        arp_entries = parse_arp_entries(arp_output, vlan_id) if svi_present else []
+        nd_entries = parse_nd_entries(outputs.get("nd_output") or "", vlan_id) if svi_present else []
+        parse_checks = {"mac_table": mac_table_parse_check(mac_output, vlan_id)}
+        if svi_present:
+            parse_checks["arp"] = arp_table_parse_check(arp_output, vlan_id)
+    for key, value in (outputs.get("collection_extra") or {}).items():
+        if value:
+            collection[key] = value
     mac_learned = bool(mac_entries)
     arp_learned = bool(arp_entries)
 
@@ -390,6 +409,8 @@ def extract_vlan_targeted_discovery(vlan, outputs):
         "peer_link_mac_entries": peer_link_mac_entries,
         "overlay_mac_entries": overlay_mac_entries,
         "arp_entries": arp_entries,
+        "nd_entries": nd_entries,
+        "endpoint_collection": collection,
         "parse_checks": parse_checks,
         "vlan_id_raw": vlan_output,
         "svi_raw": svi_output,

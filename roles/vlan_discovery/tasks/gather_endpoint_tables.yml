@@ -1,0 +1,26 @@
+---
+# -----------------------------------------------------------------------------
+# Bulk endpoint tables (discovery_endpoint_collection: bulk, or auto)
+# -----------------------------------------------------------------------------
+# Every switch reads its whole MAC, ARP and IPv6 neighbor tables as JSON,
+# discovery_passes times, at the same moments. The samples are merged and
+# split by VLAN; the per-VLAN tasks then use them instead of their own MAC and
+# ARP commands. A switch whose JSON cannot be read goes back to per_vlan.
+
+- name: Read the endpoint tables, one sample at a time
+  ansible.builtin.include_tasks: gather_endpoint_tables_pass.yml
+  loop: "{{ range(discovery_passes | int) | list }}"
+  loop_control:
+    loop_var: _disc_pass
+
+- name: Merge the samples and split them by VLAN
+  ansible.builtin.set_fact:
+    _disc_endpoint_tables: "{{ _disc_endpoint_samples | default([]) | merge_endpoint_samples }}"
+
+- name: Go back to per-VLAN commands where the tables could not be read
+  ansible.builtin.set_fact:
+    _disc_collection_mode: per_vlan
+    _disc_collection_note: >-
+      bulk tables not readable ({{ _disc_endpoint_tables.problems | default([]) | join('; ') or 'no output' }}),
+      read per VLAN instead
+  when: not (_disc_endpoint_tables.ok | default(false) | bool)

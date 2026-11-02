@@ -18,6 +18,28 @@
   ansible.builtin.set_fact:
     _disc_light: "{{ (discovery_profile | default('full')) == 'light' }}"
 
+# Endpoint tables are read before the per-OS tasks, by every switch together:
+# the ARP refresh must finish everywhere before any MAC table is read, and
+# samples must be taken at the same moments on every switch.
+- name: Choose how endpoint tables are read (bulk JSON or per VLAN)
+  ansible.builtin.set_fact:
+    _disc_collection_mode: >-
+      {{ discovery_endpoint_collection | endpoint_collection_mode(_effective_vlans | length, discovery_passes | int,
+         discovery_arp_refresh | bool, discovery_bulk_min_vlans | int, network_os_family) }}
+  when: network_os_family in ['eos', 'nxos']
+
+- name: Refresh ARP from the legacy gateways (discovery_arp_refresh)
+  ansible.builtin.include_tasks: refresh_endpoints.yml
+  when:
+    - discovery_arp_refresh | bool
+    - network_os_family in ['eos', 'nxos']
+
+- name: Read whole endpoint tables as JSON (bulk collection)
+  ansible.builtin.include_tasks: gather_endpoint_tables.yml
+  when:
+    - network_os_family in ['eos', 'nxos']
+    - _disc_collection_mode | default('per_vlan') == 'bulk'
+
 - name: Include EOS discovery tasks
   ansible.builtin.include_tasks: gather_eos.yml
   when: network_os_family == 'eos'

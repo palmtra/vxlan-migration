@@ -1809,11 +1809,16 @@ def arp_discovery_command(platform, vlan_id, svi_vrf=None, svi_present=False):
     return f"show ip arp vrf {vrf}"
 
 
-def mac_discovery_command(platform, vlan_id):
-    """Build a platform-appropriate dynamic MAC table command for a VLAN."""
+def mac_discovery_command(platform, vlan_id, include_static=False):
+    """Build a platform-appropriate MAC table command for a VLAN.
+
+    *include_static* reads every entry (``show mac address-table vlan N``):
+    static and configured MACs of real endpoints are kept, and the switch's
+    own MACs are recognized and left out by the parser.
+    """
     vid = int(vlan_id)
     plat = str(platform).lower()
-    if plat in ("eos", "nxos", "ios"):
+    if plat in ("eos", "nxos", "ios") and not include_static:
         return f"show mac address-table dynamic vlan {vid}"
     return f"show mac address-table vlan {vid}"
 

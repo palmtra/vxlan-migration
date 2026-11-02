@@ -24,6 +24,35 @@ discovery_model_routing_detail: false
 # (participating, or review for unclassified / outside-switch ports).
 discovery_keep_idle_endpoint_ports: false
 
+# --- Endpoint tables (MAC, ARP, IPv6 neighbors) -------------------------------
+# per_vlan: MAC and ARP read one VLAN at a time (text commands).
+# bulk:     each switch's whole MAC, ARP and IPv6 neighbor tables read once as
+#           JSON and split by VLAN. A switch whose JSON cannot be read falls
+#           back to per_vlan, and the report says so.
+# auto:     bulk when the run covers discovery_bulk_min_vlans VLANs or more, or
+#           takes more than one sample; per_vlan otherwise.
+discovery_endpoint_collection: auto
+discovery_bulk_min_vlans: 5
+# Samples of the endpoint tables (bulk only), discovery_pass_interval seconds
+# apart. A host that is quiet during one sample can show up in another; each
+# endpoint records how many samples saw it, and one missing from some is
+# flagged intermittent. Keep passes x interval under the MAC aging time to
+# catch hosts that talk rarely, or above it to see which ones come and go.
+discovery_passes: 1
+discovery_pass_interval: 120
+# Before reading the tables, ping every address in each legacy SVI subnet from
+# one SVI owner, so silent hosts answer ARP and refresh the MAC tables on the
+# path to them. This sends traffic to every address: opt in per run, and tell
+# security operations first. At most discovery_arp_refresh_max_hosts pings per
+# switch; larger subnets are skipped and named in the report.
+discovery_arp_refresh: false
+discovery_arp_refresh_max_hosts: 1024
+# Read static MAC entries too (show mac address-table vlan N), so endpoints
+# with configured MACs are not missed. The switch's own MACs are left out.
+discovery_include_static_macs: true
+# Read IPv6 neighbors on SVIs that have IPv6 addresses.
+discovery_collect_ipv6: true
+
 # Collect static routes + BGP as first-class L3 discovery (EOS/NXOS/IOS).
 # Visibility only - never prune actions (especially default VRF / shared VRF).
 discovery_collect_prune_context: true

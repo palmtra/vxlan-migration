@@ -1,0 +1,41 @@
+---
+# One sample of the whole endpoint tables (see gather_endpoint_tables.yml).
+
+- name: Wait between samples, seconds {{ discovery_pass_interval }}
+  ansible.builtin.pause:
+    seconds: "{{ discovery_pass_interval | int }}"
+  when:
+    - _disc_pass | int > 0
+    - discovery_pass_interval | int > 0
+
+- name: "Read the whole MAC table - sample {{ _disc_pass | int + 1 }}"
+  ansible.netcommon.cli_command:
+    command: "{{ network_os_family | endpoint_bulk_command('mac') }}"
+  register: _disc_bulk_mac
+  check_mode: false
+  changed_when: false
+  failed_when: false
+
+- name: "Read ARP in every VRF - sample {{ _disc_pass | int + 1 }}"
+  ansible.netcommon.cli_command:
+    command: "{{ network_os_family | endpoint_bulk_command('arp') }}"
+  register: _disc_bulk_arp
+  check_mode: false
+  changed_when: false
+  failed_when: false
+
+- name: "Read IPv6 neighbors in every VRF - sample {{ _disc_pass | int + 1 }}"
+  ansible.netcommon.cli_command:
+    command: "{{ network_os_family | endpoint_bulk_command('nd') }}"
+  register: _disc_bulk_nd
+  when: discovery_collect_ipv6 | bool
+  check_mode: false
+  changed_when: false
+  failed_when: false
+
+- name: "Keep the rows for this run's VLANs - sample {{ _disc_pass | int + 1 }}"
+  ansible.builtin.set_fact:
+    _disc_endpoint_samples: >-
+      {{ _disc_endpoint_samples | default([]) + [network_os_family | parse_endpoint_tables_json(
+         _disc_bulk_mac.stdout | default(''), _disc_bulk_arp.stdout | default(''),
+         _disc_bulk_nd.stdout | default(''), _effective_vlans | map(attribute='id') | list)] }}
