@@ -13,7 +13,7 @@ Schema: schemas/mop_input.schema.json. Contract and template: docs/MOP_INPUT.md.
 import hashlib
 import os
 
-from vlan_lib.reports import build_findings
+from vlan_lib.reports import build_findings, resolve_l3_vni
 
 MOP_SCHEMA = "vxlan-migration/mop-input"
 MOP_SCHEMA_VERSION = "1.0"
@@ -333,6 +333,20 @@ def _steps(report, findings, files):
         ids = []
         for plan in by_phase.get(phase, []):
             execution = plan.get("execution") or {}
+            rollback = execution.get("rollback") or None
+            confirm = None
+            notes = []
+            if execution.get("platform") == "eos" and execution.get("commit_timer_cmd"):
+                timer = execution.get("commit_timer") or ""
+                confirm = execution.get("confirm") or None
+                rollback = (
+                    "Do not confirm: the session rolls back when the commit timer (%s) expires. "
+                    "To roll back at once: %s" % (timer, execution.get("abort") or "")
+                ).strip()
+                notes.append(
+                    "The change is live but provisional for %s after `commit timer`. Run the checks, then confirm "
+                    "with `%s` before the timer expires, or it rolls back." % (timer, confirm or "")
+                )
             ids.append(
                 _step(
                     steps, vlan_id, phase=_PRUNE_PHASE_NAMES.get(phase, "5-teardown"),
@@ -341,8 +355,10 @@ def _steps(report, findings, files):
                     status="ready" if plan.get("actions") else (plan.get("status") or "blocked"),
                     blocked_reason=plan.get("blocked_reason") or "",
                     cli=_plan_cli(plan), cli_source=files["prune_markdown"],
-                    rollback=execution.get("rollback") or None,
+                    rollback=rollback,
+                    confirm=confirm,
                     save=execution.get("save") or "",
+                    notes=notes,
                     verify=["Re-run discovery for VLAN %s: %s shows the change" % (vlan_id, plan.get("hostname"))],
                     depends_on=list(depends),
                 )
@@ -417,6 +433,7 @@ def build_mop_input(report, run=None, timestamp=""):
     model = report.get("deployment_model") or {}
     evpn = model.get("evpn") or {}
     steps = _steps(report, findings, files)
+    l3_vni = resolve_l3_vni(report)
     counts = {kind: len([f for f in findings if f["kind"] == kind]) for kind in _FINDING_PREFIX}
     status = "blocked" if counts["blocker"] else ("needs_decisions" if counts["decision"] else "ready")
     return {
@@ -434,7 +451,8 @@ def build_mop_input(report, run=None, timestamp=""):
             "migration_type": report.get("migration_type") or "",
             "vrf": (report.get("gateway_assessment") or {}).get("vrf") or report.get("discovered_vrf") or "",
             "l2_vni": (evpn.get("l2") or {}).get("vni"),
-            "l3_vni": (evpn.get("l3") or {}).get("vni"),
+            "l3_vni": l3_vni["vni"],
+            "l3_vni_source": l3_vni["source"],
             "status": status,
         },
         "summary": {

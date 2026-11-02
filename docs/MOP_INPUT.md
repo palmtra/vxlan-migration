@@ -16,7 +16,7 @@ Nothing in these files is applied to a device. The steps carry CLI that already 
 | Section | Contents |
 |---|---|
 | `run` | `run_id`, `started_at` / `finished_at` (UTC, ISO 8601), git commit and whether the tree had uncommitted changes, operator, controller, inventory, Ansible version, the discovery options in effect, and which switches answered. |
-| `vlan` | ID, name, data center, migration type (`l2` / `l3`), VRF, L2 and L3 VNI, and **status**: `blocked` (any blocker), `needs_decisions` (any decision), or `ready`. |
+| `vlan` | ID, name, data center, migration type (`l2` / `l3`), VRF, L2 and L3 VNI (`l3_vni_source` says whether the L3 VNI comes from the SSOT record or from the VRF-to-VNI map on the gateway leaves; leaves that disagree are a blocker), and **status**: `blocked` (any blocker), `needs_decisions` (any decision), or `ready`. |
 | `summary` | Finding counts by kind, high risks, host count, step count. |
 | `coverage` | Switches scanned, not discovered, failed commands, MAC/ARP rows the parser could not read, how endpoint tables were read (per VLAN or bulk, samples, ARP refresh). `complete` is false when any coverage blocker exists. |
 | `switches` | `SW-<hostname>`: OS, type (`vtep`, `non_vtep`, `legacy`), placement role, SVI, local endpoint MACs, and the reasons for the role. |
@@ -50,7 +50,7 @@ Each finding has a `category` (coverage, scope, gateway, fabric, routing, l2, pr
 | `2-link-prune-mls` | MLS side of links to non-VTEP switches (cuts the EVPN-legacy loop). Re-run discovery after it. |
 | `3-link-prune-non-vtep` | Non-VTEP side of those links. |
 | `4-gateway-cutover` | `shutdown` on each legacy gateway SVI, rollback `no shutdown`, verified by pinging every baseline endpoint from the fabric. Carries the gateway MAC change note. |
-| `5-teardown` | Trunks, SVI and VLAN removal on prune-eligible switches, with the EOS session / NX-OS checkpoint, save and rollback CLI. |
+| `5-teardown` | Trunks, SVI and VLAN removal on prune-eligible switches. NX-OS: checkpoint, `save` once checks pass, rollback to the checkpoint. EOS: `configure session` ending in `commit timer`; `confirm` makes it permanent once checks pass, and the rollback is to let the timer expire or abort the session. |
 | `6-verify` | `playbooks/core/workflow_verify.yml` against the baseline, then a discovery re-run. |
 
 Every step has `switch`, `status` (`ready`, `blocked`, `needs_decision`, or the prune plan status such as `blocked_until_gateway_moved`), `cli` (exact text, or `null` when the CLI is in the file named by `cli_source`), `rollback`, `verify`, `depends_on` (step IDs), and `notes`.

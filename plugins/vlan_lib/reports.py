@@ -1015,6 +1015,36 @@ def _rebuild_items(report):
     return items
 
 
+def resolve_l3_vni(report):
+    """The L3 VNI of the gateway VRF: ``{vni, source, by_vni}``.
+
+    The SSOT record's ``evpn.l3.vni`` wins. Otherwise it is the VNI every
+    gateway leaf maps the VRF to in ``show interfaces Vxlan1`` (from
+    fabric_readiness). When the leaves disagree, *vni* is None and *by_vni*
+    names who has which. L2 migrations have no L3 VNI.
+    """
+    if report.get("migration_type") != "l3":
+        return {"vni": None, "source": "not needed (L2 migration)", "by_vni": {}}
+    record = (((report.get("deployment_model") or {}).get("evpn") or {}).get("l3") or {}).get("vni")
+    if record not in (None, ""):
+        return {"vni": int(record), "source": "SSOT record (evpn.l3.vni)", "by_vni": {}}
+    readiness = report.get("fabric_readiness") or {}
+    by_vni = {}
+    for row in readiness.get("checked") or []:
+        if row.get("svi_host") and row.get("l3_vni") is not None:
+            by_vni.setdefault(int(row["l3_vni"]), []).append(row.get("hostname"))
+    if len(by_vni) == 1:
+        vni, hosts = next(iter(by_vni.items()))
+        return {
+            "vni": vni,
+            "source": "fabric: VRF %s maps to it on %s (show interfaces Vxlan1)" % (readiness.get("vrf"), ", ".join(hosts)),
+            "by_vni": by_vni,
+        }
+    if len(by_vni) > 1:
+        return {"vni": None, "source": "fabric leaves disagree", "by_vni": by_vni}
+    return {"vni": None, "source": "not found: no gateway leaf maps the VRF to a VNI", "by_vni": {}}
+
+
 def build_findings(report):
     """Everything an engineer must resolve or know before this VLAN migrates.
 
@@ -1073,6 +1103,18 @@ def build_findings(report):
         return found
     add_all("risk", "gateway", "medium", (report.get("gateway_assessment") or {}).get("warnings") or [])
     add_all("blocker", "fabric", "high", (report.get("fabric_readiness") or {}).get("issues") or [])
+    l3_vni = resolve_l3_vni(report)
+    if len(l3_vni["by_vni"]) > 1:
+        add(
+            "blocker",
+            "fabric",
+            "high",
+            "Make the L3 VNI of VRF %s the same on every gateway leaf: %s."
+            % (
+                (report.get("fabric_readiness") or {}).get("vrf") or "",
+                "; ".join("%s on %s" % (vni, ", ".join(hosts)) for vni, hosts in sorted(l3_vni["by_vni"].items())),
+            ),
+        )
     add_gateway_notes(report.get("gateway_notes") or [])
     add_all("task", "routing", "high", _rebuild_items(report))
     add_all("risk", "l2", "medium", (report.get("l2_attachment") or {}).get("issues") or [])

@@ -34,6 +34,8 @@
         "cli": { "type": ["string", "null"], "description": "Exact CLI to paste, from a generated plan. null when the CLI lives in the file named by cli_source." },
         "cli_source": { "type": "string" },
         "rollback": { "type": ["string", "null"] },
+        "confirm": { "type": ["string", "null"], "description": "EOS configure session with commit timer: the command that makes the change permanent once checks pass" },
+        "save": { "type": "string", "description": "NX-OS: save once checks pass" },
         "verify": { "$ref": "#/$defs/strings" },
         "depends_on": { "type": "array", "items": { "$ref": "#/$defs/id" } },
         "findings": { "type": "array", "items": { "type": "string" } },
@@ -81,6 +83,7 @@
         "vrf": { "type": "string" },
         "l2_vni": { "type": ["integer", "null"] },
         "l3_vni": { "type": ["integer", "null"] },
+        "l3_vni_source": { "type": "string", "description": "Where l3_vni comes from: the SSOT record, the VRF-to-VNI map on the gateway leaves, or why it is missing" },
         "status": { "enum": ["ready", "needs_decisions", "blocked"] }
       }
     },
