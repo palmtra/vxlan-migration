@@ -2,7 +2,7 @@
 
 | File | What it is |
 |---|---|
-| `ACME_APP_mop_input_20261102_185028_841.json` | The MOP input discovery wrote for VLAN 3000 from the Omaha mock fixtures (`tests/mock_cli/omaha`). Synthetic network. |
+| `ACME_APP_mop_input_20261102_210919_379.json` | The MOP input discovery wrote for VLAN 3000 from the Omaha mock fixtures (`tests/mock_cli/omaha`). Synthetic network. |
 | `MOP_VLAN3000_ACME_APP.md` | A MOP written from that file only, following the contract and template in `docs/MOP_INPUT.md`: CLI copied verbatim from `steps[].cli`, every statement cites an ID, gaps marked NOT IN DISCOVERY. |
 
 `tests/test_sample_mop.py` checks that the MOP keeps to the contract:

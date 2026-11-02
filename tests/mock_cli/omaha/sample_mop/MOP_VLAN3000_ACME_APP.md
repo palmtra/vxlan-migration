@@ -1,13 +1,13 @@
 # MOP: VLAN 3000 ACME_APP to VXLAN (omaha)
 
-> **Sample.** Written from `ACME_APP_mop_input_20261102_185028_841.json` in this folder, which discovery produced from the Omaha **mock** fixtures (`tests/mock_cli/omaha`), following the contract and template in `docs/MOP_INPUT.md`. The switches, addresses and hosts are synthetic. Do not execute.
+> **Sample.** Written from `ACME_APP_mop_input_20261102_210919_379.json` in this folder, which discovery produced from the Omaha **mock** fixtures (`tests/mock_cli/omaha`), following the contract and template in `docs/MOP_INPUT.md`. The switches, addresses and hosts are synthetic. Do not execute.
 
 | | |
 |---|---|
 | Status | **Not approved for execution: waiting on decision [D-01].** `vlan.status` is `needs_decisions`; there are no blockers. |
-| Discovery run | `omaha_20261102_185028_841`, started 2026-11-02T18:50:27Z, finished 2026-11-02T18:50:53Z |
-| Code | `2aaa2fe87b8cb3d04c8b4d18dcaf5984cca47aee`, no uncommitted changes |
-| MOP input | `ACME_APP_mop_input_20261102_185028_841.json`, SHA-256 `61f25dccce2b3490d1f14f909b34a61330ba6a1d0674402ab1248ac3893811ec` |
+| Discovery run | `omaha_20261102_210919_379`, started 2026-11-02T21:09:18Z, finished 2026-11-02T21:09:43Z |
+| Code | `92c863bcd6fad03416bf53157b8ad2b0f963b78a`, no uncommitted changes |
+| MOP input | `ACME_APP_mop_input_20261102_210919_379.json`, SHA-256 `01c2a1492dded786539866e8cc06c48badcb350114fee3add2abfbcdbd17b5e4` |
 | Prepared by / approved by | NOT IN DISCOVERY |
 
 ## 1. Scope
@@ -19,7 +19,7 @@
 | Subnet | 10.230.0.0/24, gateway 10.230.0.1 |
 | VRF | v0000822a |
 | L2 VNI | 11002 (proposed, see [D-01]) |
-| L3 VNI | NOT IN DISCOVERY (`vlan.l3_vni` is null) |
+| L3 VNI | 822 (from the fabric: VRF v0000822a maps to it on fntc-aggacc-sw01, fntc-aggacc-sw02, `show interfaces Vxlan1`) |
 | Fabric SVI MTU | 9214 [I-01] |
 
 Switches that change ([SW-…] from `switches`, steps from `steps[].switch`):
@@ -59,7 +59,7 @@ None. Before the window, re-run `playbooks/core/discover_vlan.yml` for VLAN 3000
 
 ### 3.3 Endpoint baseline [S-3000-03]
 
-Keep `ACME_APP_endpoints_20261102_185028_841.csv`. It lists 4 host IPs; the post-change check pings these.
+Keep `ACME_APP_endpoints_20261102_210919_379.csv`. It lists 4 host IPs; the post-change check pings these.
 
 | ID | IP | MAC | Switch | Port | Faces | Note |
 |---|---|---|---|---|---|---|
@@ -164,7 +164,7 @@ The two MLS teardowns show `blocked_until_gateway_moved` in this discovery run b
 #### [S-3000-08] Teardown on fnts-fntc03-aggpe-mls01 (trunks, SVI, VLAN)
 
 - Status: blocked_until_gateway_moved ("Vlan SVI on fnts-fntc03-aggpe-mls01 is still the active gateway; move the gateway to the fabric first"). Depends on [S-3000-06] [S-3000-07].
-- CLI (from `ACME_APP_prune_20261102_185028_841.md`):
+- CLI (from `ACME_APP_prune_20261102_210919_379.md`):
 
 ```
 checkpoint prune_v3000
@@ -185,7 +185,7 @@ end
 #### [S-3000-09] Teardown on fnts-fntc03-aggpe-mls02 (trunks, SVI, VLAN)
 
 - Status: blocked_until_gateway_moved ("Vlan SVI on fnts-fntc03-aggpe-mls02 is still the active gateway; move the gateway to the fabric first"). Depends on [S-3000-06] [S-3000-07].
-- CLI (from `ACME_APP_prune_20261102_185028_841.md`):
+- CLI (from `ACME_APP_prune_20261102_210919_379.md`):
 
 ```
 checkpoint prune_v3000
@@ -206,7 +206,7 @@ end
 #### [S-3000-10] Teardown on fntc-aggacc-sw05 (trunks, VLAN)
 
 - Status: ready. Depends on [S-3000-06] [S-3000-07].
-- CLI (from `ACME_APP_prune_20261102_185028_841.md`):
+- CLI (from `ACME_APP_prune_20261102_210919_379.md`):
 
 ```
 configure session prune_v3000
@@ -218,13 +218,15 @@ show session-config diffs
 commit timer 00:10:00
 ```
 
+- The change is live but provisional for 00:10:00 after `commit timer`. Run the checks, then confirm before the timer expires, or it rolls back.
 - Verify: re-run discovery for VLAN 3000: fntc-aggacc-sw05 shows the change.
-- Rollback: NOT IN DISCOVERY (`rollback` is null). The CLI ends with `commit timer 00:10:00`; how the session is confirmed or left to expire is not in the MOP input (Open items).
+- Confirm after verification: `configure confirm`
+- Rollback: do not confirm: the session rolls back when the commit timer (00:10:00) expires. To roll back at once: `configure session prune_v3000 abort`
 
 #### [S-3000-11] Teardown on fntc-aggacc-sw06 (trunks, VLAN)
 
 - Status: ready. Depends on [S-3000-06] [S-3000-07].
-- CLI (from `ACME_APP_prune_20261102_185028_841.md`):
+- CLI (from `ACME_APP_prune_20261102_210919_379.md`):
 
 ```
 configure session prune_v3000
@@ -236,8 +238,10 @@ show session-config diffs
 commit timer 00:10:00
 ```
 
+- The change is live but provisional for 00:10:00 after `commit timer`. Run the checks, then confirm before the timer expires, or it rolls back.
 - Verify: re-run discovery for VLAN 3000: fntc-aggacc-sw06 shows the change.
-- Rollback: NOT IN DISCOVERY (`rollback` is null), as in [S-3000-10].
+- Confirm after verification: `configure confirm`
+- Rollback: do not confirm: the session rolls back when the commit timer (00:10:00) expires. To roll back at once: `configure session prune_v3000 abort`
 
 ### Phase 6: verify
 
@@ -246,7 +250,7 @@ commit timer 00:10:00
 - Depends on [S-3000-08] [S-3000-09] [S-3000-10] [S-3000-11].
 - Run `playbooks/core/workflow_verify.yml`.
 - Verify:
-  - Every baseline host answers ping from the fabric (`ACME_APP_endpoints_20261102_185028_841.csv`).
+  - Every baseline host answers ping from the fabric (`ACME_APP_endpoints_20261102_210919_379.csv`).
   - Re-run discovery: VLAN 3000 is VNI-mapped on fntc-aggacc-sw01, fntc-aggacc-sw02 and nothing is left to prune.
 
 ## 6. Verification and acceptance
@@ -264,8 +268,8 @@ Reverse order. Roll back only as far as needed.
 
 | Undo | Switch | Rollback |
 |---|---|---|
-| [S-3000-11] | fntc-aggacc-sw06 | NOT IN DISCOVERY |
-| [S-3000-10] | fntc-aggacc-sw05 | NOT IN DISCOVERY |
+| [S-3000-11] | fntc-aggacc-sw06 | Before `configure confirm`: let the commit timer expire, or `configure session prune_v3000 abort` |
+| [S-3000-10] | fntc-aggacc-sw05 | Before `configure confirm`: let the commit timer expire, or `configure session prune_v3000 abort` |
 | [S-3000-09] | fnts-fntc03-aggpe-mls02 | `rollback running-config checkpoint prune_v3000` |
 | [S-3000-08] | fnts-fntc03-aggpe-mls01 | `rollback running-config checkpoint prune_v3000` |
 | [S-3000-07] | fnts-fntc03-aggpe-mls02 | `interface Vlan3000` / `  no shutdown` |
@@ -276,8 +280,6 @@ Reverse order. Roll back only as far as needed.
 ## 8. Open items
 
 1. **[D-01]** Confirm VNI 11002 in `evpn.l2.vni` of the SSOT record. Owner not assigned.
-2. **L3 VNI:** NOT IN DISCOVERY (`vlan.l3_vni` is null). The MOP needs the L3 VNI of VRF v0000822a on the gateway leaves.
-3. **Rollback for the EOS session teardowns** [S-3000-10] [S-3000-11]: NOT IN DISCOVERY. Also how the `commit timer` session is confirmed.
-4. **Bridging during deploy** [S-3000-04] [S-3000-05]: whether the fabric and the legacy L2 are bridged for VLAN 3000 before the legacy SVI is shut is NOT IN DISCOVERY. Pick one: apply the configlets in the cutover window, or confirm they are not bridged.
-5. **[EP-3000-006]** 10.230.0.40 is not in any MAC table [R-02]. Locate it before the window.
-6. **Change window, expected interruption per phase, prepared by / approved by:** NOT IN DISCOVERY.
+2. **Bridging during deploy** [S-3000-04] [S-3000-05]: whether the fabric and the legacy L2 are bridged for VLAN 3000 before the legacy SVI is shut is NOT IN DISCOVERY. Pick one: apply the configlets in the cutover window, or confirm they are not bridged.
+3. **[EP-3000-006]** 10.230.0.40 is not in any MAC table [R-02]. Locate it before the window.
+4. **Change window, expected interruption per phase, prepared by / approved by:** NOT IN DISCOVERY.

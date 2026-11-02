@@ -26,7 +26,12 @@ sys.path.insert(0, os.path.join(_REPO, "plugins"))
 
 from vlan_lib.mop import build_mop_input, build_run_index, file_manifest, normalize_run  # noqa: E402
 from vlan_lib.parsers import fhrp_virtual_mac, parse_svi_details, parse_virtual_router_mac  # noqa: E402
-from vlan_lib.reports import build_action_items, build_findings, build_gateway_mac_change  # noqa: E402
+from vlan_lib.reports import (  # noqa: E402
+    build_action_items,
+    build_findings,
+    build_gateway_mac_change,
+    resolve_l3_vni,
+)
 from vlan_lib.schema import validate_against_schema  # noqa: E402
 
 
@@ -125,6 +130,12 @@ def _report(**overrides):
                            "rollback": "rollback running-config checkpoint prune_v3000",
                            "save": "copy running-config startup-config"}},
             {"hostname": "leaf-01", "placement_role": "retained_participating", "phase": 3, "actions": []},
+            {"hostname": "leaf-09", "placement_role": "prune_eligible", "phase": 3, "phase_label": "teardown",
+             "status": "ready", "actions": [{"cli": "no vlan 3000"}],
+             "execution": {"platform": "eos", "full_cli": "configure session prune_v3000\nno vlan 3000\n!\n"
+                           "show session-config diffs\ncommit timer 00:10:00\n", "commit_timer": "00:10:00",
+                           "commit_timer_cmd": "commit timer 00:10:00", "confirm": "configure confirm",
+                           "abort": "configure session prune_v3000 abort"}},
         ],
         "endpoint_table": {
             "endpoints": [
@@ -213,7 +224,17 @@ class MopInputTests(unittest.TestCase):
         self.assertIn("00:00:0c:9f:fb:b8 to 00:1c:73:00:00:99", cutover[0]["notes"][0])
         self.assertEqual(cutover[0]["depends_on"], [deploy[0]["id"], deploy[1]["id"]])
         teardown = by_phase["5-teardown"]
-        self.assertEqual([s["switch"] for s in teardown], ["mls-01"])  # retained leaf-01 is not a step
+        self.assertEqual([s["switch"] for s in teardown], ["mls-01", "leaf-09"])  # retained leaf-01 is not a step
+        eos = teardown[1]
+        self.assertEqual(eos["confirm"], "configure confirm")
+        self.assertEqual(
+            eos["rollback"],
+            "Do not confirm: the session rolls back when the commit timer (00:10:00) expires. "
+            "To roll back at once: configure session prune_v3000 abort",
+        )
+        self.assertIn("confirm with `configure confirm` before the timer expires", eos["notes"][0])
+        self.assertIsNone(teardown[0]["confirm"])
+        self.assertEqual(teardown[0]["save"], "copy running-config startup-config")
         self.assertTrue(teardown[0]["cli"].startswith("checkpoint prune_v3000"))
         self.assertEqual(teardown[0]["rollback"], "rollback running-config checkpoint prune_v3000")
         self.assertEqual(teardown[0]["depends_on"], [c["id"] for c in cutover])
@@ -231,6 +252,41 @@ class MopInputTests(unittest.TestCase):
         first = json.dumps(build_mop_input(_report(), self.RUN, "T"), sort_keys=True)
         second = json.dumps(build_mop_input(_report(), self.RUN, "T"), sort_keys=True)
         self.assertEqual(first, second)
+
+
+class L3VniTests(unittest.TestCase):
+    @staticmethod
+    def _readiness(*rows):
+        return {"vrf": "v1", "checked": [
+            {"hostname": host, "l3_vni": vni, "svi_host": svi} for host, vni, svi in rows
+        ]}
+
+    def test_record_wins_then_fabric(self):
+        report = _report(fabric_readiness=self._readiness(("leaf-01", 822, True), ("leaf-02", 822, True)))
+        self.assertEqual(resolve_l3_vni(report)["vni"], 822)  # record says 822 too
+        report["deployment_model"]["evpn"]["l3"] = {}
+        found = resolve_l3_vni(report)
+        self.assertEqual(found["vni"], 822)
+        self.assertIn("leaf-01, leaf-02", found["source"])
+        doc = build_mop_input(report, {}, "T")
+        self.assertEqual((doc["vlan"]["l3_vni"], doc["vlan"]["l3_vni_source"]), (822, found["source"]))
+        validate_against_schema(doc, "mop_input")
+
+    def test_disagreeing_leaves_are_a_blocker(self):
+        report = _report(fabric_readiness=self._readiness(("leaf-01", 822, True), ("leaf-02", 823, True), ("leaf-03", 900, False)))
+        report["deployment_model"]["evpn"]["l3"] = {}
+        found = resolve_l3_vni(report)
+        self.assertEqual((found["vni"], found["by_vni"]), (None, {822: ["leaf-01"], 823: ["leaf-02"]}))
+        blockers = [f["text"] for f in build_findings(report) if f["kind"] == "blocker"]
+        self.assertIn("Make the L3 VNI of VRF v1 the same on every gateway leaf: 822 on leaf-01; 823 on leaf-02.", blockers)
+        self.assertEqual(build_mop_input(report, {}, "T")["vlan"]["status"], "blocked")
+
+    def test_missing_and_l2(self):
+        report = _report(fabric_readiness=self._readiness(("leaf-01", None, True)))
+        report["deployment_model"]["evpn"]["l3"] = {}
+        self.assertEqual(resolve_l3_vni(report)["vni"], None)
+        self.assertIn("not found", resolve_l3_vni(report)["source"])
+        self.assertEqual(resolve_l3_vni(_report(migration_type="l2"))["source"], "not needed (L2 migration)")
 
 
 class RunIndexTests(unittest.TestCase):

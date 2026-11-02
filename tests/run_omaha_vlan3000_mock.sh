@@ -64,7 +64,11 @@ def check(ok, text):
     if not ok:
         problems.append(text)
 check(mop["vlan"] == {"id": 3000, "name": "ACME_APP", "data_center": "omaha", "migration_type": "l3",
-                      "vrf": "v0000822a", "l2_vni": 11002, "l3_vni": None, "status": "needs_decisions"}, "vlan: %s" % mop["vlan"])
+                      "vrf": "v0000822a", "l2_vni": 11002, "l3_vni": 822, "status": "needs_decisions",
+                      "l3_vni_source": "fabric: VRF v0000822a maps to it on fntc-aggacc-sw01, fntc-aggacc-sw02 (show interfaces Vxlan1)"},
+      "vlan: %s" % mop["vlan"])
+eos = [s for s in mop["steps"] if s["switch"] == "fntc-aggacc-sw05"][0]
+check(eos["confirm"] == "configure confirm" and "configure session prune_v3000 abort" in eos["rollback"], "EOS teardown confirm/rollback")
 phases = [(s["phase"], s["switch"]) for s in mop["steps"]]
 check(phases == [
     ("0-prechecks", ""), ("0-prechecks", ""), ("0-prechecks", ""),

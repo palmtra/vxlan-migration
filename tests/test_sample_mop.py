@@ -10,7 +10,7 @@ import unittest
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _REPO = os.path.join(_HERE, "..")
 _SAMPLE = os.path.join(_HERE, "mock_cli", "omaha", "sample_mop")
-_INPUT = os.path.join(_SAMPLE, "ACME_APP_mop_input_20261102_185028_841.json")
+_INPUT = os.path.join(_SAMPLE, "ACME_APP_mop_input_20261102_210919_379.json")
 _MOP = os.path.join(_SAMPLE, "MOP_VLAN3000_ACME_APP.md")
 
 _CITED_ID_RE = re.compile(r"\[((?:[BDRTQI]|S|EP|A|SW)-[A-Za-z0-9._-]+)\]")
@@ -78,12 +78,18 @@ class SampleMopTests(unittest.TestCase):
     def test_status_and_gaps_are_stated(self):
         self.assertEqual(self.doc["vlan"]["status"], "needs_decisions")
         self.assertIn("Not approved for execution", self.mop)
-        self.assertIsNone(self.doc["vlan"]["l3_vni"])
-        self.assertIn("NOT IN DISCOVERY (`vlan.l3_vni` is null)", self.mop)
+        self.assertEqual(self.doc["vlan"]["l3_vni"], 822)
+        self.assertIn("| L3 VNI | 822 ", self.mop)
         for step in self.doc["steps"]:
-            if step["cli"] and step["rollback"] is None:
-                section = self.mop.split("#### [%s]" % step["id"], 1)[1].split("####", 1)[0]
+            if not step["cli"]:
+                continue
+            section = self.mop.split("#### [%s]" % step["id"], 1)[1].split("####", 1)[0]
+            if step["rollback"] is None:
                 self.assertIn("Rollback: NOT IN DISCOVERY", section, step["id"])
+            if step.get("confirm"):
+                self.assertIn("`%s`" % step["confirm"], section, step["id"])
+            if step.get("save"):
+                self.assertIn("`%s`" % step["save"], section, step["id"])
 
 
 if __name__ == "__main__":
