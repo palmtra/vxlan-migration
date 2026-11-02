@@ -10,7 +10,7 @@ import unittest
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _REPO = os.path.join(_HERE, "..")
 _SAMPLE = os.path.join(_HERE, "mock_cli", "omaha", "sample_mop")
-_INPUT = os.path.join(_SAMPLE, "ACME_APP_mop_input_20261102_210919_379.json")
+_INPUT = os.path.join(_SAMPLE, "ACME_APP_mop_input_20261102_221316_980.json")
 _MOP = os.path.join(_SAMPLE, "MOP_VLAN3000_ACME_APP.md")
 
 _CITED_ID_RE = re.compile(r"\[((?:[BDRTQI]|S|EP|A|SW)-[A-Za-z0-9._-]+)\]")

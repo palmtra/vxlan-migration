@@ -134,7 +134,7 @@ def _report(**overrides):
              "status": "ready", "actions": [{"cli": "no vlan 3000"}],
              "execution": {"platform": "eos", "full_cli": "configure session prune_v3000\nno vlan 3000\n!\n"
                            "show session-config diffs\ncommit timer 00:10:00\n", "commit_timer": "00:10:00",
-                           "commit_timer_cmd": "commit timer 00:10:00", "confirm": "configure confirm",
+                           "commit_timer_cmd": "commit timer 00:10:00", "confirm": "configure session prune_v3000 commit",
                            "abort": "configure session prune_v3000 abort"}},
         ],
         "endpoint_table": {
@@ -226,13 +226,13 @@ class MopInputTests(unittest.TestCase):
         teardown = by_phase["5-teardown"]
         self.assertEqual([s["switch"] for s in teardown], ["mls-01", "leaf-09"])  # retained leaf-01 is not a step
         eos = teardown[1]
-        self.assertEqual(eos["confirm"], "configure confirm")
+        self.assertEqual(eos["confirm"], "configure session prune_v3000 commit")
         self.assertEqual(
             eos["rollback"],
-            "Do not confirm: the session rolls back when the commit timer (00:10:00) expires. "
+            "Do not commit the session again: it rolls back when the commit timer (00:10:00) expires. "
             "To roll back at once: configure session prune_v3000 abort",
         )
-        self.assertIn("confirm with `configure confirm` before the timer expires", eos["notes"][0])
+        self.assertIn("keep it with `configure session prune_v3000 commit` before the timer expires", eos["notes"][0])
         self.assertIsNone(teardown[0]["confirm"])
         self.assertEqual(teardown[0]["save"], "copy running-config startup-config")
         self.assertTrue(teardown[0]["cli"].startswith("checkpoint prune_v3000"))

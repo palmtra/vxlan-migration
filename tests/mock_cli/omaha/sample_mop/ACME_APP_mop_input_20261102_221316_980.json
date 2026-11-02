@@ -195,13 +195,13 @@
         }
     },
     "files": {
-        "deployable_model": "ACME_APP_discovery_20261102_210919_379.yml",
-        "discovery_json": "ACME_APP_discovery_20261102_210919_379.json",
-        "discovery_markdown": "ACME_APP_discovery_20261102_210919_379.md",
-        "endpoint_baseline": "ACME_APP_endpoints_20261102_210919_379.csv",
-        "mop_input": "ACME_APP_mop_input_20261102_210919_379.json",
-        "prune_json": "ACME_APP_prune_20261102_210919_379.json",
-        "prune_markdown": "ACME_APP_prune_20261102_210919_379.md"
+        "deployable_model": "ACME_APP_discovery_20261102_221316_980.yml",
+        "discovery_json": "ACME_APP_discovery_20261102_221316_980.json",
+        "discovery_markdown": "ACME_APP_discovery_20261102_221316_980.md",
+        "endpoint_baseline": "ACME_APP_endpoints_20261102_221316_980.csv",
+        "mop_input": "ACME_APP_mop_input_20261102_221316_980.json",
+        "prune_json": "ACME_APP_prune_20261102_221316_980.json",
+        "prune_markdown": "ACME_APP_prune_20261102_221316_980.md"
     },
     "findings": [
         {
@@ -452,9 +452,9 @@
         "ansible_version": "2.18.19",
         "controller": "vm",
         "data_center": "omaha",
-        "finished_at": "2026-11-02T21:09:43Z",
+        "finished_at": "2026-11-02T22:13:38Z",
         "git": {
-            "commit": "92c863bcd6fad03416bf53157b8ad2b0f963b78a",
+            "commit": "92b5f35f9004ff7ecdf3626156ab83d68f5ac8b2",
             "dirty": false
         },
         "inventory": [
@@ -472,8 +472,8 @@
             "passes": 1,
             "scan_all_switches": true
         },
-        "run_id": "omaha_20261102_210919_379",
-        "started_at": "2026-11-02T21:09:18Z",
+        "run_id": "omaha_20261102_221316_980",
+        "started_at": "2026-11-02T22:13:16Z",
         "switches_answered": [
             "fntc-aggacc-sw01",
             "fntc-aggacc-sw02",
@@ -496,7 +496,7 @@
             "oma01-blf01",
             "oma01-blf02"
         ],
-        "timestamp": "20261102_210919_379",
+        "timestamp": "20261102_221316_980",
         "vlan_ids": [
             3000
         ]
@@ -541,7 +541,7 @@
             "cli_source": "",
             "depends_on": [],
             "files": [
-                "ACME_APP_endpoints_20261102_210919_379.csv"
+                "ACME_APP_endpoints_20261102_221316_980.csv"
             ],
             "id": "S-3000-03",
             "notes": [],
@@ -643,7 +643,7 @@
         {
             "blocked_reason": "Vlan SVI on fnts-fntc03-aggpe-mls01 is still the active gateway; move the gateway to the fabric first",
             "cli": "checkpoint prune_v3000\nconfigure terminal\ninterface port-channel101\n  switchport trunk allowed vlan remove 3000\ninterface port-channel105\n  switchport trunk allowed vlan remove 3000\nno interface Vlan3000\nno vlan 3000\nend\n",
-            "cli_source": "ACME_APP_prune_20261102_210919_379.md",
+            "cli_source": "ACME_APP_prune_20261102_221316_980.md",
             "confirm": null,
             "depends_on": [
                 "S-3000-06",
@@ -664,7 +664,7 @@
         {
             "blocked_reason": "Vlan SVI on fnts-fntc03-aggpe-mls02 is still the active gateway; move the gateway to the fabric first",
             "cli": "checkpoint prune_v3000\nconfigure terminal\ninterface port-channel101\n  switchport trunk allowed vlan remove 3000\ninterface port-channel105\n  switchport trunk allowed vlan remove 3000\nno interface Vlan3000\nno vlan 3000\nend\n",
-            "cli_source": "ACME_APP_prune_20261102_210919_379.md",
+            "cli_source": "ACME_APP_prune_20261102_221316_980.md",
             "confirm": null,
             "depends_on": [
                 "S-3000-06",
@@ -685,18 +685,18 @@
         {
             "blocked_reason": "",
             "cli": "configure session prune_v3000\ninterface Port-Channel1\n   switchport trunk allowed vlan remove 3000\nno vlan 3000\n!\nshow session-config diffs\ncommit timer 00:10:00\n",
-            "cli_source": "ACME_APP_prune_20261102_210919_379.md",
-            "confirm": "configure confirm",
+            "cli_source": "ACME_APP_prune_20261102_221316_980.md",
+            "confirm": "configure session prune_v3000 commit",
             "depends_on": [
                 "S-3000-06",
                 "S-3000-07"
             ],
             "id": "S-3000-10",
             "notes": [
-                "The change is live but provisional for 00:10:00 after `commit timer`. Run the checks, then confirm with `configure confirm` before the timer expires, or it rolls back."
+                "The change is live but provisional for 00:10:00 after `commit timer`. Run the checks, then keep it with `configure session prune_v3000 commit` before the timer expires, or it rolls back."
             ],
             "phase": "5-teardown",
-            "rollback": "Do not confirm: the session rolls back when the commit timer (00:10:00) expires. To roll back at once: configure session prune_v3000 abort",
+            "rollback": "Do not commit the session again: it rolls back when the commit timer (00:10:00) expires. To roll back at once: configure session prune_v3000 abort",
             "save": "",
             "status": "ready",
             "switch": "fntc-aggacc-sw05",
@@ -708,18 +708,18 @@
         {
             "blocked_reason": "",
             "cli": "configure session prune_v3000\ninterface Port-Channel1\n   switchport trunk allowed vlan remove 3000\nno vlan 3000\n!\nshow session-config diffs\ncommit timer 00:10:00\n",
-            "cli_source": "ACME_APP_prune_20261102_210919_379.md",
-            "confirm": "configure confirm",
+            "cli_source": "ACME_APP_prune_20261102_221316_980.md",
+            "confirm": "configure session prune_v3000 commit",
             "depends_on": [
                 "S-3000-06",
                 "S-3000-07"
             ],
             "id": "S-3000-11",
             "notes": [
-                "The change is live but provisional for 00:10:00 after `commit timer`. Run the checks, then confirm with `configure confirm` before the timer expires, or it rolls back."
+                "The change is live but provisional for 00:10:00 after `commit timer`. Run the checks, then keep it with `configure session prune_v3000 commit` before the timer expires, or it rolls back."
             ],
             "phase": "5-teardown",
-            "rollback": "Do not confirm: the session rolls back when the commit timer (00:10:00) expires. To roll back at once: configure session prune_v3000 abort",
+            "rollback": "Do not commit the session again: it rolls back when the commit timer (00:10:00) expires. To roll back at once: configure session prune_v3000 abort",
             "save": "",
             "status": "ready",
             "switch": "fntc-aggacc-sw06",
@@ -745,7 +745,7 @@
             "switch": "",
             "title": "Post-change verification",
             "verify": [
-                "Every baseline host answers ping from the fabric (ACME_APP_endpoints_20261102_210919_379.csv)",
+                "Every baseline host answers ping from the fabric (ACME_APP_endpoints_20261102_221316_980.csv)",
                 "Re-run discovery: VLAN 3000 is VNI-mapped on fntc-aggacc-sw01, fntc-aggacc-sw02 and nothing is left to prune"
             ]
         }

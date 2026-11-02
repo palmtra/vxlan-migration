@@ -1,13 +1,13 @@
 # MOP: VLAN 3000 ACME_APP to VXLAN (omaha)
 
-> **Sample.** Written from `ACME_APP_mop_input_20261102_210919_379.json` in this folder, which discovery produced from the Omaha **mock** fixtures (`tests/mock_cli/omaha`), following the contract and template in `docs/MOP_INPUT.md`. The switches, addresses and hosts are synthetic. Do not execute.
+> **Sample.** Written from `ACME_APP_mop_input_20261102_221316_980.json` in this folder, which discovery produced from the Omaha **mock** fixtures (`tests/mock_cli/omaha`), following the contract and template in `docs/MOP_INPUT.md`. The switches, addresses and hosts are synthetic. Do not execute.
 
 | | |
 |---|---|
 | Status | **Not approved for execution: waiting on decision [D-01].** `vlan.status` is `needs_decisions`; there are no blockers. |
-| Discovery run | `omaha_20261102_210919_379`, started 2026-11-02T21:09:18Z, finished 2026-11-02T21:09:43Z |
-| Code | `92c863bcd6fad03416bf53157b8ad2b0f963b78a`, no uncommitted changes |
-| MOP input | `ACME_APP_mop_input_20261102_210919_379.json`, SHA-256 `01c2a1492dded786539866e8cc06c48badcb350114fee3add2abfbcdbd17b5e4` |
+| Discovery run | `omaha_20261102_221316_980`, started 2026-11-02T22:13:16Z, finished 2026-11-02T22:13:38Z |
+| Code | `92b5f35f9004ff7ecdf3626156ab83d68f5ac8b2`, no uncommitted changes |
+| MOP input | `ACME_APP_mop_input_20261102_221316_980.json`, SHA-256 `1c6e0eaf39a40058b8403f1b7b49388b52e17b6b6467f50207fccf0eb407944a` |
 | Prepared by / approved by | NOT IN DISCOVERY |
 
 ## 1. Scope
@@ -59,7 +59,7 @@ None. Before the window, re-run `playbooks/core/discover_vlan.yml` for VLAN 3000
 
 ### 3.3 Endpoint baseline [S-3000-03]
 
-Keep `ACME_APP_endpoints_20261102_210919_379.csv`. It lists 4 host IPs; the post-change check pings these.
+Keep `ACME_APP_endpoints_20261102_221316_980.csv`. It lists 4 host IPs; the post-change check pings these.
 
 | ID | IP | MAC | Switch | Port | Faces | Note |
 |---|---|---|---|---|---|---|
@@ -164,7 +164,7 @@ The two MLS teardowns show `blocked_until_gateway_moved` in this discovery run b
 #### [S-3000-08] Teardown on fnts-fntc03-aggpe-mls01 (trunks, SVI, VLAN)
 
 - Status: blocked_until_gateway_moved ("Vlan SVI on fnts-fntc03-aggpe-mls01 is still the active gateway; move the gateway to the fabric first"). Depends on [S-3000-06] [S-3000-07].
-- CLI (from `ACME_APP_prune_20261102_210919_379.md`):
+- CLI (from `ACME_APP_prune_20261102_221316_980.md`):
 
 ```
 checkpoint prune_v3000
@@ -185,7 +185,7 @@ end
 #### [S-3000-09] Teardown on fnts-fntc03-aggpe-mls02 (trunks, SVI, VLAN)
 
 - Status: blocked_until_gateway_moved ("Vlan SVI on fnts-fntc03-aggpe-mls02 is still the active gateway; move the gateway to the fabric first"). Depends on [S-3000-06] [S-3000-07].
-- CLI (from `ACME_APP_prune_20261102_210919_379.md`):
+- CLI (from `ACME_APP_prune_20261102_221316_980.md`):
 
 ```
 checkpoint prune_v3000
@@ -206,7 +206,7 @@ end
 #### [S-3000-10] Teardown on fntc-aggacc-sw05 (trunks, VLAN)
 
 - Status: ready. Depends on [S-3000-06] [S-3000-07].
-- CLI (from `ACME_APP_prune_20261102_210919_379.md`):
+- CLI (from `ACME_APP_prune_20261102_221316_980.md`):
 
 ```
 configure session prune_v3000
@@ -218,15 +218,15 @@ show session-config diffs
 commit timer 00:10:00
 ```
 
-- The change is live but provisional for 00:10:00 after `commit timer`. Run the checks, then confirm before the timer expires, or it rolls back.
+- The change is live but provisional for 00:10:00 after `commit timer`. Run the checks, then keep it with `configure session prune_v3000 commit` before the timer expires, or it rolls back.
 - Verify: re-run discovery for VLAN 3000: fntc-aggacc-sw05 shows the change.
-- Confirm after verification: `configure confirm`
-- Rollback: do not confirm: the session rolls back when the commit timer (00:10:00) expires. To roll back at once: `configure session prune_v3000 abort`
+- Keep it after verification, before the timer expires: `configure session prune_v3000 commit`
+- Rollback: do not commit the session again: it rolls back when the commit timer (00:10:00) expires. To roll back at once: `configure session prune_v3000 abort`
 
 #### [S-3000-11] Teardown on fntc-aggacc-sw06 (trunks, VLAN)
 
 - Status: ready. Depends on [S-3000-06] [S-3000-07].
-- CLI (from `ACME_APP_prune_20261102_210919_379.md`):
+- CLI (from `ACME_APP_prune_20261102_221316_980.md`):
 
 ```
 configure session prune_v3000
@@ -238,10 +238,10 @@ show session-config diffs
 commit timer 00:10:00
 ```
 
-- The change is live but provisional for 00:10:00 after `commit timer`. Run the checks, then confirm before the timer expires, or it rolls back.
+- The change is live but provisional for 00:10:00 after `commit timer`. Run the checks, then keep it with `configure session prune_v3000 commit` before the timer expires, or it rolls back.
 - Verify: re-run discovery for VLAN 3000: fntc-aggacc-sw06 shows the change.
-- Confirm after verification: `configure confirm`
-- Rollback: do not confirm: the session rolls back when the commit timer (00:10:00) expires. To roll back at once: `configure session prune_v3000 abort`
+- Keep it after verification, before the timer expires: `configure session prune_v3000 commit`
+- Rollback: do not commit the session again: it rolls back when the commit timer (00:10:00) expires. To roll back at once: `configure session prune_v3000 abort`
 
 ### Phase 6: verify
 
@@ -250,7 +250,7 @@ commit timer 00:10:00
 - Depends on [S-3000-08] [S-3000-09] [S-3000-10] [S-3000-11].
 - Run `playbooks/core/workflow_verify.yml`.
 - Verify:
-  - Every baseline host answers ping from the fabric (`ACME_APP_endpoints_20261102_210919_379.csv`).
+  - Every baseline host answers ping from the fabric (`ACME_APP_endpoints_20261102_221316_980.csv`).
   - Re-run discovery: VLAN 3000 is VNI-mapped on fntc-aggacc-sw01, fntc-aggacc-sw02 and nothing is left to prune.
 
 ## 6. Verification and acceptance
@@ -268,8 +268,8 @@ Reverse order. Roll back only as far as needed.
 
 | Undo | Switch | Rollback |
 |---|---|---|
-| [S-3000-11] | fntc-aggacc-sw06 | Before `configure confirm`: let the commit timer expire, or `configure session prune_v3000 abort` |
-| [S-3000-10] | fntc-aggacc-sw05 | Before `configure confirm`: let the commit timer expire, or `configure session prune_v3000 abort` |
+| [S-3000-11] | fntc-aggacc-sw06 | Before `configure session prune_v3000 commit`: let the commit timer expire, or `configure session prune_v3000 abort` |
+| [S-3000-10] | fntc-aggacc-sw05 | Before `configure session prune_v3000 commit`: let the commit timer expire, or `configure session prune_v3000 abort` |
 | [S-3000-09] | fnts-fntc03-aggpe-mls02 | `rollback running-config checkpoint prune_v3000` |
 | [S-3000-08] | fnts-fntc03-aggpe-mls01 | `rollback running-config checkpoint prune_v3000` |
 | [S-3000-07] | fnts-fntc03-aggpe-mls02 | `interface Vlan3000` / `  no shutdown` |
