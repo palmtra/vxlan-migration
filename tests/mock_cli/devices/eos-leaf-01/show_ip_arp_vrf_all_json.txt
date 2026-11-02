@@ -1,0 +1,8 @@
+{
+  "vrfs": {
+    "default": {
+      "ipV4Neighbors": [],
+      "totalEntries": 0
+    }
+  }
+}

@@ -1,0 +1,30 @@
+{
+  "TABLE_vrf": {
+    "ROW_vrf": [
+      {
+        "vrf-name-out": "TENANT1",
+        "TABLE_afi": {
+          "ROW_afi": {
+            "afi": "ipv6",
+            "TABLE_adj": {
+              "ROW_adj": [
+                {
+                  "intf-out": "Vlan300",
+                  "ipv6-addr": "2001:db8:300::10",
+                  "time-stamp": "00:01:12",
+                  "mac": "0050.56ab.3010"
+                },
+                {
+                  "intf-out": "Vlan300",
+                  "ipv6-addr": "fe80::250:56ff:feab:3010",
+                  "time-stamp": "00:01:12",
+                  "mac": "0050.56ab.3010"
+                }
+              ]
+            }
+          }
+        }
+      }
+    ]
+  }
+}

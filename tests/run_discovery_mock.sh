@@ -38,9 +38,10 @@ expect() {
 expect "$REPORT" "Legacy MLS: nxos-mls-01, nxos-mls-02 (HSRP 10.30.0.1)"
 expect "$REPORT" "**L3** - discovery:"
 expect "$REPORT" "Fix reachability to nxos-mls-99 and re-run discovery: it was not discovered"
-expect "$REPORT" "nxos-mls-02: \`show mac address-table dynamic vlan 300\` failed"
+expect "$REPORT" "nxos-mls-02: \`show mac address-table vlan 300\` failed"
 expect "$REPORT" "nxos-mls-01 Ethernet1/20 faces a firewall/router (lis-asa01 TenGigabitEthernet0/8)"
-expect "$REPORT" "| eos-leaf-01 | VTEP | participating | Ethernet3, Ethernet4 [2 MAC]"
+# [3 MAC]: Et4 also has a static MAC; static entries are read (discovery_include_static_macs).
+expect "$REPORT" "| eos-leaf-01 | VTEP | participating | Ethernet3, Ethernet4 [3 MAC]"
 expect "$REPORT" "endpoint-facing interfaces: Ethernet3, Ethernet4; local MAC"
 # nxos-mls-02's MAC-table query failed, so its silent trunk is not provably idle: kept for review.
 expect "$REPORT" "| nxos-mls-02 | legacy | review | port-channel20 (switch)"
@@ -61,8 +62,12 @@ expect "$ENDPOINTS" "300,10.30.0.10,00:50:56:ab:30:10,edge,eos-leaf-01,Et3,\"esx
 expect "$ENDPOINTS" "300,10.30.0.254,00:a0:c9:aa:02:54,edge,nxos-mls-01,Eth1/20"
 expect "$ENDPOINTS" "300,10.30.0.50,00:50:56:ab:30:50,not_in_mac_table"
 expect "$ENDPOINTS" "300,10.30.0.77,00:50:56:ab:30:77,edge,acc-sw-01,Et5,\"app-db-07\",compute"
-expect "$ENDPOINTS" "vlan_id,ip,mac,location,switch,interface,port_faces,role,flags,also_on,arp_from,uplink_seen_on,other_macs"
-expect "$REPORT" "## Endpoints (5 hosts + 2 gateway)"
+expect "$ENDPOINTS" "vlan_id,ip,mac,location,switch,interface,port_faces,role,flags,also_on,arp_from,uplink_seen_on,other_macs,ipv6,seen"
+# The static MAC on eos-leaf-01 Et4 is listed; nxos-mls-01's own MAC (G, sup-eth1) is not.
+expect "$ENDPOINTS" "300,,00:50:56:ab:30:c0,edge,eos-leaf-01,Et4,\"web-02 server\",compute"
+if grep -qF -- "sup-eth" "$ENDPOINTS"; then echo "FAIL: the switch's own MAC is listed as an endpoint" >&2; fail=1; fi
+expect "$REPORT" "## Endpoints (5 hosts + 2 gateway, 1 MAC only)"
+expect "$REPORT" "| Endpoint data | per-VLAN commands (5 switches) |"
 # Every MAC and ARP row in the fixtures is accounted for.
 if grep -qF -- "was not fully read" "$REPORT"; then
   echo "FAIL: discovery reports unread MAC/ARP rows:" >&2; grep -F -- "was not fully read" "$REPORT" >&2; fail=1
@@ -87,6 +92,41 @@ ANSIBLE_ROLES_PATH="$ROOT/roles" \
 VERIFY="$OUT/reports/verify_endpoint_reachability.json"
 expect "$VERIFY" '"passed": false'
 expect "$VERIFY" "4/5 baseline endpoints answer from eos-leaf-01; no reply: 10.30.0.50"
+
+# Bulk collection: whole MAC/ARP/IPv6 tables as JSON, two samples, ARP refresh.
+# nxos-mls-02's MAC table JSON fails, so it falls back to per-VLAN commands.
+BULK="$OUT/bulk"
+mkdir -p "$BULK"
+rc=0
+ANSIBLE_COLLECTIONS_PATH="$ROOT/tests/mock_cli:$ROOT/collections" \
+ANSIBLE_COLLECTIONS_SCAN_SYS_PATH=false \
+  ansible-playbook -i tests/mock_cli/inventory/hosts.yml playbooks/core/discover_vlan.yml \
+  -e manual_data_center=lisle \
+  -e manual_vlan_id=300 \
+  -e discovery_allow_probe=true \
+  -e discovery_endpoint_collection=bulk \
+  -e discovery_passes=2 \
+  -e discovery_pass_interval=0 \
+  -e discovery_arp_refresh=true \
+  -e artifacts_dir="$BULK" \
+  > "$BULK/run.log" 2>&1 || rc=$?
+if [ "${rc:-0}" -ne 0 ] && [ "${rc:-0}" -ne 4 ]; then
+  cat "$BULK/run.log"; echo "FAIL: bulk discovery run failed (rc=$rc)" >&2; exit 1
+fi
+BREPORT="$(ls "$BULK"/reports/lisle/*/*_discovery_*.md)"
+BENDPOINTS="$(ls "$BULK"/reports/lisle/*/*_endpoints_*.csv)"
+expect "$BREPORT" "| Endpoint data | whole tables as JSON (4 switches), per-VLAN commands (1 switch); 2 samples; ARP refresh pinged 252 addresses, 1 answered |"
+expect "$BREPORT" "Endpoint tables: nxos-mls-02: bulk tables not readable (no MAC table output), read per VLAN instead."
+expect "$BREPORT" "nxos-mls-02: \`show mac address-table vlan 300\` failed"
+expect "$BREPORT" "## Endpoints (5 hosts + 2 gateway, 1 MAC only)"
+expect "$BREPORT" "| 10.30.0.10 | 00:50:56:ab:30:10 | eos-leaf-01 | Ethernet3 | esx-web-01 | IPv6 2001:db8:300::10 |"
+expect "$BENDPOINTS" "300,10.30.0.10,00:50:56:ab:30:10,edge,eos-leaf-01,Ethernet3,\"esx-web-01\",compute,\"\",\"\",\"nxos-mls-01;nxos-mls-02\",\"\",\"\",\"2001:db8:300::10\",2"
+expect "$BENDPOINTS" "300,,00:50:56:ab:30:c0,edge,eos-leaf-01,Ethernet4"
+# VLAN 10 rows in the whole-table JSON are not this run's VLAN.
+if grep -qF -- "00:1c:73:aa:10:01" "$BENDPOINTS"; then echo "FAIL: bulk rows from another VLAN leaked in" >&2; fail=1; fi
+if grep -qF -- "was not fully read" "$BREPORT"; then
+  echo "FAIL: bulk discovery reports unread rows:" >&2; grep -F -- "was not fully read" "$BREPORT" >&2; fail=1
+fi
 
 # Record mode: VLAN 300 is in a VLAN DB whose record names no border leaf. The
 # border leaf (eos-leaf-02) must still be discovered, the model must stay
