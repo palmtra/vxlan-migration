@@ -34,7 +34,7 @@
         "cli": { "type": ["string", "null"], "description": "Exact CLI to paste, from a generated plan. null when the CLI lives in the file named by cli_source." },
         "cli_source": { "type": "string" },
         "rollback": { "type": ["string", "null"] },
-        "confirm": { "type": ["string", "null"], "description": "EOS configure session with commit timer: the command that makes the change permanent once checks pass" },
+        "confirm": { "type": ["string", "null"], "description": "EOS configure session with commit timer: the command that makes the change permanent once checks pass (configure session <name> commit, before the timer expires)" },
         "save": { "type": "string", "description": "NX-OS: save once checks pass" },
         "verify": { "$ref": "#/$defs/strings" },
         "depends_on": { "type": "array", "items": { "$ref": "#/$defs/id" } },

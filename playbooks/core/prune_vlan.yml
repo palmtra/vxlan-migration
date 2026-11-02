@@ -14,7 +14,7 @@
 #     --limit dc_lisle
 #
 # Apply. Both extra vars are required. EOS stops at `commit timer` and does
-# not run `configure confirm`. NXOS checkpoints first and does not save
+# not run `configure session <name> commit`. NXOS checkpoints first and does not save
 # startup-config.
 #
 #   ansible-playbook -i inventory/hosts.yml playbooks/core/prune_vlan.yml \

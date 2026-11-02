@@ -177,7 +177,7 @@ Key **discovery** fields:
 
 Key **prune** fields (separate files):
 
-- `prune_plans[].execution` — EOS `configure session` / `commit timer` / `configure confirm` / abort; NXOS checkpoint + rollback
+- `prune_plans[].execution` — EOS `configure session` / `commit timer` / `configure session <name> commit` / abort; NXOS checkpoint + rollback
 - Participating leaves are `retained_participating`. Source gateways with no local endpoints are prune-eligible and listed first. Only that set keeps trunk / SVI / VLAN CLI
 - Static routes, BGP, and shared-VRF objects stay in `l3_review`, never actions
 - Device JSON: `reports/<dc>/_prune_plans/<host>_prune_plan_<ts>.json`

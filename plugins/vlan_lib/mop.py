@@ -340,11 +340,11 @@ def _steps(report, findings, files):
                 timer = execution.get("commit_timer") or ""
                 confirm = execution.get("confirm") or None
                 rollback = (
-                    "Do not confirm: the session rolls back when the commit timer (%s) expires. "
+                    "Do not commit the session again: it rolls back when the commit timer (%s) expires. "
                     "To roll back at once: %s" % (timer, execution.get("abort") or "")
                 ).strip()
                 notes.append(
-                    "The change is live but provisional for %s after `commit timer`. Run the checks, then confirm "
+                    "The change is live but provisional for %s after `commit timer`. Run the checks, then keep it "
                     "with `%s` before the timer expires, or it rolls back." % (timer, confirm or "")
                 )
             ids.append(

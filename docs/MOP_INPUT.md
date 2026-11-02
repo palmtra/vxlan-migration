@@ -50,7 +50,7 @@ Each finding has a `category` (coverage, scope, gateway, fabric, routing, l2, pr
 | `2-link-prune-mls` | MLS side of links to non-VTEP switches (cuts the EVPN-legacy loop). Re-run discovery after it. |
 | `3-link-prune-non-vtep` | Non-VTEP side of those links. |
 | `4-gateway-cutover` | `shutdown` on each legacy gateway SVI, rollback `no shutdown`, verified by pinging every baseline endpoint from the fabric. Carries the gateway MAC change note. |
-| `5-teardown` | Trunks, SVI and VLAN removal on prune-eligible switches. NX-OS: checkpoint, `save` once checks pass, rollback to the checkpoint. EOS: `configure session` ending in `commit timer`; `confirm` makes it permanent once checks pass, and the rollback is to let the timer expire or abort the session. |
+| `5-teardown` | Trunks, SVI and VLAN removal on prune-eligible switches. NX-OS: checkpoint, `save` once checks pass, rollback to the checkpoint. EOS: `configure session` ending in `commit timer`; `confirm` (`configure session <name> commit`, before the timer expires) makes it permanent once checks pass, and the rollback is to let the timer expire or abort the session. |
 | `6-verify` | `playbooks/core/workflow_verify.yml` against the baseline, then a discovery re-run. |
 
 Every step has `switch`, `status` (`ready`, `blocked`, `needs_decision`, or the prune plan status such as `blocked_until_gateway_moved`), `cli` (exact text, or `null` when the CLI is in the file named by `cli_source`), `rollback`, `verify`, `depends_on` (step IDs), and `notes`.

@@ -110,8 +110,9 @@ def _actions_config_body(actions):
 def prune_apply_commands(execution):
     """Commands an approved prune sends. EOS stops at ``commit timer``.
 
-    ``configure confirm`` is not included. The operator confirms on the switch
-    or lets the timer roll the session back. NXOS is checkpointed and not saved.
+    The confirming ``configure session <name> commit`` is not included. The
+    operator commits the session on the switch before the timer expires, or
+    lets the timer roll it back. NXOS is checkpointed and not saved.
     IOS returns no commands.
     """
     if not isinstance(execution, dict):
@@ -166,7 +167,8 @@ def build_prune_execution(
             "enter": "configure session %s" % session_name,
             "show_diffs": "show session-config diffs",
             "commit_timer_cmd": "commit timer %s" % timer,
-            "confirm": "configure confirm",
+            # Committing the session again before the timer expires keeps it.
+            "confirm": "configure session %s commit" % session_name,
             "abort": "configure session %s abort" % session_name,
             "config_body": config_body,
             "full_cli": full_cli,
