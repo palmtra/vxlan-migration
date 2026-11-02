@@ -61,6 +61,12 @@ expect "$ENDPOINTS" "300,10.30.0.10,00:50:56:ab:30:10,edge,eos-leaf-01,Et3,\"esx
 expect "$ENDPOINTS" "300,10.30.0.254,00:a0:c9:aa:02:54,edge,nxos-mls-01,Eth1/20"
 expect "$ENDPOINTS" "300,10.30.0.50,00:50:56:ab:30:50,not_in_mac_table"
 expect "$ENDPOINTS" "300,10.30.0.77,00:50:56:ab:30:77,edge,acc-sw-01,Et5,\"app-db-07\",compute"
+expect "$ENDPOINTS" "vlan_id,ip,mac,location,switch,interface,port_faces,role,flags,also_on,arp_from,uplink_seen_on,other_macs"
+expect "$REPORT" "## Endpoints (5 hosts + 2 gateway)"
+# Every MAC and ARP row in the fixtures is accounted for.
+if grep -qF -- "was not fully read" "$REPORT"; then
+  echo "FAIL: discovery reports unread MAC/ARP rows:" >&2; grep -F -- "was not fully read" "$REPORT" >&2; fail=1
+fi
 expect "$REPORT" "acc-sw-01 bridges EVPN and legacy L2 for VLAN 300 (VTEP: eos-leaf-01 via Port-Channel1; MLS: nxos-mls-02 via Ethernet48)"
 expect "$REPORT" "Link prune on acc-sw-01 is blocked: VLAN 300 is not VNI-mapped yet on eos-leaf-01"
 expect "$REPORT" "| acc-sw-01 | non-VTEP | l2_attached |"
