@@ -1,4 +1,4 @@
-vlan_id,ip,mac,location,switch,interface,port_faces,role,flags,also_on,arp_from,uplink_seen_on,other_macs
+vlan_id,ip,mac,location,switch,interface,port_faces,role,flags,also_on,arp_from,uplink_seen_on,other_macs,ipv6,seen
 {% for row in (report.endpoint_table.endpoints | default([])) + (report.endpoint_table.mac_only | default([])) %}
-{{ report.vlan_id }},{{ row.ip }},{{ row.mac }},{{ row.location }},{{ row.hostname }},{{ row.interface }},"{{ row.port_label | default('') | replace('"', "'") }}",{{ row.role }},"{{ row.flags | join(';') }}","{{ row.also_on | default([]) | join(';') }}","{{ row.arp_from | default([]) | join(';') }}","{{ row.uplink_seen_on | default([]) | join(';') }}","{{ row.other_macs | default([]) | join(';') }}"
+{{ report.vlan_id }},{{ row.ip }},{{ row.mac }},{{ row.location }},{{ row.hostname }},{{ row.interface }},"{{ row.port_label | default('') | replace('"', "'") }}",{{ row.role }},"{{ row.flags | join(';') }}","{{ row.also_on | default([]) | join(';') }}","{{ row.arp_from | default([]) | join(';') }}","{{ row.uplink_seen_on | default([]) | join(';') }}","{{ row.other_macs | default([]) | join(';') }}","{{ row.ipv6 | default([]) | join(';') }}",{{ row.seen if row.seen | default(none) is not none else '' }}
 {% endfor %}

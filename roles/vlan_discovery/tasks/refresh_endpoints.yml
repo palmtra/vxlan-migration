@@ -1,0 +1,47 @@
+---
+# -----------------------------------------------------------------------------
+# ARP refresh (opt in: discovery_arp_refresh)
+# -----------------------------------------------------------------------------
+# One SVI owner per VLAN pings every address in the SVI subnets, so hosts that
+# have been silent answer ARP and refresh the MAC tables on the path to them.
+# Runs for every switch before any endpoint table is read.
+
+- name: Read each VLAN's SVI config for the ARP refresh
+  ansible.netcommon.cli_command:
+    command: "{{ ('show running-config interface Vlan' if network_os_family == 'eos' else 'show running-config interface vlan') ~ item.id }}"
+  register: _disc_refresh_svi
+  loop: "{{ _effective_vlans }}"
+  loop_control:
+    label: "{{ item.id }}"
+  check_mode: false
+  changed_when: false
+  failed_when: false
+
+- name: List the addresses in this switch's SVI subnets
+  ansible.builtin.set_fact:
+    _disc_refresh_plan: "{{ _disc_refresh_svi.results | default([]) | arp_refresh_targets(network_os_family, discovery_arp_refresh_max_hosts | int) }}"
+
+- name: Sweep each VLAN from one SVI owner only
+  ansible.builtin.set_fact:
+    _disc_refresh_mine: "{{ _disc_refresh_by_host | arp_refresh_owner_targets(inventory_hostname) }}"
+  vars:
+    _disc_refresh_by_host: >-
+      {% set out = {} %}{% for host in ansible_play_hosts %}{% set _ = out.update(
+      {host: hostvars[host]._disc_refresh_plan | default({})}) %}{% endfor %}{{ out }}
+
+- name: Ping every address in the SVI subnets (ARP refresh)
+  ansible.netcommon.cli_command:
+    command: "{{ network_os_family | arp_refresh_command(item.ip, item.vrf) }}"
+  register: _disc_refresh_pings
+  loop: "{{ _disc_refresh_mine }}"
+  loop_control:
+    label: "{{ item.ip }}"
+  check_mode: false
+  changed_when: false
+  failed_when: false
+
+- name: Record what the ARP refresh did
+  ansible.builtin.set_fact:
+    _disc_refresh_result: >-
+      {{ (_disc_refresh_pings.results | default([]) | arp_refresh_summary)
+         | combine({'skipped_subnets': _disc_refresh_plan.skipped | default([])}) }}

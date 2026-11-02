@@ -6,6 +6,7 @@ import re
 from ansible.errors import AnsibleFilterError
 
 from vlan_lib.common import _str_equal, sanitize_report_slug
+from vlan_lib.endpoints import ipv6_is_link_local
 from vlan_lib.parsers import _normalize_interface_name, network_prefix, normalize_mac_address
 from vlan_lib.placement import (
     PRUNE_STATUS_BY_ROLE,
@@ -257,6 +258,11 @@ def build_endpoint_table(devices, gateway=None):
     mistaken for hosts. Conflicts are flagged, never dropped: an IP answered by
     two MACs (``ip_conflict``), a MAC on two device-facing ports
     (``multiple_edge_ports``), a MAC that moved (``mac_moved``, EOS).
+
+    IPv6 neighbors add global addresses to the row of their MAC (``ipv6``);
+    a MAC known only from IPv6 gets a MAC-only row. With several samples
+    (bulk collection), ``seen`` is how many samples saw the endpoint and
+    ``intermittent`` flags one that was missing from some.
     """
     gateway = gateway or {}
     infra_ips = set()
@@ -267,6 +273,14 @@ def build_endpoint_table(devices, gateway=None):
 
     edge = {}
     uplink = {}
+    seen = {}
+    passes = max(
+        [int((device.get("endpoint_collection") or {}).get("passes") or 1) for device in devices or []] or [1]
+    )
+
+    def note_seen(key, entry):
+        if entry.get("seen") is not None:
+            seen[key] = max(seen.get(key, 0), int(entry["seen"]))
 
     def note_uplink(mac, hostname):
         uplink.setdefault(mac, [])
@@ -281,6 +295,7 @@ def build_endpoint_table(devices, gateway=None):
             mac = normalize_mac_address(entry.get("mac"))
             if not mac:
                 continue
+            note_seen(mac, entry)
             role = entry.get("attachment_role") or entry.get("port_role") or "unknown"
             if role in _ENDPOINT_ROLES:
                 edge.setdefault(mac, []).append(
@@ -302,17 +317,28 @@ def build_endpoint_table(devices, gateway=None):
 
     arp = {}
     arp_ports = {}
+    ipv6 = {}
     for device in devices or []:
         hostname = device.get("hostname") or ""
         attachments = _attachments_by_port(device)
-        for entry in device.get("arp_entries") or []:
+        neighbors = [("4", e) for e in device.get("arp_entries") or []]
+        neighbors += [("6", e) for e in device.get("nd_entries") or []]
+        for family, entry in neighbors:
             if not isinstance(entry, dict) or not entry.get("ip"):
                 continue
             mac = normalize_mac_address(entry.get("mac"))
-            row = arp.setdefault(entry["ip"], {"macs": {}, "age": entry.get("age") or ""})
-            seen_by = row["macs"].setdefault(mac, [])
-            if hostname not in seen_by:
-                seen_by.append(hostname)
+            if family == "4":
+                row = arp.setdefault(entry["ip"], {"macs": {}, "age": entry.get("age") or ""})
+                seen_by = row["macs"].setdefault(mac, [])
+                if hostname not in seen_by:
+                    seen_by.append(hostname)
+                note_seen((entry["ip"], mac), entry)
+            elif mac:
+                if not ipv6_is_link_local(entry["ip"]):
+                    ipv6.setdefault(mac, set()).add(entry["ip"])
+                else:
+                    ipv6.setdefault(mac, set())
+                note_seen(mac, entry)
             port = entry.get("port") or ""
             if port and mac:
                 attached = attachments.get(_normalize_interface_name(port), {})
@@ -363,6 +389,9 @@ def build_endpoint_table(devices, gateway=None):
         other_macs = sorted(m for m in macs if m != mac)
         if other_macs:
             flags.append("ip_conflict")
+        row_seen = max(seen.get((ip_addr, mac), 0), seen.get(mac, 0)) or None
+        if passes > 1 and row_seen is not None and row_seen < passes:
+            flags.append("intermittent")
         arp_from = []
         for seen_by in macs.values():
             arp_from.extend(host for host in seen_by if host not in arp_from)
@@ -379,6 +408,8 @@ def build_endpoint_table(devices, gateway=None):
                 "arp_from": arp_from,
                 "uplink_seen_on": uplink.get(mac, []) if where != "edge" else [],
                 "other_macs": other_macs,
+                "ipv6": sorted(ipv6.get(mac, ())),
+                "seen": row_seen,
                 "flags": flags,
             }
         )
@@ -407,13 +438,42 @@ def build_endpoint_table(devices, gateway=None):
                 "arp_from": [],
                 "uplink_seen_on": [],
                 "other_macs": [],
-                "flags": (["fhrp_mac"] if mac.startswith(_FHRP_MAC_PREFIXES) else []) + flags,
+                "ipv6": sorted(ipv6.get(mac, ())),
+                "seen": seen.get(mac),
+                "flags": (["fhrp_mac"] if mac.startswith(_FHRP_MAC_PREFIXES) else []) + flags
+                + (["intermittent"] if passes > 1 and seen.get(mac) and seen[mac] < passes else []),
             }
         )
+    # IPv6-only hosts: no ARP entry and no MAC on an edge port.
+    for mac in sorted(ipv6):
+        if mac in arp_macs or mac in edge or not ipv6[mac]:
+            continue
+        where, place, others, flags = located(mac)
+        if where == "uplink_only":
+            continue  # listed with the trunk-only MACs below
+        mac_only.append(
+            {
+                "ip": "",
+                "mac": mac,
+                "location": where,
+                "hostname": place.get("hostname", ""),
+                "interface": place.get("interface", ""),
+                "port_label": place.get("neighbor") or place.get("description") or "",
+                "role": place.get("role", ""),
+                "also_on": ["%s %s" % (o["hostname"], o["interface"]) for o in others],
+                "arp_from": [],
+                "uplink_seen_on": [],
+                "other_macs": [],
+                "ipv6": sorted(ipv6[mac]),
+                "seen": seen.get(mac),
+                "flags": list(flags) + (["intermittent"] if passes > 1 and seen.get(mac) and seen[mac] < passes else []),
+            }
+        )
+    listed = {row["mac"] for row in mac_only}
     # Seen only on trunks and never in ARP: behind a switch outside discovery
     # scope. Listed so they are not lost; their edge switch must be found.
     for mac in sorted(uplink):
-        if mac in arp_macs or mac in edge:
+        if mac in arp_macs or mac in edge or mac in listed:
             continue
         mac_only.append(
             {
@@ -428,6 +488,8 @@ def build_endpoint_table(devices, gateway=None):
                 "arp_from": [],
                 "uplink_seen_on": list(uplink[mac]),
                 "other_macs": [],
+                "ipv6": sorted(ipv6.get(mac, ())),
+                "seen": seen.get(mac),
                 "flags": ["fhrp_mac"] if mac.startswith(_FHRP_MAC_PREFIXES) else [],
             }
         )
@@ -453,9 +515,42 @@ def build_endpoint_table(devices, gateway=None):
             "multiple_edge_ports": count(hosts + mac_only, "multiple_edge_ports"),
             "dual_homed": count(hosts + mac_only, "dual_homed"),
             "mac_moved": count(hosts + mac_only, "mac_moved"),
+            "intermittent": count(hosts + mac_only, "intermittent"),
+            "ipv6_hosts": len([mac for mac, addrs in ipv6.items() if addrs]),
+            "passes": passes,
             "arp_available": any(device.get("svi_present") for device in devices or []),
         },
     }
+
+
+def summarize_endpoint_collection(devices):
+    """How the endpoint tables were read, across the switches of one VLAN.
+
+    ``{modes: {mode: [hosts]}, passes, refresh: {sent, answered,
+    skipped_subnets}, notes: [text]}``. The report states it so a reader knows
+    how complete the endpoint list can be.
+    """
+    modes = {}
+    passes = 1
+    refresh = {"sent": 0, "answered": 0, "skipped_subnets": []}
+    notes = []
+    for device in devices or []:
+        info = device.get("endpoint_collection") or {}
+        if not info:
+            continue
+        hostname = device.get("hostname") or ""
+        modes.setdefault(info.get("mode") or "per_vlan", []).append(hostname)
+        passes = max(passes, int(info.get("passes") or 1))
+        sweep = info.get("arp_refresh") or {}
+        refresh["sent"] += int(sweep.get("sent") or 0)
+        refresh["answered"] += int(sweep.get("answered") or 0)
+        for item in sweep.get("skipped_subnets") or []:
+            text = "%s: %s" % (hostname, item)
+            if text not in refresh["skipped_subnets"]:
+                refresh["skipped_subnets"].append(text)
+        if info.get("note"):
+            notes.append("%s: %s" % (hostname, info["note"]))
+    return {"modes": modes, "passes": passes, "refresh": refresh, "notes": notes}
 
 
 def summarize_spanning_tree(devices):
@@ -948,6 +1043,14 @@ def build_action_items(report):
             "Extend discovery to the switches behind those trunks: %s active IP(s) are only seen on "
             "switch-to-switch trunks, so their edge switch is outside discovery scope." % summary["uplink_only"]
         )
+    collection = report.get("endpoint_collection") or {}
+    for note in collection.get("notes") or []:
+        items.append("Endpoint tables: %s. Check the JSON output on that switch." % note)
+    for item in (collection.get("refresh") or {}).get("skipped_subnets") or []:
+        items.append(
+            "ARP refresh skipped %s: silent hosts there may be missing. Raise "
+            "discovery_arp_refresh_max_hosts or check those subnets by hand." % item
+        )
     if summary.get("mac_only_uplink"):
         items.append(
             "Extend discovery to the switches behind those trunks: %s MAC(s) with no ARP entry are only seen "
@@ -1109,6 +1212,8 @@ def build_vlan_discovery_reports(
                     "peer_link_mac_entries": per_vlan.get("peer_link_mac_entries", []),
                     "overlay_mac_entries": per_vlan.get("overlay_mac_entries", []),
                     "arp_entries": per_vlan.get("arp_entries", []),
+                    "nd_entries": per_vlan.get("nd_entries", []),
+                    "endpoint_collection": per_vlan.get("endpoint_collection", {}),
                     "parse_checks": per_vlan.get("parse_checks", {}),
                     "uplinks": per_vlan.get("uplinks", []),
                     "svi_vrf": per_vlan.get("svi_vrf", ""),
@@ -1452,6 +1557,7 @@ def build_vlan_discovery_reports(
             "l2_attachment": placement["l2"],
             "link_prune_plans": link_prune_plans,
             "endpoint_table": endpoint_table,
+            "endpoint_collection": summarize_endpoint_collection(devices),
             "spanning_tree": summarize_spanning_tree(devices),
             "vxlan_already_mapped": already_mapped,
             "vni_conflicts": vni_conflicts,

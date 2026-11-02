@@ -132,10 +132,11 @@ Per switch, per VLAN (read-only):
 | Neighbors | `show lldp neighbors detail` (EOS, NXOS) and `show cdp neighbors detail` (NXOS) |
 | Port-channel members | EOS `show running-config section channel-group`; NXOS `show running-config \| section channel-group` (neighbors of members are the port-channel's neighbors) |
 | Port role | Neighbor first, then interface `description`, then access-vs-trunk. See **Port logic** below |
-| Learned MACs | `show mac address-table dynamic vlan <id>` |
+| Learned MACs | `show mac address-table vlan <id>` (static entries included; `discovery_include_static_macs: false` reads `dynamic` only). vPC peer-link, VTEP (`nve1(...)`, `Vx1`) and the switch's own MACs are kept as evidence, never as local endpoints. Every row is accounted for against the total the switch prints; rows the parser cannot read become an action item |
 | Spanning tree | `show spanning-tree vlan <id>`: root bridge, root port, blocked ports |
 | SVI / L3 | `show run interface Vlan<id>`: VRF, primary and secondary IPs, HSRP / VRRP / VARP / anycast, DHCP relay, ACL, PBR, IPv6, PIM/IGMP, NAT, uRPF, MTU, shutdown. OSPF lines are skipped (OSPF is not used). Unrecognised lines are kept as `other_lines` |
 | SVI VRF + ARP | VRF from SVI config; ARP whenever an SVI exists. EOS `show ip arp vrf <vrf> \| include Vlan<id>` (rows for other SVIs are dropped); NXOS `show ip arp vlan <id> vrf <vrf>` |
+| IPv6 neighbors | On SVIs with IPv6 addresses: EOS `show ipv6 neighbors vrf <vrf>`, NXOS `show ipv6 neighbor vrf <vrf>`. Global addresses are added to the endpoint row of their MAC |
 | SVI ACL contents | `show ip access-lists <name>` for each ACL on the SVI (JSON report) |
 | Static routes (EOS + NXOS) | EOS `section ip route`; NXOS `vrf context` + global `ip route`. Exit interface, distance, tag, name, next-hop VRF parsed → **L3 discovery** (shared VRF OK; not prune actions) |
 | BGP (EOS + NXOS) | Neighbors (incl. NXOS split stanzas), VLAN EVPN blocks, VRF RD/RT, networks, aggregates, redistribution → **L3 discovery** |
@@ -144,6 +145,12 @@ Per switch, per VLAN (read-only):
 | VXLAN map (EOS) | `show vxlan vlan-to-vni`: VLAN already mapped, VNI collisions |
 | Fabric VTEP readiness (EOS) | `show interfaces Vxlan1`: VTEP source and address, replication mode, flood list source, VRF-to-VNI map. Every fabric leaf that will carry the VLAN must be `headend` with an `EVPN` flood list on `vtep_source_interface` (Loopback1); for L3 the gateway VRF must already have an L3 VNI. Anything else is an action item |
 | Retain keep-list | Service `prune.retain` or `discovery_prune_retain` → `blocked_by_retain` |
+
+**Endpoint tables for many VLANs, samples, ARP refresh** (`roles/vlan_discovery/defaults/main.yml`):
+
+- `discovery_endpoint_collection: auto` reads each switch's whole MAC, ARP and IPv6 neighbor tables once as JSON (`show mac address-table | json`, `show ip arp vrf all | json`, EOS `show ipv6 neighbors vrf all | json`, NXOS `show ipv6 neighbor vrf all | json`) and splits them by VLAN, when a run covers `discovery_bulk_min_vlans` (5) VLANs or more or takes more than one sample. That replaces the per-VLAN MAC and ARP commands. A switch whose JSON cannot be read falls back to per-VLAN commands, and the report says so. Force a mode with `bulk` or `per_vlan`.
+- `discovery_passes: 3` with `discovery_pass_interval: 120` takes three samples two minutes apart on every switch at the same moments. A host quiet in one sample can show up in another; the endpoint CSV `seen` column counts the samples that saw it, and one missing from some is flagged `intermittent`.
+- `discovery_arp_refresh: true` (opt in; it sends a ping to every address) has one SVI owner per VLAN ping each address of the SVI subnets before any table is read, so silent hosts answer ARP and refresh the MAC tables on the path. At most `discovery_arp_refresh_max_hosts` (1024) pings per switch; larger subnets are skipped and named in the action items. The report's **Endpoint data** row says how the tables were read.
 
 Every critical command that fails, and every switch that never reports back, is listed under **Action items** in the report. A switch missing from discovery is never shown as "VLAN absent".
 
