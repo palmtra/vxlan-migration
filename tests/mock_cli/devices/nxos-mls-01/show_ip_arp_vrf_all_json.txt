@@ -1,0 +1,68 @@
+{
+  "TABLE_vrf": {
+    "ROW_vrf": [
+      {
+        "vrf-name-out": "TENANT1",
+        "cnt-total": 7,
+        "TABLE_adj": {
+          "ROW_adj": [
+            {
+              "intf-out": "Vlan300",
+              "ip-addr-out": "10.30.0.10",
+              "time-stamp": "00:01:12",
+              "mac": "0050.56ab.3010"
+            },
+            {
+              "intf-out": "Vlan300",
+              "ip-addr-out": "10.30.0.11",
+              "time-stamp": "00:00:40",
+              "mac": "0050.56ab.3011"
+            },
+            {
+              "intf-out": "Vlan300",
+              "ip-addr-out": "10.30.0.254",
+              "time-stamp": "00:00:05",
+              "mac": "00a0.c9aa.0254"
+            },
+            {
+              "intf-out": "Vlan300",
+              "ip-addr-out": "10.30.0.3",
+              "time-stamp": "00:00:02",
+              "mac": "0023.04ee.be03"
+            },
+            {
+              "intf-out": "Vlan300",
+              "ip-addr-out": "10.30.0.50",
+              "time-stamp": "00:12:01",
+              "mac": "0050.56ab.3050"
+            },
+            {
+              "intf-out": "Vlan300",
+              "ip-addr-out": "10.30.0.77",
+              "time-stamp": "00:00:30",
+              "mac": "0050.56ab.3077"
+            },
+            {
+              "intf-out": "Vlan300",
+              "ip-addr-out": "10.30.0.99",
+              "time-stamp": "00:00:01",
+              "incomplete": "true"
+            }
+          ]
+        }
+      },
+      {
+        "vrf-name-out": "default",
+        "cnt-total": 1,
+        "TABLE_adj": {
+          "ROW_adj": {
+            "intf-out": "Ethernet1/1",
+            "ip-addr-out": "192.0.2.1",
+            "time-stamp": "00:00:09",
+            "mac": "0011.2233.4455"
+          }
+        }
+      }
+    ]
+  }
+}

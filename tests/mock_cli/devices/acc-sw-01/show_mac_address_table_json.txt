@@ -1,0 +1,34 @@
+{
+  "unicastTable": {
+    "tableEntries": [
+      {
+        "vlanId": 300,
+        "macAddress": "00:50:56:ab:30:77",
+        "entryType": "dynamic",
+        "interface": "Ethernet5",
+        "moves": 1,
+        "lastMove": 1793000000.0
+      },
+      {
+        "vlanId": 300,
+        "macAddress": "00:50:56:ab:30:10",
+        "entryType": "dynamic",
+        "interface": "Port-Channel1",
+        "moves": 1,
+        "lastMove": 1793000000.0
+      },
+      {
+        "vlanId": 10,
+        "macAddress": "00:1c:73:aa:10:01",
+        "entryType": "dynamic",
+        "interface": "Ethernet48",
+        "moves": 1,
+        "lastMove": 1793000000.0
+      }
+    ]
+  },
+  "multicastTable": {
+    "tableEntries": []
+  },
+  "disabledMacLearningVlans": []
+}

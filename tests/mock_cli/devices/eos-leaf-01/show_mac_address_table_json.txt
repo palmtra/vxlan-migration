@@ -1,0 +1,64 @@
+{
+  "unicastTable": {
+    "tableEntries": [
+      {
+        "vlanId": 300,
+        "macAddress": "00:50:56:ab:30:10",
+        "entryType": "dynamic",
+        "interface": "Ethernet3",
+        "moves": 1,
+        "lastMove": 1793000000.0
+      },
+      {
+        "vlanId": 300,
+        "macAddress": "00:50:56:ab:30:11",
+        "entryType": "dynamic",
+        "interface": "Ethernet4",
+        "moves": 1,
+        "lastMove": 1793000000.0
+      },
+      {
+        "vlanId": 300,
+        "macAddress": "00:a0:c9:aa:02:54",
+        "entryType": "dynamic",
+        "interface": "Port-Channel1",
+        "moves": 1,
+        "lastMove": 1793000000.0
+      },
+      {
+        "vlanId": 300,
+        "macAddress": "00:23:04:ee:be:02",
+        "entryType": "dynamic",
+        "interface": "Port-Channel1",
+        "moves": 1,
+        "lastMove": 1793000000.0
+      },
+      {
+        "vlanId": 300,
+        "macAddress": "00:50:56:ab:30:77",
+        "entryType": "dynamic",
+        "interface": "Ethernet10",
+        "moves": 1,
+        "lastMove": 1793000000.0
+      },
+      {
+        "vlanId": 300,
+        "macAddress": "00:50:56:ab:30:c0",
+        "entryType": "static",
+        "interface": "Ethernet4"
+      },
+      {
+        "vlanId": 10,
+        "macAddress": "00:1c:73:aa:10:01",
+        "entryType": "dynamic",
+        "interface": "Ethernet48",
+        "moves": 1,
+        "lastMove": 1793000000.0
+      }
+    ]
+  },
+  "multicastTable": {
+    "tableEntries": []
+  },
+  "disabledMacLearningVlans": []
+}
