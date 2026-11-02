@@ -68,6 +68,18 @@ expect "$ENDPOINTS" "300,,00:50:56:ab:30:c0,edge,eos-leaf-01,Et4,\"web-02 server
 if grep -qF -- "sup-eth" "$ENDPOINTS"; then echo "FAIL: the switch's own MAC is listed as an endpoint" >&2; fail=1; fi
 expect "$REPORT" "## Endpoints (5 hosts + 2 gateway, 1 MAC only)"
 expect "$REPORT" "| Endpoint data | per-VLAN commands (5 switches) |"
+expect "$REPORT" "| Gateway MAC | today 00:00:0c:9f:f0:1e (HSRP); fabric 00:1c:73:00:00:99: **changes at cutover** |"
+# The MOP input is valid and blocked: nxos-mls-99 was not discovered.
+python3 - "$(ls "$OUT"/reports/lisle/*/*_mop_input_*.json)" "$ROOT/schemas/mop_input.schema.json" <<'PY' || fail=1
+import json, sys
+import jsonschema
+mop, schema = (json.load(open(path)) for path in sys.argv[1:3])
+jsonschema.validate(mop, schema)
+blockers = [f["text"] for f in mop["findings"] if f["kind"] == "blocker"]
+if mop["vlan"]["status"] != "blocked" or not any("nxos-mls-99" in t for t in blockers) or mop["coverage"]["complete"]:
+    print("FAIL: Lisle MOP input should be blocked on nxos-mls-99: %s %s" % (mop["vlan"], blockers), file=sys.stderr)
+    sys.exit(1)
+PY
 # Every MAC and ARP row in the fixtures is accounted for.
 if grep -qF -- "was not fully read" "$REPORT"; then
   echo "FAIL: discovery reports unread MAC/ARP rows:" >&2; grep -F -- "was not fully read" "$REPORT" >&2; fail=1
