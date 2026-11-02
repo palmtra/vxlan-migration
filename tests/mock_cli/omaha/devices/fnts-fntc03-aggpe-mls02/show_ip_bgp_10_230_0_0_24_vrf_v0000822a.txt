@@ -1,0 +1,9 @@
+BGP routing table information for VRF v0000822a, address family IPv4 Unicast
+BGP routing table entry for 10.230.0.0/24, version 41
+Paths: (1 available, best #1)
+  Advertised path-id 1
+  Path type: redist, path is valid, is best path
+  AS-Path: NONE, path locally originated
+
+  Path-id 1 advertised to peers:
+    66.180.0.3         66.180.0.4

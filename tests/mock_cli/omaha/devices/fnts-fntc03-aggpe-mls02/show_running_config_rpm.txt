@@ -1,0 +1,4 @@
+!Command: show running-config rpm
+ip prefix-list PL_ACME seq 5 permit 10.230.0.0/24
+route-map RM_CONN_ACME permit 10
+  match ip address prefix-list PL_ACME

@@ -1,0 +1,2 @@
+Arista DCS-7010TX-48
+Software image version: 4.31.2F

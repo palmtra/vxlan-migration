@@ -1,0 +1,9 @@
+VLAN3000
+  Spanning tree enabled protocol rstp
+  Root ID    Priority    27576
+             Address     0026.98aa.0001
+             Cost        1
+             Port        4096 (port-channel1)
+
+  Bridge ID  Priority    28672  (priority 28672 sys-id-ext 3000)
+             Address     0026.98aa.0002

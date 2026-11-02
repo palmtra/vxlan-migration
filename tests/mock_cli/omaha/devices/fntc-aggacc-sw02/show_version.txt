@@ -1,0 +1,2 @@
+Arista DCS-7050SX3-48YC8
+Software image version: 4.31.2F

@@ -1,0 +1,12 @@
+Vxlan1 is up, line protocol is up (connected)
+  Hardware is Vxlan
+  Source interface is Loopback1 and is active with 66.180.1.1
+  Listening on UDP port 4789
+  Replication/Flood Mode is headend with Flood List Source: EVPN
+  Remote MAC learning via EVPN
+  Static VLAN to VNI mapping is
+    [2100, 10000]
+    [2500, 11000]
+    [2501, 11001]
+  Static VRF to VNI mapping is
+   [v0000822a, 822]

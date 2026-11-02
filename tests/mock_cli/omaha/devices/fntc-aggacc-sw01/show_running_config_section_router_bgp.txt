@@ -1,0 +1,6 @@
+router bgp 4200000102
+   router-id 66.180.0.10
+   vrf v0000822a
+      rd 66.180.0.10:822
+      route-target import evpn 822:822
+      route-target export evpn 822:822
