@@ -56,6 +56,9 @@ def _normalize_interface_name(name, platform="eos"):
         ("tengigabitethernet", "te"),
         ("gigabitethernet", "gi"),
         ("fastethernet", "fa"),
+        ("twentyfivegige", "twe"),
+        ("fortygigabitethernet", "fo"),
+        ("hundredgige", "hu"),
         ("ethernet", "et"),
         # NXOS show vlan / show interface trunk print Eth1/5; show run prints Ethernet1/5.
         ("eth", "et"),
@@ -309,23 +312,52 @@ def _mac_line_is_noise(line):
     return False
 
 
-def parse_mac_address_table(mac_output, vlan_id=None):
-    """Parse dynamic/static MAC table rows into structured entries.
+# Rows whose "port" is not a front-panel port. They are recognized, so they
+# never count as unparsed, but they are not local endpoints:
+#   peer_link - NXOS learned the MAC from its vPC peer (``vPC Peer-Link``)
+#   overlay   - remote MAC behind a VTEP (NXOS ``nve1(10.1.1.1)``, EOS ``Vx1``)
+#   self      - the switch's own MAC (NXOS ``sup-eth1(R)``, EOS ``Cpu`` / ``Router``)
+_MAC_PEER_LINK_RE = re.compile(r"\bvPC\s+Peer-Link\b", re.I)
+_MAC_OVERLAY_RE = re.compile(
+    r"(?<![A-Za-z0-9-])(?:nve\d+(?:\((?P<vtep>\d{1,3}(?:\.\d{1,3}){3})\))?|Vx\d+|Vxlan\d+)(?![\w/])",
+    re.I,
+)
+_MAC_SELF_RE = re.compile(r"(?<![A-Za-z0-9-])(?:sup-eth\d+(?:\(R\))?|Cpu|Router)(?![\w/])", re.I)
+_MAC_MOVES_RE = re.compile(r"^\s*(?P<moves>\d+)\s+(?P<last>\S.*?\bago)\b", re.I)
+_MAC_TOTAL_RE = re.compile(r"^\s*Total Mac Addresses(?: for this criterion)?\s*:\s*(\d+)", re.I | re.M)
 
-    Returns a list of dicts::
-        {mac, interface, entry_type, vlan_id}
 
-    Supports EOS dotted MAC tables, NXOS tables, and simplified
-    ``aa:bb:cc:dd:ee:ff Port-ChannelN`` report lines.
+def _mac_is_multicast(mac):
+    """True for group MACs (I/G bit set), e.g. 01:00:5e:..; never an endpoint."""
+    try:
+        return bool(int(mac.split(":")[0], 16) & 1)
+    except (ValueError, IndexError):
+        return False
+
+
+def parse_mac_table_detail(mac_output, vlan_id=None):
+    """Parse a MAC table and account for every row that carries a MAC.
+
+    Returns ``{entries, unparsed, other_vlan, multicast, device_total}``.
+    *entries* holds every recognized row with ``port_kind`` set to ``port``,
+    ``peer_link``, ``overlay`` or ``self``. *unparsed* lists rows that carry a
+    MAC but no port this parser knows: they are a parser gap, never silence.
+    *device_total* is the count the switch printed (EOS
+    ``Total Mac Addresses for this criterion: N``), or None.
     """
+    result = {"entries": [], "unparsed": [], "other_vlan": 0, "multicast": 0, "device_total": None}
     if not mac_output or not str(mac_output).strip():
-        return []
+        return result
 
-    entries = []
+    text = str(mac_output)
+    total = _MAC_TOTAL_RE.search(text)
+    if total:
+        result["device_total"] = int(total.group(1))
+
     seen = set()
     target_vid = str(vlan_id) if vlan_id is not None else None
 
-    for raw_line in str(mac_output).splitlines():
+    for raw_line in text.splitlines():
         line = raw_line.strip()
         if not line or _mac_line_is_noise(line):
             continue
@@ -335,26 +367,53 @@ def parse_mac_address_table(mac_output, vlan_id=None):
             continue
 
         mac = normalize_mac_address(mac_match.group(0))
-        remainder = line[: mac_match.start()] + " " + line[mac_match.end() :]
-        iface_match = _PORT_NAME_RE.search(remainder)
-        if not iface_match:
-            continue
-        interface = iface_match.group(0)
+        prefix = line[: mac_match.start()]
+        suffix = line[mac_match.end():]
 
         entry_vlan = None
-        # EOS/NXOS table rows start with optional '*' + VLAN id before the MAC.
-        # Do not treat MAC octets (e.g. leading "00:" ) as a VLAN id.
-        prefix = line[: mac_match.start()]
-        vlan_match = re.match(r"^\*?\s*(\d{1,4})\s*$", prefix.strip())
+        # EOS/NXOS table rows start with an optional flag (*, +, G, ...) and the
+        # VLAN id before the MAC. MAC octets (a leading "00:") are not a VLAN id.
+        vlan_match = re.match(r"^(?:[*+GCO~]\s*)*(\d{1,4})\s*$", prefix.strip())
         if not vlan_match:
-            vlan_match = re.match(r"^\*?\s*(\d{1,4})\b", prefix)
+            vlan_match = re.match(r"^\s*(?:[*+GCO~]\s*)*(\d{1,4})\b", prefix)
         if vlan_match and mac_match.start() > 0:
             entry_vlan = vlan_match.group(1)
         if target_vid is not None and entry_vlan is not None and entry_vlan != target_vid:
+            result["other_vlan"] += 1
+            continue
+        if _mac_is_multicast(mac):
+            result["multicast"] += 1
+            continue
+
+        remote_vtep = ""
+        moves = None
+        last_move = ""
+        peer = _MAC_PEER_LINK_RE.search(suffix)
+        overlay = _MAC_OVERLAY_RE.search(suffix)
+        own = _MAC_SELF_RE.search(suffix)
+        iface_match = _PORT_NAME_RE.search(suffix)
+        after = suffix[iface_match.end():] if iface_match else ""
+        if not iface_match:
+            iface_match = _PORT_NAME_RE.search(prefix)
+        if peer:
+            port_kind, interface = "peer_link", "vPC Peer-Link"
+        elif overlay:
+            port_kind, interface = "overlay", overlay.group(0)
+            remote_vtep = overlay.group("vtep") or ""
+        elif own:
+            port_kind, interface = "self", own.group(0)
+        elif iface_match:
+            port_kind, interface = "port", iface_match.group(0)
+            moved = _MAC_MOVES_RE.match(after)
+            if moved:
+                moves = int(moved.group("moves"))
+                last_move = moved.group("last").strip()
+        else:
+            result["unparsed"].append(line)
             continue
 
         lower = line.lower()
-        if "static" in lower:
+        if "static" in lower or line.startswith("G"):
             entry_type = "static"
         elif "dynamic" in lower:
             entry_type = "dynamic"
@@ -365,18 +424,75 @@ def parse_mac_address_table(mac_output, vlan_id=None):
         if key in seen:
             continue
         seen.add(key)
-        entries.append(
-            {
-                "mac": mac,
-                "interface": interface,
-                "entry_type": entry_type,
-                "vlan_id": int(entry_vlan) if entry_vlan is not None else (
-                    int(target_vid) if target_vid is not None else None
-                ),
-            }
-        )
+        entry = {
+            "mac": mac,
+            "interface": interface,
+            "entry_type": entry_type,
+            "vlan_id": int(entry_vlan) if entry_vlan is not None else (
+                int(target_vid) if target_vid is not None else None
+            ),
+            "port_kind": port_kind,
+        }
+        if remote_vtep:
+            entry["remote_vtep"] = remote_vtep
+        if moves is not None:
+            entry["moves"] = moves
+            entry["last_move"] = last_move
+        result["entries"].append(entry)
 
-    return entries
+    return result
+
+
+def parse_mac_address_table(mac_output, vlan_id=None):
+    """Parse MAC table rows learned on front-panel ports.
+
+    Returns a list of dicts::
+        {mac, interface, entry_type, vlan_id, port_kind[, moves, last_move]}
+
+    Supports EOS dotted MAC tables, NXOS tables, and simplified
+    ``aa:bb:cc:dd:ee:ff Port-ChannelN`` report lines. vPC peer-link, overlay
+    (VTEP) and the switch's own MACs are left out; see parse_mac_table_detail.
+    """
+    return [
+        entry
+        for entry in parse_mac_table_detail(mac_output, vlan_id)["entries"]
+        if entry["port_kind"] == "port"
+    ]
+
+
+def mac_table_parse_check(mac_output, vlan_id=None):
+    """Did the parser account for every MAC row? ``{ok, counts.., problems}``.
+
+    A row is accounted for when it is parsed (any ``port_kind``), belongs to
+    another VLAN, or is a multicast group. Anything else is a parser gap. When
+    the switch printed a total, the rows for this VLAN must add up to it.
+    """
+    detail = parse_mac_table_detail(mac_output, vlan_id)
+    kinds = {"port": 0, "peer_link": 0, "overlay": 0, "self": 0}
+    for entry in detail["entries"]:
+        kinds[entry["port_kind"]] = kinds.get(entry["port_kind"], 0) + 1
+    problems = []
+    if detail["unparsed"]:
+        problems.append(
+            "%d MAC table row(s) not understood, e.g. '%s'" % (len(detail["unparsed"]), detail["unparsed"][0])
+        )
+    accounted = sum(kinds.values()) + detail["multicast"]
+    if detail["device_total"] is not None and detail["device_total"] != accounted + len(detail["unparsed"]):
+        problems.append(
+            "the switch reports %d MAC(s) but %d row(s) were read" % (detail["device_total"], accounted)
+        )
+    return {
+        "ok": not problems,
+        "parsed": kinds["port"],
+        "peer_link": kinds["peer_link"],
+        "overlay": kinds["overlay"],
+        "self": kinds["self"],
+        "multicast": detail["multicast"],
+        "other_vlan": detail["other_vlan"],
+        "device_total": detail["device_total"],
+        "unparsed_lines": detail["unparsed"],
+        "problems": problems,
+    }
 
 
 def mac_table_has_learned_addresses(mac_output):
@@ -454,6 +570,58 @@ def parse_arp_entries(arp_output, vlan_id=None):
         entries.append(entry)
 
     return entries
+
+
+_ARP_TOTAL_RE = re.compile(r"^\s*Total number of entries\s*:\s*(\d+)", re.I | re.M)
+
+
+def arp_table_parse_check(arp_output, vlan_id=None):
+    """Did the ARP parser account for every row? ``{ok, counts.., problems}``.
+
+    Rows with an IP are parsed, incomplete (no MAC yet), on another SVI
+    (``include Vlan100`` on EOS also matches Vlan1000), or unparsed. NXOS
+    prints ``Total number of entries: N``; the rows must add up to it.
+    """
+    text = str(arp_output or "")
+    parsed = parse_arp_entries(text, vlan_id)
+    vid = str(int(vlan_id)) if vlan_id is not None else None
+    incomplete = 0
+    other_vlan = 0
+    unparsed = []
+    rows = 0
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        lower = line.lower()
+        if not line or lower.startswith("total number") or not _IP_ADDRESS_RE.search(line):
+            continue
+        if lower.startswith("address") or "hardware addr" in lower or "----" in lower:
+            continue
+        rows += 1
+        if not _MAC_ADDRESS_RE.search(line):
+            if "incomplete" in lower:
+                incomplete += 1
+            else:
+                unparsed.append(line)
+            continue
+        vlan_match = _ARP_VLAN_IFACE_RE.search(line[_MAC_ADDRESS_RE.search(line).end():]) or _ARP_VLAN_IFACE_RE.search(line)
+        if vid is not None and vlan_match and vlan_match.group(1) != vid:
+            other_vlan += 1
+    total_match = _ARP_TOTAL_RE.search(text)
+    device_total = int(total_match.group(1)) if total_match else None
+    problems = []
+    if unparsed:
+        problems.append("%d ARP row(s) not understood, e.g. '%s'" % (len(unparsed), unparsed[0]))
+    if device_total is not None and device_total != rows:
+        problems.append("the switch reports %d ARP entries but %d row(s) were read" % (device_total, rows))
+    return {
+        "ok": not problems,
+        "parsed": len(parsed),
+        "incomplete": incomplete,
+        "other_vlan": other_vlan,
+        "device_total": device_total,
+        "unparsed_lines": unparsed,
+        "problems": problems,
+    }
 
 
 def arp_table_has_learned_neighbors(arp_output, vlan_id=None):
