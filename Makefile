@@ -1,5 +1,5 @@
 # vxlan-migration developer tasks
-.PHONY: help lint test mock mock-netbox syntax molecule ci ee-deps tests-fetch
+.PHONY: help lint test mock mock-netbox mock-omaha syntax molecule ci ee-deps tests-fetch
 
 # Test code and synthetic data live on this branch, never on main.
 TEST_BRANCH ?= test
@@ -11,6 +11,7 @@ help:
 	@echo "make test     - unit tests"
 	@echo "make mock     - run discover_vlan.yml end to end against canned CLI output"
 	@echo "make mock-netbox - run export_vlan_to_netbox.yml against a mock NetBox (route targets)"
+	@echo "make mock-omaha - Omaha VLAN 3000: discover, record, generate configs (AVD_REPO_DIR= adds the AVD build)"
 	@echo "make syntax   - ansible-playbook --syntax-check on core playbooks"
 	@echo "make molecule - localhost molecule scenarios (vlan_db, service_db)"
 	@echo "make ci       - lint + test + syntax + molecule (local CI mirror)"
@@ -35,6 +36,10 @@ mock:
 mock-netbox:
 	$(NEED_TESTS)
 	tests/run_netbox_rt_mock.sh
+
+mock-omaha:
+	$(NEED_TESTS)
+	tests/run_omaha_vlan3000_mock.sh
 
 syntax:
 	@set -e; \
