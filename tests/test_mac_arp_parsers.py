@@ -23,12 +23,15 @@ sys.path.insert(0, os.path.join(_REPO, "plugins"))
 sys.path.insert(0, os.path.join(_REPO, "plugins", "filter"))
 
 from vlan_filters import (  # noqa: E402
+    arp_table_parse_check,
     classify_mac_port_role,
     extract_vlan_targeted_discovery,
+    mac_table_parse_check,
     normalize_mac_address,
     parse_arp_entries,
     parse_mac_address_table,
 )
+from vlan_lib.parsers import parse_mac_table_detail  # noqa: E402
 
 
 SAMPLE_REPORT_MAC = """
@@ -144,6 +147,120 @@ VLAN  Name                             Status    Ports
         self.assertEqual(record["access_ports"], [])
         self.assertEqual(record["endpoint_mac_entries"], [])
         self.assertTrue(record["switch_uplink_ports"])
+
+
+NXOS_MAC_SPECIAL_ROWS = """
+Legend:
+        * - primary entry, G - Gateway MAC, (R) - Routed MAC, O - Overlay MAC
+   VLAN     MAC Address      Type      age     Secure NTFY Ports
+---------+-----------------+--------+---------+------+----+------------------
+*  100     0050.56b3.0001   dynamic  0         F      F    Po10
++  100     0050.56b3.0002   dynamic  0         F      F    vPC Peer-Link
+C  100     0050.56b3.0003   dynamic  0         F      F    nve1(10.1.1.1)
+G  100     0000.0c9f.f064   static   -         F      F    sup-eth1(R)
+*  100     0050.56b3.0004   dynamic  0         F      F    Eth101/1/5
+*  100     0050.56b3.0005   dynamic  0         F      F    Twe1/1
+*  100     0050.56b3.0006   dynamic  0         F      F    Hu1/49
+*  200     0050.56b3.0008   dynamic  0         F      F    Po10
+*  100     0100.5e00.0001   dynamic  0         F      F    Po10
+"""
+
+EOS_MAC_WITH_MOVES = """
+          Mac Address Table
+------------------------------------------------------------------
+Vlan    Mac Address       Type        Ports      Moves   Last Move
+----    -----------       ----        -----      -----   ---------
+ 100    0050.56b3.0011    DYNAMIC     Vx1        1       0:00:12 ago
+ 100    0050.56b3.0012    DYNAMIC     Et49/1     7       0:00:12 ago
+ 100    0050.56b3.0013    DYNAMIC     Po1000     1       2 days, 3:04:05 ago
+Total Mac Addresses for this criterion: 3
+"""
+
+NXOS_ARP_WITH_TOTAL = """
+IP ARP Table for context TENANT1
+Total number of entries: 4
+Address         Age       MAC Address     Interface       Flags
+10.1.0.10       00:01:02  0050.56b3.0001  Vlan100
+10.1.0.11       00:01:02  0050.56b3.0002  Vlan100         +
+10.1.0.12       00:01:02  INCOMPLETE      Vlan100
+10.1.0.13       00:01:02  0050.56b3.0003  Vlan100         *
+"""
+
+
+class MacRowAccountingTests(unittest.TestCase):
+    """Every MAC row is a front-panel port, a known special port, or reported."""
+
+    def test_only_front_panel_ports_are_endpoints(self):
+        entries = parse_mac_address_table(NXOS_MAC_SPECIAL_ROWS, 100)
+        self.assertEqual(
+            [e["interface"] for e in entries], ["Po10", "Eth101/1/5", "Twe1/1", "Hu1/49"]
+        )
+        self.assertNotIn("eth1", [e["interface"].lower() for e in entries])
+
+    def test_special_rows_are_kept_as_evidence(self):
+        detail = parse_mac_table_detail(NXOS_MAC_SPECIAL_ROWS, 100)
+        kinds = {e["mac"]: e["port_kind"] for e in detail["entries"]}
+        self.assertEqual(kinds["00:50:56:b3:00:02"], "peer_link")
+        self.assertEqual(kinds["00:50:56:b3:00:03"], "overlay")
+        self.assertEqual(kinds["00:00:0c:9f:f0:64"], "self")
+        overlay = next(e for e in detail["entries"] if e["port_kind"] == "overlay")
+        self.assertEqual(overlay["remote_vtep"], "10.1.1.1")
+        self.assertEqual((detail["other_vlan"], detail["multicast"], detail["unparsed"]), (1, 1, []))
+
+    def test_eos_moves_and_vxlan_rows(self):
+        detail = parse_mac_table_detail(EOS_MAC_WITH_MOVES, 100)
+        by_mac = {e["mac"]: e for e in detail["entries"]}
+        self.assertEqual(by_mac["00:50:56:b3:00:11"]["port_kind"], "overlay")
+        moved = by_mac["00:50:56:b3:00:12"]
+        self.assertEqual((moved["moves"], moved["last_move"]), (7, "0:00:12 ago"))
+        self.assertEqual(by_mac["00:50:56:b3:00:13"]["last_move"], "2 days, 3:04:05 ago")
+
+    def test_parse_check_passes_when_every_row_is_accounted_for(self):
+        check = mac_table_parse_check(EOS_MAC_WITH_MOVES, 100)
+        self.assertTrue(check["ok"], check["problems"])
+        self.assertEqual((check["parsed"], check["overlay"], check["device_total"]), (2, 1, 3))
+        self.assertTrue(mac_table_parse_check(NXOS_MAC_SPECIAL_ROWS, 100)["ok"])
+
+    def test_parse_check_reports_unknown_ports_and_total_mismatch(self):
+        unknown = NXOS_MAC_SPECIAL_ROWS + "*  100     0050.56b3.0007   dynamic  0  F  F    Weird9\n"
+        check = mac_table_parse_check(unknown, 100)
+        self.assertFalse(check["ok"])
+        self.assertEqual(len(check["unparsed_lines"]), 1)
+        self.assertIn("Weird9", check["problems"][0])
+        short = EOS_MAC_WITH_MOVES.replace("criterion: 3", "criterion: 4")
+        check = mac_table_parse_check(short, 100)
+        self.assertEqual(check["problems"], ["the switch reports 4 MAC(s) but 3 row(s) were read"])
+
+    def test_extract_keeps_peer_link_and_overlay_out_of_endpoints(self):
+        record = extract_vlan_targeted_discovery(
+            {"id": 100, "name": "web"},
+            {"platform": "nxos", "mac_output": NXOS_MAC_SPECIAL_ROWS, "vlan_id_output": "", "svi_output": ""},
+        )
+        self.assertEqual(len(record["mac_entries"]), 4)
+        self.assertEqual([e["mac"] for e in record["peer_link_mac_entries"]], ["00:50:56:b3:00:02"])
+        self.assertEqual([e["mac"] for e in record["overlay_mac_entries"]], ["00:50:56:b3:00:03"])
+        self.assertTrue(record["parse_checks"]["mac_table"]["ok"])
+        self.assertNotIn("arp", record["parse_checks"])
+
+
+class ArpRowAccountingTests(unittest.TestCase):
+    def test_incomplete_rows_count_toward_the_total(self):
+        check = arp_table_parse_check(NXOS_ARP_WITH_TOTAL, 100)
+        self.assertTrue(check["ok"], check["problems"])
+        self.assertEqual((check["parsed"], check["incomplete"], check["device_total"]), (3, 1, 4))
+
+    def test_total_mismatch_is_reported(self):
+        check = arp_table_parse_check(NXOS_ARP_WITH_TOTAL.replace("entries: 4", "entries: 3"), 100)
+        self.assertEqual(check["problems"], ["the switch reports 3 ARP entries but 4 row(s) were read"])
+
+    def test_eos_include_filter_rows_for_other_svis_are_accounted_for(self):
+        eos = (
+            "10.1.0.10  0:01:02  0050.56b3.0001  Vlan100, Port-Channel10\n"
+            "10.2.0.10  0:01:02  0050.56b3.0099  Vlan1000, Ethernet3\n"
+        )
+        check = arp_table_parse_check(eos, 100)
+        self.assertEqual((check["ok"], check["parsed"], check["other_vlan"]), (True, 1, 1))
+        self.assertEqual(parse_arp_entries(eos, 100)[0]["port"], "Port-Channel10")
 
 
 if __name__ == "__main__":
