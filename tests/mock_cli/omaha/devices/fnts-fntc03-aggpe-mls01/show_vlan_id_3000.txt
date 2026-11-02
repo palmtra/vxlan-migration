@@ -1,0 +1,7 @@
+VLAN Name                             Status    Ports
+---- -------------------------------- --------- -------------------------------
+3000 ACME_APP                         active    Po1, Po101, Po105
+
+VLAN Type         Vlan-mode
+---- -----        ----------
+3000 enet         CE

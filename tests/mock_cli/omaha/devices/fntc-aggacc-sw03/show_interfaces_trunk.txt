@@ -1,0 +1,2 @@
+Port      Native vlan  Status     Allowed vlans
+Po1       1            trunking   3000

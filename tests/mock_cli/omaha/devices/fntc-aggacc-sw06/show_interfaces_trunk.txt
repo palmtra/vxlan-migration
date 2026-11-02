@@ -1,0 +1,8 @@
+Port         Mode         Status         Native vlan
+Po1          trunk        trunking       1
+
+Port         Vlans allowed
+Po1          2100,3000
+
+Port         Vlans allowed and active in management domain
+Po1          2100,3000

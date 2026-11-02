@@ -1,0 +1,14 @@
+!Command: show running-config bgp
+feature bgp
+
+router bgp 30452
+  router-id 66.180.0.1
+  neighbor 66.180.0.3
+    remote-as 30452
+    description oma01-blf01
+  neighbor 66.180.0.4
+    remote-as 30452
+    description oma01-blf02
+  vrf v0000822a
+    address-family ipv4 unicast
+      redistribute direct route-map RM_CONN_ACME

@@ -1,0 +1,5 @@
+interface port-channel101
+  description to fntc-aggacc-sw01/02
+  switchport mode trunk
+  switchport trunk allowed vlan 2100,2500-2501,3000
+  vpc 101

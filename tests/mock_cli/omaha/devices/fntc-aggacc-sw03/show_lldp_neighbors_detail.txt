@@ -1,0 +1,19 @@
+Interface Ethernet10 detected 1 LLDP neighbors:
+
+  Neighbor 0050.56b3.0020/eth0, age 9 seconds
+  - System Name: "acme-db-01"
+  - System Description: "Ubuntu 22.04.4 LTS Linux 5.15.0"
+
+Interface Ethernet49 detected 1 LLDP neighbors:
+
+  Neighbor 001c.7311.0001/Ethernet3, age 4 seconds
+  - Port ID        : "Ethernet3"
+  - System Name: "fntc-aggacc-sw01"
+  - System Description: "Arista Networks EOS version 4.31.2F"
+
+Interface Ethernet50 detected 1 LLDP neighbors:
+
+  Neighbor 001c.7311.0002/Ethernet3, age 4 seconds
+  - Port ID        : "Ethernet3"
+  - System Name: "fntc-aggacc-sw02"
+  - System Description: "Arista Networks EOS version 4.31.2F"
