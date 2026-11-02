@@ -81,6 +81,9 @@ _PORT_NAME_RE = re.compile(
     r"GigabitEthernet[\w./-]+|Gi[\d./-]+|"
     r"TenGigabitEthernet[\w./-]+|Te[\d./-]+|"
     r"FastEthernet[\w./-]+|Fa[\d./-]+|"
+    r"TwentyFiveGigE[\w./-]+|Twe[\d./-]+|"
+    r"FortyGigabitEthernet[\w./-]+|Fo[\d./-]+|"
+    r"HundredGigE[\w./-]+|Hu[\d./-]+|"
     r"Eth[\w./-]+"
     r")",
     re.I,

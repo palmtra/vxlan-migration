@@ -37,7 +37,7 @@
 | Keep VLAN, no VNI | {% for item in kept_l2 %}{{ item.hostname }} ({{ 'non-VTEP' if item.role == 'l2_attached' else 'MLS, until endpoints move' }}){{ ', ' if not loop.last }}{% endfor %} |
 {% endif %}
 | Prune | {{ placement.prune_eligible_leafs | default([]) | length }} switch{{ 'es' if placement.prune_eligible_leafs | default([]) | length != 1 }}{% if placement.prune_eligible_leafs | default([]) | length > 0 %}: {{ short_list(placement.prune_eligible_leafs | map(attribute='hostname') | list) }}{% endif %} |
-| Active IP endpoints | {{ et_summary.active_ips | default(0) }}{% if et_summary.mac_only | default(0) %} (+{{ et_summary.mac_only }} MAC only){% endif %}{% if not et_summary.arp_available | default(false) %} (no SVI on a discovered switch, so no ARP; MACs only){% endif %} |
+| Active IP endpoints | {{ et_summary.active_ips | default(0) }}{% if et.mac_only | default([]) | length %} (+{{ et.mac_only | length }} MAC only){% endif %}{% if not et_summary.arp_available | default(false) %} (no SVI on a discovered switch, so no ARP; MACs only){% endif %} |
 {% set fr = report.fabric_readiness | default({}) %}
 {% if fr.checked | default([]) | length > 0 %}
 | Fabric VTEPs | {% for row in fr.checked %}{{ row.hostname }} {{ (row.source_interface ~ ' ' ~ row.source_ip ~ ', ' ~ row.replication_mode ~ '/' ~ row.flood_list_source) if row.present else 'no Vxlan interface' }}{% if fr.vrf %}, L3 VNI {{ row.l3_vni if row.l3_vni is not none else ('missing' if row.svi_host | default(true) else 'none (not needed, no SVI here)') }}{% endif %}{{ '; ' if not loop.last }}{% endfor %} |
@@ -156,28 +156,28 @@ None found{% if report.migration_type == 'l2' %} (expected for an external gatew
 {% endfor %}
 {% endif %}
 
-## Active endpoints ({{ et_summary.active_ips | default(0) }})
+## Endpoints ({{ et_summary.active_ips | default(0) }} hosts{% if et_summary.gateway_or_fhrp | default(0) %} + {{ et_summary.gateway_or_fhrp }} gateway{% endif %}{% if et.mac_only | default([]) | length %}, {{ et.mac_only | length }} MAC only{% endif %})
 
 {% if et.endpoints | default([]) | length == 0 %}
 {% if et_summary.arp_available | default(false) %}No ARP entries on the SVI.{% else %}No SVI on a discovered switch, so there is no ARP. MAC-only endpoints are listed below.{% endif %}
 
 {% else %}
-IP from ARP on the SVI owners, located by the MAC table edge port. Use this list as the pre-migration test baseline.
+IP from ARP on the SVI owners, located by the MAC table edge port (or the port in the ARP entry when the MAC has aged out). Gateway rows are the old gateway, not hosts. Use the host rows as the pre-migration test baseline.
 
 | IP | MAC | Switch | Port | Port faces | Notes |
 |----|-----|--------|------|------------|-------|
 {% for row in et.endpoints %}
-| {{ row.ip }} | {{ row.mac }} | {{ row.hostname }} | {{ row.interface }} | {{ cell(row.port_label) }} | {{ (row.flags + (['also on ' ~ (row.also_on | join(', '))] if row.also_on else []) + (['only seen on trunks of ' ~ (row.uplink_seen_on | join(', '))] if row.location == 'uplink_only' else []) + (['not in MAC table'] if row.location == 'not_in_mac_table' else [])) | join('; ') }} |
+| {{ row.ip }} | {{ row.mac }} | {{ row.hostname }} | {{ row.interface }} | {{ cell(row.port_label) }} | {{ (row.flags + (['also answered by ' ~ (row.other_macs | join(', '))] if row.other_macs | default([]) else []) + (['also on ' ~ (row.also_on | join(', '))] if row.also_on else []) + (['only seen on trunks of ' ~ (row.uplink_seen_on | join(', '))] if row.location == 'uplink_only' else []) + (['not in MAC table'] if row.location == 'not_in_mac_table' else [])) | join('; ') }} |
 {% endfor %}
 
 {% endif %}
 {% if et.mac_only | default([]) | length > 0 %}
 MAC only, no ARP entry ({{ et.mac_only | length }}):
 
-| MAC | Switch | Port | Port faces |
-|-----|--------|------|------------|
+| MAC | Switch | Port | Port faces | Notes |
+|-----|--------|------|------------|-------|
 {% for row in et.mac_only %}
-| {{ row.mac }} | {{ row.hostname }} | {{ row.interface }} | {{ cell(row.port_label) }} |
+| {{ row.mac }} | {{ row.hostname }} | {{ row.interface }} | {{ cell(row.port_label) }} | {{ (row.flags + (['also on ' ~ (row.also_on | join(', '))] if row.also_on else []) + (['only seen on trunks of ' ~ (row.uplink_seen_on | join(', '))] if row.location == 'uplink_only' else [])) | join('; ') }} |
 {% endfor %}
 
 {% endif %}

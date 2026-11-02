@@ -167,6 +167,22 @@ def build_l3_discovery(vlan_id, devices):
 _ENDPOINT_ROLES = frozenset(
     {"compute", "unknown", "access", "network_service", "downstream_switch", "fabric_interconnect"}
 )
+# When a MAC is learned on several endpoint-facing ports, the most specific
+# port is where it lives. A downstream switch or an unclassified port is only
+# the path toward it.
+_EDGE_ROLE_RANK = {
+    "compute": 0,
+    "network_service": 1,
+    "fabric_interconnect": 2,
+    "access": 3,
+    "unknown": 4,
+    "downstream_switch": 5,
+}
+# Ports that end at a device rather than lead on to more switches. Two of
+# these for one MAC (other than one dual-homed port-channel) is a conflict.
+_TERMINAL_ROLES = frozenset({"compute", "network_service", "fabric_interconnect", "access"})
+# Flags that mark a row as the gateway, not a host. verify.py skips these too.
+_INFRA_FLAGS = frozenset({"gateway", "fhrp_mac"})
 # HSRP v1/v2 and VRRP virtual MACs. These are gateways, not hosts.
 _FHRP_MAC_PREFIXES = ("00:00:0c:07:ac", "00:00:0c:9f:f", "00:00:5e:00:01", "00:00:5e:00:02")
 
@@ -182,14 +198,65 @@ def _host_part(cidr):
     return str(cidr or "").split("/")[0]
 
 
+def _is_port_channel(interface):
+    return bool(re.match(r"^po\d", _normalize_interface_name(interface or "")))
+
+
+def _attachments_by_port(device):
+    return {
+        _normalize_interface_name(item.get("interface") or ""): item
+        for item in device.get("port_attachments") or []
+        if isinstance(item, dict) and item.get("interface")
+    }
+
+
+def _resolve_edge(places):
+    """Pick where a MAC lives from the ports it was learned on.
+
+    Returns ``(primary, others, flags)``. The most specific port wins
+    (_EDGE_ROLE_RANK, then switch and port name, so the answer never depends on
+    play order). The same port-channel on two switches is one dual-homed
+    attachment (vPC / MLAG). Two different device-facing ports are a conflict
+    (a loop, a move during discovery, or a misread port role).
+    """
+    ordered = sorted(
+        places,
+        key=lambda p: (_EDGE_ROLE_RANK.get(p["role"], 9), p["hostname"], _normalize_interface_name(p["interface"])),
+    )
+    primary = ordered[0]
+    others = ordered[1:]
+    flags = []
+    norm = _normalize_interface_name(primary["interface"])
+    if _is_port_channel(primary["interface"]) and any(
+        o["hostname"] != primary["hostname"] and _normalize_interface_name(o["interface"]) == norm for o in others
+    ):
+        flags.append("dual_homed")
+    if primary["role"] in _TERMINAL_ROLES:
+        conflicting = [
+            o
+            for o in others
+            if o["role"] in _TERMINAL_ROLES
+            and not (o["hostname"] != primary["hostname"] and _normalize_interface_name(o["interface"]) == norm
+                     and _is_port_channel(o["interface"]))
+        ]
+        if conflicting:
+            flags.append("multiple_edge_ports")
+    if any((p.get("moves") or 0) > 1 for p in places):
+        flags.append("mac_moved")
+    return primary, others, flags
+
+
 def build_endpoint_table(devices, gateway=None):
     """One row per active IP endpoint, located at its edge port.
 
-    ARP (from the SVI owners) gives IP to MAC. The MAC table gives the port.
-    A MAC learned on an endpoint-facing port is located there; a MAC seen only
-    on switch-to-switch trunks is ``uplink_only`` (it sits behind a switch
-    outside discovery scope, or in the legacy L2 beyond it). Gateway and FHRP
-    addresses are flagged so they are not mistaken for hosts.
+    ARP (from the SVI owners) gives IP to MAC. The MAC table gives the port;
+    when it has aged out, the port EOS prints in the ARP row is used instead
+    (flag ``located_by_arp``). A MAC seen only on switch-to-switch trunks or a
+    vPC peer-link is ``uplink_only``: it sits behind a switch outside
+    discovery scope. Gateway and FHRP addresses are flagged so they are not
+    mistaken for hosts. Conflicts are flagged, never dropped: an IP answered by
+    two MACs (``ip_conflict``), a MAC on two device-facing ports
+    (``multiple_edge_ports``), a MAC that moved (``mac_moved``, EOS).
     """
     gateway = gateway or {}
     infra_ips = set()
@@ -200,6 +267,12 @@ def build_endpoint_table(devices, gateway=None):
 
     edge = {}
     uplink = {}
+
+    def note_uplink(mac, hostname):
+        uplink.setdefault(mac, [])
+        if hostname and hostname not in uplink[mac]:
+            uplink[mac].append(hostname)
+
     for device in devices or []:
         hostname = device.get("hostname") or ""
         for entry in device.get("mac_entries") or []:
@@ -217,42 +290,82 @@ def build_endpoint_table(devices, gateway=None):
                         "description": entry.get("description") or "",
                         "neighbor": entry.get("neighbor") or "",
                         "role": role,
+                        "moves": entry.get("moves"),
                     }
                 )
             else:
-                uplink.setdefault(mac, [])
-                if hostname not in uplink[mac]:
-                    uplink[mac].append(hostname)
+                note_uplink(mac, hostname)
+        # The vPC peer learned it: it is behind the peer, not on this switch.
+        for entry in device.get("peer_link_mac_entries") or []:
+            if isinstance(entry, dict) and entry.get("mac"):
+                note_uplink(normalize_mac_address(entry.get("mac")), hostname)
 
     arp = {}
+    arp_ports = {}
     for device in devices or []:
+        hostname = device.get("hostname") or ""
+        attachments = _attachments_by_port(device)
         for entry in device.get("arp_entries") or []:
             if not isinstance(entry, dict) or not entry.get("ip"):
                 continue
-            row = arp.setdefault(
-                entry["ip"],
-                {"mac": normalize_mac_address(entry.get("mac")), "seen_by": [], "age": entry.get("age") or ""},
-            )
-            if device.get("hostname") not in row["seen_by"]:
-                row["seen_by"].append(device.get("hostname"))
+            mac = normalize_mac_address(entry.get("mac"))
+            row = arp.setdefault(entry["ip"], {"macs": {}, "age": entry.get("age") or ""})
+            seen_by = row["macs"].setdefault(mac, [])
+            if hostname not in seen_by:
+                seen_by.append(hostname)
+            port = entry.get("port") or ""
+            if port and mac:
+                attached = attachments.get(_normalize_interface_name(port), {})
+                arp_ports.setdefault(mac, []).append(
+                    {
+                        "hostname": hostname,
+                        "interface": attached.get("interface") or port,
+                        "description": attached.get("description") or "",
+                        "neighbor": attached.get("neighbor") or "",
+                        "role": attached.get("role") or "unknown",
+                    }
+                )
 
     def located(mac):
-        places = edge.get(mac) or []
-        if places:
-            return "edge", places[0], places[1:]
+        """``(location, primary, others, flags)`` for one MAC."""
+        if edge.get(mac):
+            primary, others, flags = _resolve_edge(edge[mac])
+            return "edge", primary, others, flags
+        by_arp = [p for p in arp_ports.get(mac) or [] if p["role"] in _ENDPOINT_ROLES]
+        if by_arp:
+            primary, others, flags = _resolve_edge(by_arp)
+            return "edge", primary, others, ["located_by_arp"] + flags
+        for place in arp_ports.get(mac) or []:
+            note_uplink(mac, place["hostname"])
         if mac in uplink:
-            return "uplink_only", {}, []
-        return "not_in_mac_table", {}, []
+            return "uplink_only", {}, [], []
+        return "not_in_mac_table", {}, [], []
+
+    def pick_mac(macs):
+        """The MAC most SVI owners agree on; ties go to a located MAC, then the lowest."""
+        return sorted(
+            macs,
+            key=lambda m: (-len(macs[m]), 0 if edge.get(m) else 1, m),
+        )[0]
 
     rows = []
+    ips_by_mac = {}
     for ip_addr in sorted(arp, key=_ip_sort_key):
-        mac = arp[ip_addr]["mac"]
-        where, place, others = located(mac)
-        flags = []
+        macs = arp[ip_addr]["macs"]
+        mac = pick_mac(macs)
+        ips_by_mac.setdefault(mac, []).append(ip_addr)
+        where, place, others, flags = located(mac)
+        flags = list(flags)
         if ip_addr in infra_ips:
-            flags.append("gateway")
+            flags.insert(0, "gateway")
         if mac.startswith(_FHRP_MAC_PREFIXES):
-            flags.append("fhrp_mac")
+            flags.insert(0, "fhrp_mac")
+        other_macs = sorted(m for m in macs if m != mac)
+        if other_macs:
+            flags.append("ip_conflict")
+        arp_from = []
+        for seen_by in macs.values():
+            arp_from.extend(host for host in seen_by if host not in arp_from)
         rows.append(
             {
                 "ip": ip_addr,
@@ -263,17 +376,24 @@ def build_endpoint_table(devices, gateway=None):
                 "port_label": place.get("neighbor") or place.get("description") or "",
                 "role": place.get("role", ""),
                 "also_on": ["%s %s" % (o["hostname"], o["interface"]) for o in others],
-                "arp_from": arp[ip_addr]["seen_by"],
+                "arp_from": arp_from,
                 "uplink_seen_on": uplink.get(mac, []) if where != "edge" else [],
+                "other_macs": other_macs,
                 "flags": flags,
             }
         )
-    arp_macs = {row["mac"] for row in rows}
+    for row in rows:
+        if len(ips_by_mac.get(row["mac"], [])) > 1 and not set(row["flags"]) & _INFRA_FLAGS:
+            row["flags"].append("shared_mac")
+
+    arp_macs = set()
+    for item in arp.values():
+        arp_macs.update(item["macs"])
     mac_only = []
     for mac in sorted(edge):
         if mac in arp_macs:
             continue
-        place = edge[mac][0]
+        place, others, flags = _resolve_edge(edge[mac])
         mac_only.append(
             {
                 "ip": "",
@@ -283,20 +403,56 @@ def build_endpoint_table(devices, gateway=None):
                 "interface": place["interface"],
                 "port_label": place.get("neighbor") or place.get("description") or "",
                 "role": place["role"],
-                "also_on": ["%s %s" % (o["hostname"], o["interface"]) for o in edge[mac][1:]],
+                "also_on": ["%s %s" % (o["hostname"], o["interface"]) for o in others],
+                "arp_from": [],
+                "uplink_seen_on": [],
+                "other_macs": [],
+                "flags": (["fhrp_mac"] if mac.startswith(_FHRP_MAC_PREFIXES) else []) + flags,
+            }
+        )
+    # Seen only on trunks and never in ARP: behind a switch outside discovery
+    # scope. Listed so they are not lost; their edge switch must be found.
+    for mac in sorted(uplink):
+        if mac in arp_macs or mac in edge:
+            continue
+        mac_only.append(
+            {
+                "ip": "",
+                "mac": mac,
+                "location": "uplink_only",
+                "hostname": "",
+                "interface": "",
+                "port_label": "",
+                "role": "",
+                "also_on": [],
+                "arp_from": [],
+                "uplink_seen_on": list(uplink[mac]),
+                "other_macs": [],
                 "flags": ["fhrp_mac"] if mac.startswith(_FHRP_MAC_PREFIXES) else [],
             }
         )
-    hosts = [row for row in rows if not row["flags"]]
+
+    hosts = [row for row in rows if not set(row["flags"]) & _INFRA_FLAGS]
+
+    def count(items, flag):
+        return len([row for row in items if flag in row["flags"]])
+
     return {
         "endpoints": rows,
         "mac_only": mac_only,
         "summary": {
+            "rows": len(rows),
             "active_ips": len(hosts),
             "gateway_or_fhrp": len(rows) - len(hosts),
-            "mac_only": len(mac_only),
+            "mac_only": len([row for row in mac_only if row["location"] == "edge"]),
+            "mac_only_uplink": len([row for row in mac_only if row["location"] == "uplink_only"]),
             "uplink_only": len([row for row in hosts if row["location"] == "uplink_only"]),
             "not_in_mac_table": len([row for row in hosts if row["location"] == "not_in_mac_table"]),
+            "located_by_arp": count(hosts, "located_by_arp"),
+            "ip_conflicts": count(rows, "ip_conflict"),
+            "multiple_edge_ports": count(hosts + mac_only, "multiple_edge_ports"),
+            "dual_homed": count(hosts + mac_only, "dual_homed"),
+            "mac_moved": count(hosts + mac_only, "mac_moved"),
             "arp_available": any(device.get("svi_present") for device in devices or []),
         },
     }
@@ -724,6 +880,13 @@ def build_action_items(report):
                 "%s: `%s` failed: %s. Re-run discovery or run the command by hand."
                 % (device.get("hostname"), error.get("command"), error.get("error"))
             )
+        for table, check in sorted((device.get("parse_checks") or {}).items()):
+            for problem in (check or {}).get("problems") or []:
+                items.append(
+                    "%s: the %s output was not fully read (%s). Endpoints may be missing: send the raw "
+                    "output (in the JSON report) so the parser can be fixed."
+                    % (device.get("hostname"), "MAC table" if table == "mac_table" else "ARP", problem)
+                )
     if not report.get("switches_vlan_defined") and not report.get("switches_with_svi"):
         items.append(
             "VLAN %s is not configured on any discovered switch. Nothing to migrate or prune here."
@@ -784,6 +947,37 @@ def build_action_items(report):
         items.append(
             "Extend discovery to the switches behind those trunks: %s active IP(s) are only seen on "
             "switch-to-switch trunks, so their edge switch is outside discovery scope." % summary["uplink_only"]
+        )
+    if summary.get("mac_only_uplink"):
+        items.append(
+            "Extend discovery to the switches behind those trunks: %s MAC(s) with no ARP entry are only seen "
+            "on switch-to-switch trunks or a vPC peer-link, so their edge switch is outside discovery scope."
+            % summary["mac_only_uplink"]
+        )
+    if summary.get("ip_conflicts"):
+        conflicts = [
+            "%s (%s)" % (row["ip"], ", ".join([row["mac"]] + row.get("other_macs", [])))
+            for row in (report.get("endpoint_table") or {}).get("endpoints") or []
+            if "ip_conflict" in row.get("flags", [])
+        ]
+        items.append(
+            "Resolve duplicate IPs before migrating: the gateways map these IPs to more than one MAC: %s."
+            % "; ".join(conflicts)
+        )
+    if summary.get("multiple_edge_ports"):
+        rows = [
+            row
+            for row in list((report.get("endpoint_table") or {}).get("endpoints") or [])
+            + list((report.get("endpoint_table") or {}).get("mac_only") or [])
+            if "multiple_edge_ports" in row.get("flags", [])
+        ]
+        items.append(
+            "Check where these MACs really are: each is learned on more than one device-facing port "
+            "(loop, a move during discovery, or a port role read wrong): %s."
+            % "; ".join(
+                "%s on %s" % (row["mac"], ", ".join(["%s %s" % (row["hostname"], row["interface"])] + row["also_on"]))
+                for row in rows
+            )
         )
     if summary.get("not_in_mac_table"):
         items.append(
@@ -912,7 +1106,10 @@ def build_vlan_discovery_reports(
                     "arp_learned": per_vlan.get("arp_learned", False),
                     "mac_entries": per_vlan.get("mac_entries", []),
                     "endpoint_mac_entries": per_vlan.get("endpoint_mac_entries", []),
+                    "peer_link_mac_entries": per_vlan.get("peer_link_mac_entries", []),
+                    "overlay_mac_entries": per_vlan.get("overlay_mac_entries", []),
                     "arp_entries": per_vlan.get("arp_entries", []),
+                    "parse_checks": per_vlan.get("parse_checks", {}),
                     "uplinks": per_vlan.get("uplinks", []),
                     "svi_vrf": per_vlan.get("svi_vrf", ""),
                     "svi_details": per_vlan.get("svi_details", {}),

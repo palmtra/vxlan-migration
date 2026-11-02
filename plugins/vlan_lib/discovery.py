@@ -8,11 +8,13 @@ from ansible.errors import AnsibleFilterError
 from vlan_lib.common import _str_equal, _vlan_present
 from vlan_lib.parsers import (
     _normalize_interface_name,
+    arp_table_parse_check,
     classify_attachment_role,
     classify_mac_port_role,
     index_interface_configs,
+    mac_table_parse_check,
     parse_arp_entries,
-    parse_mac_address_table,
+    parse_mac_table_detail,
     parse_svi_details,
     parse_svi_vrf,
     parse_vlan_id_ports,
@@ -220,8 +222,16 @@ def extract_vlan_targeted_discovery(vlan, outputs):
     vlan_present = port_membership.get("vlan_present", False)
     svi_present = svi_command_indicates_present(svi_output, vlan_id)
     svi_vrf = parse_svi_vrf(svi_output, platform) if svi_present else ""
-    mac_entries = parse_mac_address_table(mac_output, vlan_id)
+    mac_detail = parse_mac_table_detail(mac_output, vlan_id)
+    mac_entries = [entry for entry in mac_detail["entries"] if entry["port_kind"] == "port"]
+    # Not local endpoints, kept as evidence: MACs the vPC peer learned, and
+    # remote MACs behind another VTEP.
+    peer_link_mac_entries = [entry for entry in mac_detail["entries"] if entry["port_kind"] == "peer_link"]
+    overlay_mac_entries = [entry for entry in mac_detail["entries"] if entry["port_kind"] == "overlay"]
     arp_entries = parse_arp_entries(arp_output, vlan_id) if svi_present else []
+    parse_checks = {"mac_table": mac_table_parse_check(mac_output, vlan_id)}
+    if svi_present:
+        parse_checks["arp"] = arp_table_parse_check(arp_output, vlan_id)
     mac_learned = bool(mac_entries)
     arp_learned = bool(arp_entries)
 
@@ -377,7 +387,10 @@ def extract_vlan_targeted_discovery(vlan, outputs):
         "arp_learned": arp_learned,
         "mac_entries": mac_entries,
         "endpoint_mac_entries": endpoint_mac_entries,
+        "peer_link_mac_entries": peer_link_mac_entries,
+        "overlay_mac_entries": overlay_mac_entries,
         "arp_entries": arp_entries,
+        "parse_checks": parse_checks,
         "vlan_id_raw": vlan_output,
         "svi_raw": svi_output,
         "mac_table_raw": mac_output,
