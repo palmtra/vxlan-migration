@@ -1,0 +1,904 @@
+{
+    "acceptance": [
+        {
+            "check": "VLAN 3000 is mapped to VNI 11002 on every fabric leaf in the deploy steps",
+            "id": "A-3000-01"
+        },
+        {
+            "check": "All 4 baseline host IPs answer ping from the fabric gateway",
+            "id": "A-3000-02"
+        },
+        {
+            "check": "A re-run of discovery for VLAN 3000 lists no prune-eligible switch and no blockers",
+            "id": "A-3000-03"
+        },
+        {
+            "check": "Endpoints resolve 10.230.0.1 to the fabric MAC 00:1c:73:00:00:99",
+            "id": "A-3000-04"
+        }
+    ],
+    "coverage": {
+        "complete": true,
+        "endpoint_collection": {
+            "modes": {
+                "per_vlan": [
+                    "fnts-fntc03-aggpe-mls01",
+                    "fnts-fntc03-aggpe-mls02",
+                    "oma01-blf01",
+                    "oma01-blf02",
+                    "fntc-aggacc-sw01",
+                    "fntc-aggacc-sw02",
+                    "fntc-aggacc-sw05",
+                    "fntc-aggacc-sw06",
+                    "fntc-aggacc-sw03"
+                ]
+            },
+            "notes": [],
+            "passes": 1,
+            "refresh": {
+                "answered": 0,
+                "sent": 0,
+                "skipped_subnets": []
+            }
+        },
+        "failed_commands": [],
+        "not_discovered": [],
+        "switches_scanned": [
+            "fntc-aggacc-sw01",
+            "fntc-aggacc-sw02",
+            "fntc-aggacc-sw03",
+            "fntc-aggacc-sw05",
+            "fntc-aggacc-sw06",
+            "fnts-fntc03-aggpe-mls01",
+            "fnts-fntc03-aggpe-mls02",
+            "oma01-blf01",
+            "oma01-blf02"
+        ],
+        "unread_rows": []
+    },
+    "endpoints": {
+        "rows": [
+            {
+                "also_on": [],
+                "baseline": false,
+                "flags": [
+                    "gateway"
+                ],
+                "id": "EP-3000-001",
+                "ip": "10.230.0.2",
+                "ipv6": [],
+                "location": "uplink_only",
+                "mac": "00:26:98:aa:00:01",
+                "port": "",
+                "port_faces": "",
+                "role": "",
+                "seen": null,
+                "seen_by_arp_on": [
+                    "fnts-fntc03-aggpe-mls02"
+                ],
+                "switch": ""
+            },
+            {
+                "also_on": [],
+                "baseline": false,
+                "flags": [
+                    "gateway"
+                ],
+                "id": "EP-3000-002",
+                "ip": "10.230.0.3",
+                "ipv6": [],
+                "location": "uplink_only",
+                "mac": "00:26:98:aa:00:02",
+                "port": "",
+                "port_faces": "",
+                "role": "",
+                "seen": null,
+                "seen_by_arp_on": [
+                    "fnts-fntc03-aggpe-mls01"
+                ],
+                "switch": ""
+            },
+            {
+                "also_on": [],
+                "baseline": true,
+                "flags": [],
+                "id": "EP-3000-003",
+                "ip": "10.230.0.10",
+                "ipv6": [],
+                "location": "edge",
+                "mac": "00:50:56:b3:00:10",
+                "port": "Et5",
+                "port_faces": "esx-acme-01",
+                "role": "compute",
+                "seen": null,
+                "seen_by_arp_on": [
+                    "fnts-fntc03-aggpe-mls01",
+                    "fnts-fntc03-aggpe-mls02"
+                ],
+                "switch": "fntc-aggacc-sw01"
+            },
+            {
+                "also_on": [],
+                "baseline": true,
+                "flags": [],
+                "id": "EP-3000-004",
+                "ip": "10.230.0.11",
+                "ipv6": [],
+                "location": "edge",
+                "mac": "00:50:56:b3:00:11",
+                "port": "Et5",
+                "port_faces": "esx-acme-02",
+                "role": "compute",
+                "seen": null,
+                "seen_by_arp_on": [
+                    "fnts-fntc03-aggpe-mls01",
+                    "fnts-fntc03-aggpe-mls02"
+                ],
+                "switch": "fntc-aggacc-sw02"
+            },
+            {
+                "also_on": [],
+                "baseline": true,
+                "flags": [],
+                "id": "EP-3000-005",
+                "ip": "10.230.0.20",
+                "ipv6": [],
+                "location": "edge",
+                "mac": "00:50:56:b3:00:20",
+                "port": "Et10",
+                "port_faces": "acme-db-01",
+                "role": "compute",
+                "seen": null,
+                "seen_by_arp_on": [
+                    "fnts-fntc03-aggpe-mls01",
+                    "fnts-fntc03-aggpe-mls02"
+                ],
+                "switch": "fntc-aggacc-sw03"
+            },
+            {
+                "also_on": [],
+                "baseline": true,
+                "flags": [],
+                "id": "EP-3000-006",
+                "ip": "10.230.0.40",
+                "ipv6": [],
+                "location": "not_in_mac_table",
+                "mac": "00:50:56:b3:00:40",
+                "port": "",
+                "port_faces": "",
+                "role": "",
+                "seen": null,
+                "seen_by_arp_on": [
+                    "fnts-fntc03-aggpe-mls01",
+                    "fnts-fntc03-aggpe-mls02"
+                ],
+                "switch": ""
+            }
+        ],
+        "summary": {
+            "active_ips": 4,
+            "arp_available": true,
+            "dual_homed": 0,
+            "gateway_or_fhrp": 2,
+            "intermittent": 0,
+            "ip_conflicts": 0,
+            "ipv6_hosts": 0,
+            "located_by_arp": 0,
+            "mac_moved": 0,
+            "mac_only": 0,
+            "mac_only_uplink": 0,
+            "multiple_edge_ports": 0,
+            "not_in_mac_table": 1,
+            "passes": 1,
+            "rows": 6,
+            "uplink_only": 0
+        }
+    },
+    "files": {
+        "deployable_model": "ACME_APP_discovery_20261102_185028_841.yml",
+        "discovery_json": "ACME_APP_discovery_20261102_185028_841.json",
+        "discovery_markdown": "ACME_APP_discovery_20261102_185028_841.md",
+        "endpoint_baseline": "ACME_APP_endpoints_20261102_185028_841.csv",
+        "mop_input": "ACME_APP_mop_input_20261102_185028_841.json",
+        "prune_json": "ACME_APP_prune_20261102_185028_841.json",
+        "prune_markdown": "ACME_APP_prune_20261102_185028_841.md"
+    },
+    "findings": [
+        {
+            "category": "vni",
+            "id": "D-01",
+            "kind": "decision",
+            "severity": "medium",
+            "text": "VNI 11002 proposed (next free in omaha external 11000-11999). Confirm it in evpn.l2.vni of the SSOT record."
+        },
+        {
+            "category": "gateway",
+            "id": "R-01",
+            "kind": "risk",
+            "severity": "high",
+            "text": "The gateway MAC changes at cutover: hosts cache 10.230.0.1 as 00:00:0c:9f:fb:b8; the fabric answers with 00:1c:73:00:00:99. A host updates its entry when the fabric gateway ARPs for it (the post-cutover ping of every baseline endpoint does this) or when the entry ages out; until then it sends to the old MAC. Ping every endpoint from the fabric gateway right after the cutover, and check hosts that do not answer."
+        },
+        {
+            "category": "endpoints",
+            "id": "R-02",
+            "kind": "risk",
+            "severity": "low",
+            "text": "Re-run discovery or check them by hand: 1 active IP(s) are in ARP but not in any MAC table (aged out, or behind a switch that was not discovered)."
+        },
+        {
+            "category": "prune",
+            "id": "Q-01",
+            "kind": "sequencing",
+            "severity": "low",
+            "text": "Teardown of fnts-fntc03-aggpe-mls01 is blocked: Vlan SVI on fnts-fntc03-aggpe-mls01 is still the active gateway; move the gateway to the fabric first."
+        },
+        {
+            "category": "prune",
+            "id": "Q-02",
+            "kind": "sequencing",
+            "severity": "low",
+            "text": "Teardown of fnts-fntc03-aggpe-mls02 is blocked: Vlan SVI on fnts-fntc03-aggpe-mls02 is still the active gateway; move the gateway to the fabric first."
+        },
+        {
+            "category": "gateway",
+            "id": "I-01",
+            "kind": "info",
+            "severity": "low",
+            "text": "Nothing to do: legacy SVI MTU 9216 is above the EOS maximum, so the fabric SVI is generated with 9214."
+        }
+    ],
+    "gateway": {
+        "legacy_svis": [
+            {
+                "addresses": [
+                    "10.230.0.2/24"
+                ],
+                "fhrp": [
+                    {
+                        "family": "ipv4",
+                        "group": 3000,
+                        "mac_source": "derived",
+                        "priority": 110,
+                        "protocol": "hsrp",
+                        "vip": "10.230.0.1",
+                        "virtual_mac": "00:00:0c:9f:fb:b8"
+                    }
+                ],
+                "interface": "Vlan3000",
+                "switch": "fnts-fntc03-aggpe-mls01",
+                "vrf": "v0000822a"
+            },
+            {
+                "addresses": [
+                    "10.230.0.3/24"
+                ],
+                "fhrp": [
+                    {
+                        "family": "ipv4",
+                        "group": 3000,
+                        "mac_source": "derived",
+                        "priority": 100,
+                        "protocol": "hsrp",
+                        "vip": "10.230.0.1",
+                        "virtual_mac": "00:00:0c:9f:fb:b8"
+                    }
+                ],
+                "interface": "Vlan3000",
+                "switch": "fnts-fntc03-aggpe-mls02",
+                "vrf": "v0000822a"
+            }
+        ],
+        "location": "legacy",
+        "mac_change": {
+            "applies": true,
+            "changes": true,
+            "fabric_mac": "00:1c:73:00:00:99",
+            "fabric_missing": [],
+            "legacy_macs": [
+                "00:00:0c:9f:fb:b8"
+            ]
+        },
+        "mode": "distributed_anycast",
+        "services_not_migrated": {},
+        "subnets": [
+            {
+                "gateway_ip": "10.230.0.1",
+                "prefix": "10.230.0.0/24",
+                "secondary": false
+            }
+        ],
+        "svi_mtu": 9214,
+        "virtual_ip": "10.230.0.1"
+    },
+    "purpose": "Input for writing the MOP for this VLAN. Facts come from read-only discovery. Use only the CLI in steps[].cli and the configlet files named in steps[].cli_source; cite IDs; do not invent commands.",
+    "routing": {
+        "bgp_exports": [],
+        "bgp_fabric": [
+            {
+                "best": {
+                    "as_path": "",
+                    "best": true,
+                    "from": "fnts-fntc03-aggpe-mls01",
+                    "from_hostname": "fnts-fntc03-aggpe-mls01",
+                    "kind": "iBGP",
+                    "next_hop": "66.180.0.1",
+                    "peer": "66.180.0.1"
+                },
+                "bgp_as": "30452",
+                "hostname": "oma01-blf01",
+                "paths": [
+                    {
+                        "as_path": "",
+                        "best": true,
+                        "from": "fnts-fntc03-aggpe-mls01",
+                        "from_hostname": "fnts-fntc03-aggpe-mls01",
+                        "kind": "iBGP",
+                        "next_hop": "66.180.0.1",
+                        "peer": "66.180.0.1"
+                    },
+                    {
+                        "as_path": "",
+                        "best": false,
+                        "from": "fnts-fntc03-aggpe-mls02",
+                        "from_hostname": "fnts-fntc03-aggpe-mls02",
+                        "kind": "iBGP",
+                        "next_hop": "66.180.0.2",
+                        "peer": "66.180.0.2"
+                    }
+                ],
+                "prefix": "10.230.0.0/24",
+                "present": true,
+                "vrf": "v0000822a"
+            },
+            {
+                "best": {
+                    "as_path": "",
+                    "best": true,
+                    "from": "fnts-fntc03-aggpe-mls01",
+                    "from_hostname": "fnts-fntc03-aggpe-mls01",
+                    "kind": "iBGP",
+                    "next_hop": "66.180.0.1",
+                    "peer": "66.180.0.1"
+                },
+                "bgp_as": "30452",
+                "hostname": "oma01-blf02",
+                "paths": [
+                    {
+                        "as_path": "",
+                        "best": true,
+                        "from": "fnts-fntc03-aggpe-mls01",
+                        "from_hostname": "fnts-fntc03-aggpe-mls01",
+                        "kind": "iBGP",
+                        "next_hop": "66.180.0.1",
+                        "peer": "66.180.0.1"
+                    },
+                    {
+                        "as_path": "",
+                        "best": false,
+                        "from": "fnts-fntc03-aggpe-mls02",
+                        "from_hostname": "fnts-fntc03-aggpe-mls02",
+                        "kind": "iBGP",
+                        "next_hop": "66.180.0.2",
+                        "peer": "66.180.0.2"
+                    }
+                ],
+                "prefix": "10.230.0.0/24",
+                "present": true,
+                "vrf": "v0000822a"
+            }
+        ],
+        "bgp_live": [
+            {
+                "advertised_to": [
+                    "66.180.0.3",
+                    "66.180.0.4"
+                ],
+                "hostname": "fnts-fntc03-aggpe-mls01",
+                "local": true,
+                "prefix": "10.230.0.0/24",
+                "present": true,
+                "vrf": "v0000822a"
+            },
+            {
+                "advertised_to": [
+                    "66.180.0.3",
+                    "66.180.0.4"
+                ],
+                "hostname": "fnts-fntc03-aggpe-mls02",
+                "local": true,
+                "prefix": "10.230.0.0/24",
+                "present": true,
+                "vrf": "v0000822a"
+            }
+        ],
+        "bgp_neighbors": [],
+        "bgp_networks": [
+            {
+                "hostname": "fnts-fntc03-aggpe-mls01",
+                "kind": "redistribute",
+                "method": "direct route-map RM_CONN_ACME",
+                "prefix": "",
+                "reason": "BGP redistributes connected in the SVI VRF (10.230.0.0/24: RM_CONN_ACME seq 10 permit (PL_ACME seq 5 permit 10.230.0.0/24)). The VRF can be shared; confirm before migration.",
+                "route_map": "RM_CONN_ACME",
+                "verdicts": [
+                    {
+                        "prefix": "10.230.0.0/24",
+                        "reason": "RM_CONN_ACME seq 10 permit (PL_ACME seq 5 permit 10.230.0.0/24)",
+                        "verdict": "permit"
+                    }
+                ],
+                "vrf": "v0000822a"
+            },
+            {
+                "hostname": "fnts-fntc03-aggpe-mls02",
+                "kind": "redistribute",
+                "method": "direct route-map RM_CONN_ACME",
+                "prefix": "",
+                "reason": "BGP redistributes connected in the SVI VRF (10.230.0.0/24: RM_CONN_ACME seq 10 permit (PL_ACME seq 5 permit 10.230.0.0/24)). The VRF can be shared; confirm before migration.",
+                "route_map": "RM_CONN_ACME",
+                "verdicts": [
+                    {
+                        "prefix": "10.230.0.0/24",
+                        "reason": "RM_CONN_ACME seq 10 permit (PL_ACME seq 5 permit 10.230.0.0/24)",
+                        "verdict": "permit"
+                    }
+                ],
+                "vrf": "v0000822a"
+            }
+        ],
+        "static_routes": []
+    },
+    "run": {
+        "ansible_version": "2.18.19",
+        "controller": "vm",
+        "data_center": "omaha",
+        "finished_at": "2026-11-02T18:50:53Z",
+        "git": {
+            "commit": "2aaa2fe87b8cb3d04c8b4d18dcaf5984cca47aee",
+            "dirty": false
+        },
+        "inventory": [
+            "/home/user/vxlan-migration/tests/mock_cli/omaha/inventory/hosts.yml"
+        ],
+        "operator": "",
+        "parameters": {
+            "allow_probe": true,
+            "arp_refresh": false,
+            "collect_ipv6": true,
+            "endpoint_collection": "auto",
+            "include_static_macs": true,
+            "keep_idle_endpoint_ports": false,
+            "pass_interval": 120,
+            "passes": 1,
+            "scan_all_switches": true
+        },
+        "run_id": "omaha_20261102_185028_841",
+        "started_at": "2026-11-02T18:50:27Z",
+        "switches_answered": [
+            "fntc-aggacc-sw01",
+            "fntc-aggacc-sw02",
+            "fntc-aggacc-sw03",
+            "fntc-aggacc-sw05",
+            "fntc-aggacc-sw06",
+            "fnts-fntc03-aggpe-mls01",
+            "fnts-fntc03-aggpe-mls02",
+            "oma01-blf01",
+            "oma01-blf02"
+        ],
+        "switches_in_play": [
+            "fntc-aggacc-sw01",
+            "fntc-aggacc-sw02",
+            "fntc-aggacc-sw03",
+            "fntc-aggacc-sw05",
+            "fntc-aggacc-sw06",
+            "fnts-fntc03-aggpe-mls01",
+            "fnts-fntc03-aggpe-mls02",
+            "oma01-blf01",
+            "oma01-blf02"
+        ],
+        "timestamp": "20261102_185028_841",
+        "vlan_ids": [
+            3000
+        ]
+    },
+    "schema": "vxlan-migration/mop-input",
+    "schema_version": "1.0",
+    "steps": [
+        {
+            "cli": null,
+            "cli_source": "",
+            "depends_on": [],
+            "findings": [],
+            "id": "S-3000-01",
+            "notes": [],
+            "phase": "0-prechecks",
+            "rollback": null,
+            "status": "ready",
+            "switch": "",
+            "title": "Resolve every blocker and re-run discovery",
+            "verify": [
+                "Re-run playbooks/core/discover_vlan.yml for VLAN 3000: no blockers in the report"
+            ]
+        },
+        {
+            "cli": null,
+            "cli_source": "",
+            "depends_on": [],
+            "findings": [
+                "D-01"
+            ],
+            "id": "S-3000-02",
+            "notes": [],
+            "phase": "0-prechecks",
+            "rollback": null,
+            "status": "needs_decision",
+            "switch": "",
+            "title": "Record the engineer's and app owner's decisions",
+            "verify": []
+        },
+        {
+            "cli": null,
+            "cli_source": "",
+            "depends_on": [],
+            "files": [
+                "ACME_APP_endpoints_20261102_185028_841.csv"
+            ],
+            "id": "S-3000-03",
+            "notes": [],
+            "phase": "0-prechecks",
+            "rollback": null,
+            "status": "ready",
+            "switch": "",
+            "title": "Keep the endpoint baseline for post-change checks",
+            "verify": [
+                "The baseline lists 4 host IPs"
+            ]
+        },
+        {
+            "cli": null,
+            "cli_source": "configlet vxlan_vlan3000_fntc-aggacc-sw01.cfg written by playbooks/core/workflow_deploy.yml",
+            "depends_on": [
+                "S-3000-01",
+                "S-3000-02",
+                "S-3000-03"
+            ],
+            "id": "S-3000-04",
+            "notes": [
+                "Vlan3000 comes up with ip address virtual 10.230.0.1 as soon as this configlet is applied, while the legacy gateway still answers. Apply it in the cutover window, or make sure the fabric and the legacy L2 are not bridged for this VLAN until the legacy SVI is shut."
+            ],
+            "phase": "1-deploy",
+            "rollback": "Roll back the CVP change control (roles/cvp_rollback)",
+            "status": "ready",
+            "switch": "fntc-aggacc-sw01",
+            "title": "Deploy VLAN 3000 / VNI 11002",
+            "verify": [
+                "show vxlan vlan-to-vni | include 3000  (expect VNI 11002)",
+                "show interfaces Vlan3000  (up, ip address virtual)"
+            ]
+        },
+        {
+            "cli": null,
+            "cli_source": "configlet vxlan_vlan3000_fntc-aggacc-sw02.cfg written by playbooks/core/workflow_deploy.yml",
+            "depends_on": [
+                "S-3000-01",
+                "S-3000-02",
+                "S-3000-03"
+            ],
+            "id": "S-3000-05",
+            "notes": [
+                "Vlan3000 comes up with ip address virtual 10.230.0.1 as soon as this configlet is applied, while the legacy gateway still answers. Apply it in the cutover window, or make sure the fabric and the legacy L2 are not bridged for this VLAN until the legacy SVI is shut."
+            ],
+            "phase": "1-deploy",
+            "rollback": "Roll back the CVP change control (roles/cvp_rollback)",
+            "status": "ready",
+            "switch": "fntc-aggacc-sw02",
+            "title": "Deploy VLAN 3000 / VNI 11002",
+            "verify": [
+                "show vxlan vlan-to-vni | include 3000  (expect VNI 11002)",
+                "show interfaces Vlan3000  (up, ip address virtual)"
+            ]
+        },
+        {
+            "cli": "interface Vlan3000\n  shutdown",
+            "cli_source": "mop_input (shut only; the SVI is removed in the teardown phase)",
+            "depends_on": [
+                "S-3000-04",
+                "S-3000-05"
+            ],
+            "id": "S-3000-06",
+            "notes": [
+                "Gateway MAC changes from 00:00:0c:9f:fb:b8 to 00:1c:73:00:00:99: hosts update their ARP entry for 10.230.0.1 when the fabric gateway ARPs for them (the ping above) or when it ages out."
+            ],
+            "phase": "4-gateway-cutover",
+            "rollback": "interface Vlan3000\n  no shutdown",
+            "status": "ready",
+            "switch": "fnts-fntc03-aggpe-mls01",
+            "title": "Shut the legacy gateway SVI",
+            "verify": [
+                "Ping every baseline endpoint from a fabric gateway leaf (playbooks/core/workflow_verify.yml)",
+                "show ip arp vrf v0000822a | include Vlan3000 on a fabric gateway leaf: the endpoints are there"
+            ]
+        },
+        {
+            "cli": "interface Vlan3000\n  shutdown",
+            "cli_source": "mop_input (shut only; the SVI is removed in the teardown phase)",
+            "depends_on": [
+                "S-3000-04",
+                "S-3000-05"
+            ],
+            "id": "S-3000-07",
+            "notes": [
+                "Gateway MAC changes from 00:00:0c:9f:fb:b8 to 00:1c:73:00:00:99: hosts update their ARP entry for 10.230.0.1 when the fabric gateway ARPs for them (the ping above) or when it ages out."
+            ],
+            "phase": "4-gateway-cutover",
+            "rollback": "interface Vlan3000\n  no shutdown",
+            "status": "ready",
+            "switch": "fnts-fntc03-aggpe-mls02",
+            "title": "Shut the legacy gateway SVI",
+            "verify": [
+                "Ping every baseline endpoint from a fabric gateway leaf (playbooks/core/workflow_verify.yml)",
+                "show ip arp vrf v0000822a | include Vlan3000 on a fabric gateway leaf: the endpoints are there"
+            ]
+        },
+        {
+            "blocked_reason": "Vlan SVI on fnts-fntc03-aggpe-mls01 is still the active gateway; move the gateway to the fabric first",
+            "cli": "checkpoint prune_v3000\nconfigure terminal\ninterface port-channel101\n  switchport trunk allowed vlan remove 3000\ninterface port-channel105\n  switchport trunk allowed vlan remove 3000\nno interface Vlan3000\nno vlan 3000\nend\n",
+            "cli_source": "ACME_APP_prune_20261102_185028_841.md",
+            "depends_on": [
+                "S-3000-06",
+                "S-3000-07"
+            ],
+            "id": "S-3000-08",
+            "notes": [],
+            "phase": "5-teardown",
+            "rollback": "rollback running-config checkpoint prune_v3000",
+            "save": "copy running-config startup-config",
+            "status": "blocked_until_gateway_moved",
+            "switch": "fnts-fntc03-aggpe-mls01",
+            "title": "teardown after the gateway moved (trunks, SVI, VLAN): fnts-fntc03-aggpe-mls01",
+            "verify": [
+                "Re-run discovery for VLAN 3000: fnts-fntc03-aggpe-mls01 shows the change"
+            ]
+        },
+        {
+            "blocked_reason": "Vlan SVI on fnts-fntc03-aggpe-mls02 is still the active gateway; move the gateway to the fabric first",
+            "cli": "checkpoint prune_v3000\nconfigure terminal\ninterface port-channel101\n  switchport trunk allowed vlan remove 3000\ninterface port-channel105\n  switchport trunk allowed vlan remove 3000\nno interface Vlan3000\nno vlan 3000\nend\n",
+            "cli_source": "ACME_APP_prune_20261102_185028_841.md",
+            "depends_on": [
+                "S-3000-06",
+                "S-3000-07"
+            ],
+            "id": "S-3000-09",
+            "notes": [],
+            "phase": "5-teardown",
+            "rollback": "rollback running-config checkpoint prune_v3000",
+            "save": "copy running-config startup-config",
+            "status": "blocked_until_gateway_moved",
+            "switch": "fnts-fntc03-aggpe-mls02",
+            "title": "teardown after the gateway moved (trunks, SVI, VLAN): fnts-fntc03-aggpe-mls02",
+            "verify": [
+                "Re-run discovery for VLAN 3000: fnts-fntc03-aggpe-mls02 shows the change"
+            ]
+        },
+        {
+            "blocked_reason": "",
+            "cli": "configure session prune_v3000\ninterface Port-Channel1\n   switchport trunk allowed vlan remove 3000\nno vlan 3000\n!\nshow session-config diffs\ncommit timer 00:10:00\n",
+            "cli_source": "ACME_APP_prune_20261102_185028_841.md",
+            "depends_on": [
+                "S-3000-06",
+                "S-3000-07"
+            ],
+            "id": "S-3000-10",
+            "notes": [],
+            "phase": "5-teardown",
+            "rollback": null,
+            "save": "",
+            "status": "ready",
+            "switch": "fntc-aggacc-sw05",
+            "title": "teardown after the gateway moved (trunks, SVI, VLAN): fntc-aggacc-sw05",
+            "verify": [
+                "Re-run discovery for VLAN 3000: fntc-aggacc-sw05 shows the change"
+            ]
+        },
+        {
+            "blocked_reason": "",
+            "cli": "configure session prune_v3000\ninterface Port-Channel1\n   switchport trunk allowed vlan remove 3000\nno vlan 3000\n!\nshow session-config diffs\ncommit timer 00:10:00\n",
+            "cli_source": "ACME_APP_prune_20261102_185028_841.md",
+            "depends_on": [
+                "S-3000-06",
+                "S-3000-07"
+            ],
+            "id": "S-3000-11",
+            "notes": [],
+            "phase": "5-teardown",
+            "rollback": null,
+            "save": "",
+            "status": "ready",
+            "switch": "fntc-aggacc-sw06",
+            "title": "teardown after the gateway moved (trunks, SVI, VLAN): fntc-aggacc-sw06",
+            "verify": [
+                "Re-run discovery for VLAN 3000: fntc-aggacc-sw06 shows the change"
+            ]
+        },
+        {
+            "cli": null,
+            "cli_source": "playbooks/core/workflow_verify.yml",
+            "depends_on": [
+                "S-3000-08",
+                "S-3000-09",
+                "S-3000-10",
+                "S-3000-11"
+            ],
+            "id": "S-3000-12",
+            "notes": [],
+            "phase": "6-verify",
+            "rollback": null,
+            "status": "ready",
+            "switch": "",
+            "title": "Post-change verification",
+            "verify": [
+                "Every baseline host answers ping from the fabric (ACME_APP_endpoints_20261102_185028_841.csv)",
+                "Re-run discovery: VLAN 3000 is VNI-mapped on fntc-aggacc-sw01, fntc-aggacc-sw02 and nothing is left to prune"
+            ]
+        }
+    ],
+    "summary": {
+        "endpoints": 4,
+        "findings": {
+            "blocker": 0,
+            "decision": 1,
+            "info": 1,
+            "risk": 2,
+            "sequencing": 2,
+            "task": 0
+        },
+        "high_risks": 1,
+        "steps": 12,
+        "steps_ready": 9
+    },
+    "switches": [
+        {
+            "hostname": "fntc-aggacc-sw01",
+            "id": "SW-fntc-aggacc-sw01",
+            "local_endpoint_macs": 1,
+            "os": "eos",
+            "reasons": [
+                "endpoint-facing interfaces: Ethernet5",
+                "local MAC learning on endpoint-facing ports: Et5",
+                "attachment point for non-VTEP switch fntc-aggacc-sw03 (Port-Channel3 -> Port-Channel1)"
+            ],
+            "role": "participating",
+            "svi": "",
+            "svi_shutdown": false,
+            "type": "vtep",
+            "vlan_present": true
+        },
+        {
+            "hostname": "fntc-aggacc-sw02",
+            "id": "SW-fntc-aggacc-sw02",
+            "local_endpoint_macs": 1,
+            "os": "eos",
+            "reasons": [
+                "endpoint-facing interfaces: Ethernet5",
+                "local MAC learning on endpoint-facing ports: Et5",
+                "attachment point for non-VTEP switch fntc-aggacc-sw03 (Port-Channel3 -> Port-Channel1)"
+            ],
+            "role": "participating",
+            "svi": "",
+            "svi_shutdown": false,
+            "type": "vtep",
+            "vlan_present": true
+        },
+        {
+            "hostname": "fntc-aggacc-sw03",
+            "id": "SW-fntc-aggacc-sw03",
+            "local_endpoint_macs": 1,
+            "os": "eos",
+            "reasons": [
+                "endpoint-facing interfaces: Ethernet10",
+                "local MAC learning on endpoint-facing ports: Et10"
+            ],
+            "role": "l2_attached",
+            "svi": "",
+            "svi_shutdown": false,
+            "type": "non_vtep",
+            "vlan_present": true
+        },
+        {
+            "hostname": "fntc-aggacc-sw05",
+            "id": "SW-fntc-aggacc-sw05",
+            "local_endpoint_macs": 0,
+            "os": "eos",
+            "reasons": [
+                "MAC learned only on an uplink",
+                "VLAN allowed on a trunk"
+            ],
+            "role": "prune_eligible",
+            "svi": "",
+            "svi_shutdown": false,
+            "type": "vtep",
+            "vlan_present": true
+        },
+        {
+            "hostname": "fntc-aggacc-sw06",
+            "id": "SW-fntc-aggacc-sw06",
+            "local_endpoint_macs": 0,
+            "os": "eos",
+            "reasons": [
+                "MAC learned only on an uplink",
+                "VLAN allowed on a trunk"
+            ],
+            "role": "prune_eligible",
+            "svi": "",
+            "svi_shutdown": false,
+            "type": "vtep",
+            "vlan_present": true
+        },
+        {
+            "hostname": "fnts-fntc03-aggpe-mls01",
+            "id": "SW-fnts-fntc03-aggpe-mls01",
+            "local_endpoint_macs": 0,
+            "os": "nxos",
+            "reasons": [
+                "source gateway, legacy L2 root",
+                "MAC learned only on an uplink",
+                "VLAN allowed on a trunk"
+            ],
+            "role": "prune_eligible",
+            "svi": "10.230.0.2/24",
+            "svi_shutdown": false,
+            "type": "legacy",
+            "vlan_present": true
+        },
+        {
+            "hostname": "fnts-fntc03-aggpe-mls02",
+            "id": "SW-fnts-fntc03-aggpe-mls02",
+            "local_endpoint_macs": 0,
+            "os": "nxos",
+            "reasons": [
+                "source gateway, legacy L2 root",
+                "MAC learned only on an uplink",
+                "VLAN allowed on a trunk"
+            ],
+            "role": "prune_eligible",
+            "svi": "10.230.0.3/24",
+            "svi_shutdown": false,
+            "type": "legacy",
+            "vlan_present": true
+        },
+        {
+            "hostname": "oma01-blf01",
+            "id": "SW-oma01-blf01",
+            "local_endpoint_macs": 0,
+            "os": "eos",
+            "reasons": [],
+            "role": "absent",
+            "svi": "",
+            "svi_shutdown": false,
+            "type": "vtep",
+            "vlan_present": false
+        },
+        {
+            "hostname": "oma01-blf02",
+            "id": "SW-oma01-blf02",
+            "local_endpoint_macs": 0,
+            "os": "eos",
+            "reasons": [],
+            "role": "absent",
+            "svi": "",
+            "svi_shutdown": false,
+            "type": "vtep",
+            "vlan_present": false
+        }
+    ],
+    "vlan": {
+        "data_center": "omaha",
+        "id": 3000,
+        "l2_vni": 11002,
+        "l3_vni": null,
+        "migration_type": "l3",
+        "name": "ACME_APP",
+        "status": "needs_decisions",
+        "vrf": "v0000822a"
+    }
+}
