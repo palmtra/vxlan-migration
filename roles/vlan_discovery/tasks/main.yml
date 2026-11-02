@@ -489,6 +489,79 @@
     - discovery_write_device_prune_plans | default(true) | bool
     - item.hostname | default('') | length > 0
 
+- name: Describe this discovery run (MOP input and run index)
+  ansible.builtin.set_fact:
+    _mop_run:
+      run_id: "{{ hostvars['localhost']['_vlan_db_data_center'] }}_{{ _report_timestamp_ms }}"
+      timestamp: "{{ _report_timestamp_ms }}"
+      started_at: "{{ ansible_date_time.iso8601 | default('') }}"
+      finished_at: "{{ lookup('ansible.builtin.pipe', 'date -u +%Y-%m-%dT%H:%M:%SZ') }}"
+      data_center: "{{ hostvars['localhost']['_vlan_db_data_center'] }}"
+      vlan_ids: "{{ _vlan_discovery_reports | default([]) | map(attribute='vlan_id') | list }}"
+      switches_in_play: "{{ ansible_play_hosts_all | sort }}"
+      switches_answered: "{{ ansible_play_hosts | sort }}"
+      operator: "{{ lookup('ansible.builtin.env', 'USER') | default('', true) }}"
+      controller: "{{ lookup('ansible.builtin.pipe', 'hostname') }}"
+      inventory: "{{ ansible_inventory_sources | default([]) }}"
+      ansible_version: "{{ ansible_version.full | default('') }}"
+      git:
+        commit: "{{ lookup('ansible.builtin.pipe', 'git -C ' ~ (playbook_dir | quote) ~ ' rev-parse HEAD 2>/dev/null || true') }}"
+        dirty: "{{ lookup('ansible.builtin.pipe', 'git -C ' ~ (playbook_dir | quote) ~ ' status --porcelain 2>/dev/null | head -1 || true') | length > 0 }}"
+      parameters:
+        endpoint_collection: "{{ discovery_endpoint_collection }}"
+        passes: "{{ discovery_passes | int }}"
+        pass_interval: "{{ discovery_pass_interval | int }}"
+        arp_refresh: "{{ discovery_arp_refresh | bool }}"
+        include_static_macs: "{{ discovery_include_static_macs | bool }}"
+        collect_ipv6: "{{ discovery_collect_ipv6 | bool }}"
+        keep_idle_endpoint_ports: "{{ discovery_keep_idle_endpoint_ports | default(false) | bool }}"
+        scan_all_switches: "{{ discovery_scan_all_switches | default(false) | bool }}"
+        allow_probe: "{{ discovery_allow_probe | default(true) | bool }}"
+  delegate_to: localhost
+  become: false
+  run_once: true
+  check_mode: false
+  when:
+    - discovery_write_vlan_reports | bool
+    - discovery_write_mop_input | bool or discovery_write_run_index | bool
+
+- name: Build the MOP input for each VLAN
+  ansible.builtin.set_fact:
+    _mop_inputs: "{{ _mop_inputs | default([]) + [report | build_mop_input(_mop_run, _report_timestamp_ms)] }}"
+  loop: "{{ _vlan_discovery_reports | default([]) }}"
+  loop_control:
+    loop_var: report
+    label: "{{ report.vlan_name }}"
+  delegate_to: localhost
+  become: false
+  run_once: true
+  check_mode: false
+  when:
+    - discovery_write_vlan_reports | bool
+    - discovery_write_mop_input | bool or discovery_write_run_index | bool
+
+- name: Write the MOP input JSON for each VLAN
+  ansible.builtin.copy:
+    content: "{{ item.1 | to_nice_json }}\n"
+    dest: "{{ discovery_reports_dir }}/{{ item.0.data_center | default('unknown') }}/{{ item.0.vlan_slug }}/{{ item.1.files.mop_input }}"
+    mode: '0644'
+  loop: "{{ (_vlan_discovery_reports | default([])) | zip(_mop_inputs | default([])) | list }}"
+  loop_control:
+    label: "{{ item.0.vlan_name }}"
+  delegate_to: localhost
+  become: false
+  run_once: true
+  when:
+    - discovery_write_vlan_reports | bool
+    - discovery_write_mop_input | bool
+
+- name: Write the run index with a manifest of every file written
+  ansible.builtin.include_tasks: write_run_index.yml
+  when:
+    - discovery_write_vlan_reports | bool
+    - discovery_write_run_index | bool
+    - _vlan_discovery_reports | default([]) | length > 0
+
 - name: Display VLAN report output paths
   ansible.builtin.debug:
     msg: >-

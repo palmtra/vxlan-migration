@@ -523,6 +523,60 @@ def build_endpoint_table(devices, gateway=None):
     }
 
 
+def build_gateway_mac_change(report):
+    """The MAC hosts use for the gateway today, and the one the fabric will use.
+
+    Hosts cache the gateway's MAC in ARP. Today it is the HSRP/VRRP virtual
+    MAC of the legacy SVIs; after the move it is the fabric's
+    ``ip virtual-router mac-address``. Returns ``{applies, legacy: [...],
+    legacy_macs, fabric_mac, fabric_macs: {mac: [hosts]}, fabric_missing,
+    changes}``. Only an L3 migration moves the gateway.
+    """
+    gateway = report.get("gateway_assessment") or {}
+    placement = (report.get("deployment_model") or {}).get("placement") or {}
+    applies = report.get("migration_type") == "l3" and gateway.get("location") == "legacy"
+    legacy = []
+    for svi in gateway.get("svis") or []:
+        for group in svi.get("fhrp_groups") or []:
+            if group.get("family") != "ipv4" or not group.get("ip"):
+                continue
+            legacy.append(
+                {
+                    "hostname": svi.get("hostname") or "",
+                    "protocol": group.get("protocol") or "",
+                    "group": group.get("group"),
+                    "vip": group.get("ip"),
+                    "virtual_mac": group.get("virtual_mac") or "",
+                    "mac_source": group.get("mac_source") or "unknown",
+                }
+            )
+    legacy_macs = sorted({item["virtual_mac"] for item in legacy if item["virtual_mac"]})
+    fabric_hosts = [
+        item.get("hostname") if isinstance(item, dict) else item
+        for item in (placement.get("gateway_leafs") or placement.get("participating_leafs") or [])
+    ]
+    by_host = {d.get("hostname"): d for d in report.get("devices") or []}
+    fabric_macs = {}
+    missing = []
+    for host in fabric_hosts:
+        mac = (by_host.get(host) or {}).get("virtual_router_mac") or ""
+        if mac:
+            fabric_macs.setdefault(mac, []).append(host)
+        else:
+            missing.append(host)
+    fabric_mac = sorted(fabric_macs)[0] if len(fabric_macs) == 1 else ""
+    return {
+        "applies": bool(applies),
+        "legacy": legacy,
+        "legacy_macs": legacy_macs,
+        "fabric_hosts": fabric_hosts,
+        "fabric_mac": fabric_mac,
+        "fabric_macs": fabric_macs,
+        "fabric_missing": missing,
+        "changes": bool(applies and fabric_mac and legacy_macs and legacy_macs != [fabric_mac]),
+    }
+
+
 def summarize_endpoint_collection(devices):
     """How the endpoint tables were read, across the switches of one VLAN.
 
@@ -961,98 +1015,198 @@ def _rebuild_items(report):
     return items
 
 
-def build_action_items(report):
-    """Everything an engineer must resolve before this VLAN can migrate."""
-    items = []
+def resolve_l3_vni(report):
+    """The L3 VNI of the gateway VRF: ``{vni, source, by_vni}``.
+
+    The SSOT record's ``evpn.l3.vni`` wins. Otherwise it is the VNI every
+    gateway leaf maps the VRF to in ``show interfaces Vxlan1`` (from
+    fabric_readiness). When the leaves disagree, *vni* is None and *by_vni*
+    names who has which. L2 migrations have no L3 VNI.
+    """
+    if report.get("migration_type") != "l3":
+        return {"vni": None, "source": "not needed (L2 migration)", "by_vni": {}}
+    record = (((report.get("deployment_model") or {}).get("evpn") or {}).get("l3") or {}).get("vni")
+    if record not in (None, ""):
+        return {"vni": int(record), "source": "SSOT record (evpn.l3.vni)", "by_vni": {}}
+    readiness = report.get("fabric_readiness") or {}
+    by_vni = {}
+    for row in readiness.get("checked") or []:
+        if row.get("svi_host") and row.get("l3_vni") is not None:
+            by_vni.setdefault(int(row["l3_vni"]), []).append(row.get("hostname"))
+    if len(by_vni) == 1:
+        vni, hosts = next(iter(by_vni.items()))
+        return {
+            "vni": vni,
+            "source": "fabric: VRF %s maps to it on %s (show interfaces Vxlan1)" % (readiness.get("vrf"), ", ".join(hosts)),
+            "by_vni": by_vni,
+        }
+    if len(by_vni) > 1:
+        return {"vni": None, "source": "fabric leaves disagree", "by_vni": by_vni}
+    return {"vni": None, "source": "not found: no gateway leaf maps the VRF to a VNI", "by_vni": {}}
+
+
+def build_findings(report):
+    """Everything an engineer must resolve or know before this VLAN migrates.
+
+    Each finding is ``{kind, category, severity, text}``:
+
+    - kind: ``blocker`` (fix before the change), ``decision`` (an engineer
+      or app owner must choose or confirm), ``risk`` (proceed with the
+      mitigation named), ``task`` (work the generated config does not do),
+      ``sequencing`` (waits on an earlier step), ``info``.
+    - category: coverage, scope, gateway, fabric, routing, l2, prune,
+      placement, naming, vni, endpoints.
+    - severity: high, medium, low.
+
+    The order is stable, so IDs assigned from it are stable between runs of
+    the same network state.
+    """
+    found = []
+
+    def add(kind, category, severity, text):
+        found.append({"kind": kind, "category": category, "severity": severity, "text": text})
+
+    def add_all(kind, category, severity, texts):
+        for text in texts or []:
+            add(kind, category, severity, text)
+
+    def add_gateway_notes(texts):
+        for text in texts or []:
+            if str(text).startswith("Nothing to do"):
+                add("info", "gateway", "low", text)
+            else:
+                add("risk", "gateway", "medium", text)
+
     for host in report.get("not_discovered") or []:
-        items.append(
+        add("blocker", "coverage", "high", 
             "Fix reachability to %s and re-run discovery: it was not discovered (unreachable or failed), "
             "so placement and prune lists may be incomplete." % host
         )
     for device in report.get("devices") or []:
         for error in device.get("errors") or []:
-            items.append(
+            add("blocker", "coverage", "high", 
                 "%s: `%s` failed: %s. Re-run discovery or run the command by hand."
                 % (device.get("hostname"), error.get("command"), error.get("error"))
             )
         for table, check in sorted((device.get("parse_checks") or {}).items()):
             for problem in (check or {}).get("problems") or []:
-                items.append(
+                add("blocker", "coverage", "high", 
                     "%s: the %s output was not fully read (%s). Endpoints may be missing: send the raw "
                     "output (in the JSON report) so the parser can be fixed."
                     % (device.get("hostname"), "MAC table" if table == "mac_table" else "ARP", problem)
                 )
     if not report.get("switches_vlan_defined") and not report.get("switches_with_svi"):
-        items.append(
+        add("info", "scope", "low", 
             "VLAN %s is not configured on any discovered switch. Nothing to migrate or prune here."
             % report.get("vlan_id")
         )
-        return items
-    items.extend((report.get("gateway_assessment") or {}).get("warnings") or [])
-    items.extend((report.get("fabric_readiness") or {}).get("issues") or [])
-    items.extend(report.get("gateway_notes") or [])
-    items.extend(_rebuild_items(report))
-    items.extend((report.get("l2_attachment") or {}).get("issues") or [])
+        return found
+    add_all("risk", "gateway", "medium", (report.get("gateway_assessment") or {}).get("warnings") or [])
+    add_all("blocker", "fabric", "high", (report.get("fabric_readiness") or {}).get("issues") or [])
+    l3_vni = resolve_l3_vni(report)
+    if len(l3_vni["by_vni"]) > 1:
+        add(
+            "blocker",
+            "fabric",
+            "high",
+            "Make the L3 VNI of VRF %s the same on every gateway leaf: %s."
+            % (
+                (report.get("fabric_readiness") or {}).get("vrf") or "",
+                "; ".join("%s on %s" % (vni, ", ".join(hosts)) for vni, hosts in sorted(l3_vni["by_vni"].items())),
+            ),
+        )
+    add_gateway_notes(report.get("gateway_notes") or [])
+    add_all("task", "routing", "high", _rebuild_items(report))
+    add_all("risk", "l2", "medium", (report.get("l2_attachment") or {}).get("issues") or [])
     for plan in report.get("link_prune_plans") or []:
         if str(plan.get("status") or "").startswith("blocked"):
-            items.append(
+            add("sequencing", "prune", "low", 
                 "Link prune on %s is blocked: %s." % (plan["hostname"], plan.get("blocked_reason") or "")
             )
     for plan in report.get("prune_plans") or []:
         if plan.get("status") == "blocked_until_gateway_moved":
-            items.append("Teardown of %s is blocked: %s." % (plan["hostname"], plan.get("blocked_reason") or ""))
+            add("sequencing", "prune", "low", "Teardown of %s is blocked: %s." % (plan["hostname"], plan.get("blocked_reason") or ""))
     for item in (report.get("placement_analysis") or {}).get("switches") or []:
         if item.get("role") == "prune_eligible" and item.get("idle_ports"):
-            items.append(
+            add("decision", "prune", "medium", 
                 "Confirm nothing needs VLAN %s on %s before pruning: these ports face endpoints or other "
                 "devices but carry no MACs on the VLAN, and the prune removes it from them: %s."
                 % (report.get("vlan_id"), item.get("hostname"), ", ".join(item["idle_ports"]))
             )
         if item.get("role") == "review":
-            items.append(
+            add("decision", "placement", "medium", 
                 "Review %s before migrating: %s" % (item.get("hostname"), "; ".join(item.get("nonqualifying") or []))
             )
     if report.get("needs_vlan_name"):
-        items.append(
+        add("decision", "naming", "medium", 
             "Agree the VLAN name and set site.vlan.name (or -e manual_vlan_name=): switches disagree (%s)."
             % (", ".join(report.get("name_candidates") or []) or "none found")
         )
     stp = report.get("spanning_tree") or {}
     if stp.get("present") and not stp.get("root_hostname"):
-        items.append(
+        add("blocker", "coverage", "medium", 
             "Find the switch that is STP root %s and add it to discovery: it is not a discovered switch, "
             "so the VLAN extends beyond discovery scope." % stp.get("root_address")
         )
     if stp.get("inconsistent_roots"):
-        items.append(
+        add("risk", "l2", "high", 
             "Check the L2 domain for a split: switches disagree on the STP root (%s)."
             % ", ".join([stp.get("root_address")] + stp["inconsistent_roots"])
         )
     for item in report.get("vni_conflicts") or []:
-        items.append(
+        add("blocker", "vni", "high", 
             "Pick another VNI: %s is already mapped to VLAN %s on %s." % (item["vni"], item["vlan_id"], item["hostname"])
         )
     for item in report.get("vxlan_already_mapped") or []:
-        items.append(
+        add("decision", "vni", "medium", 
             "Confirm VNI %s matches evpn.l2.vni: the VLAN is already VXLAN-mapped on %s."
             % (item["vni"], item["hostname"])
         )
     summary = (report.get("endpoint_table") or {}).get("summary") or {}
     if summary.get("uplink_only"):
-        items.append(
+        add("risk", "endpoints", "medium", 
             "Extend discovery to the switches behind those trunks: %s active IP(s) are only seen on "
             "switch-to-switch trunks, so their edge switch is outside discovery scope." % summary["uplink_only"]
         )
+    gmac = report.get("gateway_mac") or {}
+    if gmac.get("applies"):
+        for item in gmac.get("legacy") or []:
+            if not item.get("virtual_mac"):
+                add("decision", "gateway", "medium", 
+                    "Find the MAC hosts use for gateway %s: %s group %s on %s has no well-known virtual MAC (%s). "
+                    "Read it from a host's ARP table or `show %s` before the cutover."
+                    % (item["vip"], item["protocol"].upper(), item["group"], item["hostname"], item["mac_source"],
+                       item["protocol"])
+                )
+        if gmac.get("fabric_missing"):
+            add("blocker", "fabric", "high", 
+                "Set `ip virtual-router mac-address` on %s before the gateway moves: `ip address virtual` needs it, "
+                "and discovery found none there." % ", ".join(gmac["fabric_missing"])
+            )
+        if len(gmac.get("fabric_macs") or {}) > 1:
+            add("blocker", "fabric", "high", 
+                "Make the anycast gateway MAC the same on every gateway leaf: %s."
+                % "; ".join("%s on %s" % (mac, ", ".join(hosts)) for mac, hosts in sorted(gmac["fabric_macs"].items()))
+            )
+        if gmac.get("changes"):
+            vips = ", ".join(sorted({item["vip"] for item in gmac.get("legacy") or []}))
+            add("risk", "gateway", "high", 
+                "The gateway MAC changes at cutover: hosts cache %s as %s; the fabric answers with %s. A host updates "
+                "its entry when the fabric gateway ARPs for it (the post-cutover ping of every baseline endpoint does "
+                "this) or when the entry ages out; until then it sends to the old MAC. Ping every endpoint from the "
+                "fabric gateway right after the cutover, and check hosts that do not answer."
+                % (vips, ", ".join(gmac.get("legacy_macs") or []), gmac["fabric_mac"])
+            )
     collection = report.get("endpoint_collection") or {}
     for note in collection.get("notes") or []:
-        items.append("Endpoint tables: %s. Check the JSON output on that switch." % note)
+        add("risk", "coverage", "low", "Endpoint tables: %s. Check the JSON output on that switch." % note)
     for item in (collection.get("refresh") or {}).get("skipped_subnets") or []:
-        items.append(
+        add("risk", "coverage", "medium", 
             "ARP refresh skipped %s: silent hosts there may be missing. Raise "
             "discovery_arp_refresh_max_hosts or check those subnets by hand." % item
         )
     if summary.get("mac_only_uplink"):
-        items.append(
+        add("risk", "endpoints", "medium", 
             "Extend discovery to the switches behind those trunks: %s MAC(s) with no ARP entry are only seen "
             "on switch-to-switch trunks or a vPC peer-link, so their edge switch is outside discovery scope."
             % summary["mac_only_uplink"]
@@ -1063,7 +1217,7 @@ def build_action_items(report):
             for row in (report.get("endpoint_table") or {}).get("endpoints") or []
             if "ip_conflict" in row.get("flags", [])
         ]
-        items.append(
+        add("risk", "endpoints", "high", 
             "Resolve duplicate IPs before migrating: the gateways map these IPs to more than one MAC: %s."
             % "; ".join(conflicts)
         )
@@ -1074,7 +1228,7 @@ def build_action_items(report):
             + list((report.get("endpoint_table") or {}).get("mac_only") or [])
             if "multiple_edge_ports" in row.get("flags", [])
         ]
-        items.append(
+        add("risk", "endpoints", "medium", 
             "Check where these MACs really are: each is learned on more than one device-facing port "
             "(loop, a move during discovery, or a port role read wrong): %s."
             % "; ".join(
@@ -1083,24 +1237,29 @@ def build_action_items(report):
             )
         )
     if summary.get("not_in_mac_table"):
-        items.append(
+        add("risk", "endpoints", "low", 
             "Re-run discovery or check them by hand: %s active IP(s) are in ARP but not in any MAC table "
             "(aged out, or behind a switch that was not discovered)." % summary["not_in_mac_table"]
         )
     allocation = report.get("vni_allocation") or {}
     if allocation.get("vni"):
-        items.append(
+        add("decision", "vni", "medium", 
             "VNI %s proposed (%s). Confirm it in evpn.l2.vni of the SSOT record."
             % (allocation["vni"], allocation.get("reason"))
         )
     elif report.get("vni") in (None, "", 0) and report.get("vlan_id") is not None:
-        items.append(
+        add("blocker", "vni", "high", 
             "No VNI: %s. Set evpn.l2.vni in the SSOT record."
             % (allocation.get("reason") or "assign one")
         )
-    items.extend(report.get("vni_range_problems") or [])
-    return items
+    add_all("blocker", "vni", "high", report.get("vni_range_problems") or [])
+    return found
 
+
+
+def build_action_items(report):
+    """The finding texts, in order (the report's Action items list)."""
+    return [item["text"] for item in build_findings(report)]
 
 def build_vlan_discovery_reports(
     vlans, play_hosts, hostvars, all_hosts=None, vni_allocation=None, placement_options=None
@@ -1235,6 +1394,7 @@ def build_vlan_discovery_reports(
                     "router_id": discovery.get("router_id", ""),
                     "loopback0": discovery.get("loopback0", ""),
                     "loopback1": discovery.get("loopback1", ""),
+                    "virtual_router_mac": discovery.get("virtual_router_mac", ""),
                     "ip_route_raw": discovery.get("ip_route_raw", ""),
                     "bgp_raw": discovery.get("bgp_raw", ""),
                     "prune_plan": discovery.get("prune_plan", {}),
@@ -1572,6 +1732,7 @@ def build_vlan_discovery_reports(
             l2_evpn["vni"] = proposed["vni"]
             l2_evpn["vni_proposed"] = "%s pool %s" % (proposed.get("pool"), proposed.get("range"))
         report["fabric_readiness"] = fabric_readiness(report)
+        report["gateway_mac"] = build_gateway_mac_change(report)
         report["action_items"] = build_action_items(report)
         report["deployment_model"]["site"]["data_center"] = (
             report["deployment_model"]["site"].get("data_center")

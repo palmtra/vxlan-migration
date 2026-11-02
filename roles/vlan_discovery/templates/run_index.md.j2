@@ -1,0 +1,41 @@
+{%- set ix = _run_index -%}
+{%- set run = ix.run -%}
+# Discovery run {{ run.run_id }}
+
+{{ run.data_center }} | started {{ run.started_at }} | finished {{ run.finished_at }} | {{ ix.totals.vlans }} VLAN{{ 's' if ix.totals.vlans != 1 }} | {{ run.switches_answered | length }} of {{ run.switches_in_play | length }} switches answered
+{% if run.git.commit | default('') %}
+Code: `{{ run.git.commit[:12] }}`{% if run.git.dirty %} (uncommitted changes){% endif %}{% if run.operator %} | operator {{ run.operator }}{% endif %}
+
+{% endif %}
+
+## VLANs
+
+{{ ix.totals.ready }} ready, {{ ix.totals.needs_decisions }} waiting on decisions, {{ ix.totals.blocked }} blocked. {{ ix.totals.endpoints }} host IPs; {{ ix.totals.switches_changed }} switches change.
+
+| VLAN | Name | Type | Status | Blockers | Decisions | High risks | Hosts | Switches changed | MOP input |
+|------|------|------|--------|----------|-----------|------------|-------|------------------|-----------|
+{% for vlan in ix.vlans %}
+| {{ vlan.id }} | {{ vlan.name }} | {{ vlan.migration_type | upper }} | {{ vlan.status }} | {{ vlan.findings.blocker | default(0) }} | {{ vlan.findings.decision | default(0) }} | {{ vlan.high_risks }} | {{ vlan.endpoints }} | {{ vlan.switches_changed | length }} | `{{ vlan.mop_input }}` |
+{% endfor %}
+
+Suggested order: {{ ix.order | join(', ') }} (ready first, then those waiting on decisions, then blocked).
+{% if ix.shared_switches | length > 0 %}
+
+## Switches more than one VLAN changes
+
+Batch or sequence their steps:
+
+| Switch | VLANs |
+|--------|-------|
+{% for host, ids in ix.shared_switches | dictsort %}
+| {{ host }} | {{ ids | join(', ') }} |
+{% endfor %}
+{% endif %}
+
+## Files ({{ ix.files | length }})
+
+| File | Bytes | SHA-256 |
+|------|-------|---------|
+{% for item in ix.files %}
+| `{{ item.path }}` | {{ item.bytes }} | `{{ item.sha256 }}` |
+{% endfor %}

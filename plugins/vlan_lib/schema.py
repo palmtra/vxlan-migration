@@ -9,6 +9,7 @@ from ansible.errors import AnsibleFilterError
 _SCHEMA_DIR = Path(__file__).resolve().parents[2] / "schemas"
 _VLAN_SCHEMA_PATH = _SCHEMA_DIR / "vlan_record.schema.json"
 _SERVICE_SCHEMA_PATH = _SCHEMA_DIR / "service_bundle.schema.json"
+_MOP_INPUT_SCHEMA_PATH = _SCHEMA_DIR / "mop_input.schema.json"
 _SCHEMA_CACHE = {}
 
 
@@ -23,7 +24,7 @@ def _load_schema(path):
 
 
 def validate_against_schema(document, schema_name, source_name=""):
-    """Validate *document* against a named schema (vlan_record|service_bundle).
+    """Validate *document* against a named schema (vlan_record|service_bundle|mop_input).
 
     Returns the document unchanged on success. Raises AnsibleFilterError on failure.
     Set validate_ssot_schema=false (passed as validate=False) to skip.
@@ -39,6 +40,8 @@ def validate_against_schema(document, schema_name, source_name=""):
         schema = _load_schema(_VLAN_SCHEMA_PATH)
     elif schema_name == "service_bundle":
         schema = _load_schema(_SERVICE_SCHEMA_PATH)
+    elif schema_name == "mop_input":
+        schema = _load_schema(_MOP_INPUT_SCHEMA_PATH)
     else:
         raise AnsibleFilterError("Unknown schema_name '%s'" % schema_name)
 

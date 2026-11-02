@@ -22,6 +22,7 @@ The fabric is all Arista, built with AVD; BUM is head-end replication (EVPN floo
 | [docs/OS_SUPPORT.md](docs/OS_SUPPORT.md) | NXOS+EOS on main; IOS archive tag/branch |
 | [docs/VXLAN_SERVICE_TYPES.md](docs/VXLAN_SERVICE_TYPES.md) | L2 vs L3 (`service_type`) |
 | [docs/USAGE_GUIDE.md](docs/USAGE_GUIDE.md) | Flags, options, and CLI reference |
+| [docs/MOP_INPUT.md](docs/MOP_INPUT.md) | MOP input and run index from discovery; MOP template and LLM contract |
 | [docs/examples/](docs/examples/) | Short task-focused examples (discover, generate-only CVP, NetBox export) |
 | [docs/ROADMAP.md](docs/ROADMAP.md) | Open features |
 | [docs/AGENTS.md](docs/AGENTS.md) | Instructions for maintaining this documentation tree |

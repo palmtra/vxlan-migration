@@ -24,6 +24,7 @@ Start here for architecture and operator guides. Use **Examples** for short, tas
 |---|---|
 | [USAGE_GUIDE.md](USAGE_GUIDE.md) | **Operator reference** — all playbooks, extra vars, flags, AAP job templates, troubleshooting |
 | [OPERATING_GUIDE.md](OPERATING_GUIDE.md) | Redirect stub — points to WORKFLOWS and USAGE_GUIDE |
+| [MOP_INPUT.md](MOP_INPUT.md) | MOP input per VLAN and run index from discovery; MOP template and LLM contract |
 
 ---
 
