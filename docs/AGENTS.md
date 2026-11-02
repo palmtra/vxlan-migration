@@ -12,6 +12,7 @@ docs/
 ├── OS_SUPPORT.md          # NXOS+EOS on main; IOS archive policy
 ├── VXLAN_SERVICE_TYPES.md # L2 vs L3 service_type guide
 ├── USAGE_GUIDE.md         # Full operator reference (flags, variables, AAP)
+├── MOP_INPUT.md           # MOP input / run index contract, MOP template, LLM rules
 ├── ROADMAP.md             # Planned and completed work
 ├── OPERATING_GUIDE.md     # Redirect only — do not duplicate content here
 ├── WORKFLOW_V2.md         # Historical — do not delete; mark superseded sections in WORKFLOWS.md instead

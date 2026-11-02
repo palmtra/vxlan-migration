@@ -1,0 +1,133 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://vxlan-migration.local/schemas/mop_input.schema.json",
+  "title": "MOP input for one VLAN migration",
+  "description": "Written by discovery as <vlan>_mop_input_<ts>.json. Facts from read-only discovery, typed findings, and ordered change steps with the CLI that already exists. See docs/MOP_INPUT.md.",
+  "type": "object",
+  "required": ["schema", "schema_version", "run", "vlan", "summary", "coverage", "switches", "gateway", "endpoints", "findings", "steps", "acceptance", "files"],
+  "additionalProperties": true,
+  "$defs": {
+    "id": { "type": "string", "pattern": "^[A-Z]{1,2}-[A-Za-z0-9._-]+$" },
+    "strings": { "type": "array", "items": { "type": "string" } },
+    "finding": {
+      "type": "object",
+      "required": ["id", "kind", "category", "severity", "text"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^[BDRTQI]-[0-9]{2,}$" },
+        "kind": { "enum": ["blocker", "decision", "risk", "task", "sequencing", "info"] },
+        "category": { "type": "string" },
+        "severity": { "enum": ["high", "medium", "low"] },
+        "text": { "type": "string", "minLength": 1 }
+      }
+    },
+    "step": {
+      "type": "object",
+      "required": ["id", "phase", "title", "switch", "status", "cli", "cli_source", "rollback", "verify", "depends_on"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "phase": {
+          "enum": ["0-prechecks", "1-deploy", "2-link-prune-mls", "3-link-prune-non-vtep", "4-gateway-cutover", "5-teardown", "6-verify"]
+        },
+        "title": { "type": "string" },
+        "switch": { "type": "string" },
+        "status": { "type": "string", "description": "ready, blocked, needs_decision, or the prune plan status (blocked_until_gateway_moved, blocked_until_vni_live, ...)" },
+        "cli": { "type": ["string", "null"], "description": "Exact CLI to paste, from a generated plan. null when the CLI lives in the file named by cli_source." },
+        "cli_source": { "type": "string" },
+        "rollback": { "type": ["string", "null"] },
+        "verify": { "$ref": "#/$defs/strings" },
+        "depends_on": { "type": "array", "items": { "$ref": "#/$defs/id" } },
+        "findings": { "type": "array", "items": { "type": "string" } },
+        "notes": { "$ref": "#/$defs/strings" }
+      }
+    },
+    "endpoint": {
+      "type": "object",
+      "required": ["id", "ip", "mac", "location", "switch", "port", "flags", "baseline"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "ip": { "type": "string" },
+        "ipv6": { "$ref": "#/$defs/strings" },
+        "mac": { "type": "string" },
+        "location": { "enum": ["edge", "uplink_only", "not_in_mac_table"] },
+        "switch": { "type": "string" },
+        "port": { "type": "string" },
+        "flags": { "$ref": "#/$defs/strings" },
+        "seen": { "type": ["integer", "null"] },
+        "baseline": { "type": "boolean", "description": "true for host IPs the post-change check pings" }
+      }
+    }
+  },
+  "properties": {
+    "schema": { "const": "vxlan-migration/mop-input" },
+    "schema_version": { "type": "string", "pattern": "^1\\.[0-9]+$" },
+    "run": {
+      "type": "object",
+      "properties": {
+        "run_id": { "type": "string" },
+        "started_at": { "type": "string" },
+        "finished_at": { "type": "string" },
+        "git": { "type": "object" },
+        "parameters": { "type": "object" }
+      }
+    },
+    "vlan": {
+      "type": "object",
+      "required": ["id", "name", "data_center", "migration_type", "status"],
+      "properties": {
+        "id": { "type": "integer", "minimum": 1, "maximum": 4094 },
+        "name": { "type": "string" },
+        "data_center": { "type": "string" },
+        "migration_type": { "enum": ["l2", "l3", ""] },
+        "vrf": { "type": "string" },
+        "l2_vni": { "type": ["integer", "null"] },
+        "l3_vni": { "type": ["integer", "null"] },
+        "status": { "enum": ["ready", "needs_decisions", "blocked"] }
+      }
+    },
+    "summary": { "type": "object", "required": ["findings", "endpoints", "steps"] },
+    "coverage": {
+      "type": "object",
+      "required": ["switches_scanned", "not_discovered", "failed_commands", "unread_rows", "complete"],
+      "properties": {
+        "switches_scanned": { "$ref": "#/$defs/strings" },
+        "not_discovered": { "$ref": "#/$defs/strings" },
+        "complete": { "type": "boolean" }
+      }
+    },
+    "switches": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "hostname", "os", "type", "role"],
+        "properties": { "id": { "$ref": "#/$defs/id" } }
+      }
+    },
+    "gateway": {
+      "type": "object",
+      "required": ["location", "legacy_svis", "mac_change"],
+      "properties": {
+        "mac_change": {
+          "type": "object",
+          "required": ["applies", "legacy_macs", "fabric_mac", "changes"]
+        }
+      }
+    },
+    "routing": { "type": "object" },
+    "endpoints": {
+      "type": "object",
+      "required": ["summary", "rows"],
+      "properties": { "rows": { "type": "array", "items": { "$ref": "#/$defs/endpoint" } } }
+    },
+    "findings": { "type": "array", "items": { "$ref": "#/$defs/finding" } },
+    "steps": { "type": "array", "items": { "$ref": "#/$defs/step" } },
+    "acceptance": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "check"],
+        "properties": { "id": { "$ref": "#/$defs/id" }, "check": { "type": "string" } }
+      }
+    },
+    "files": { "type": "object", "additionalProperties": { "type": "string" } }
+  }
+}

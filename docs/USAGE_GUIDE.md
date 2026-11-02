@@ -82,6 +82,11 @@ Collects VLAN, MAC, SVI, ARP, trunks, LLDP/CDP neighbors, spanning tree, and (on
 | `discovery_model_routing_detail` | `false` | The model YAML and VLAN DB snippet carry condensed routing (`advertised` prefix / VRF / ASN / how / to whom, `static_routes`, `bgp_peers`). `true` adds the full per-switch `routing.associated` detail the reports show |
 | `discovery_keep_idle_endpoint_ports` | `false` | A switch keeps the VLAN only when MACs are learned on its endpoint-facing ports. Idle endpoint, fabric-interconnect, firewall / load balancer, unclassified and outside-switch ports make it prune-eligible, with an action item naming them. `true` keeps such switches (applies to migration placement and prune alike) |
 | `discovery_scan_all_switches` | `false` | With a VLAN record, discovery covers the record's switches plus the DC's border leaves. `true` scans every switch |
+| `discovery_endpoint_collection` | `auto` | `bulk` reads each switch's whole MAC / ARP / IPv6 neighbor tables once as JSON and splits them by VLAN; `per_vlan` reads them one VLAN at a time; `auto` picks bulk for `discovery_bulk_min_vlans` (5) VLANs or more, or more than one sample. A switch whose JSON cannot be read falls back to per VLAN |
+| `discovery_passes` / `discovery_pass_interval` | `1` / `120` | Samples of the endpoint tables (bulk), seconds apart, merged. The endpoint CSV `seen` column counts the samples that saw each endpoint; one missing from some is `intermittent` |
+| `discovery_arp_refresh` | `false` | Opt in: one SVI owner per VLAN pings every address of the SVI subnets before any table is read, so silent hosts show up. At most `discovery_arp_refresh_max_hosts` (1024) pings per switch |
+| `discovery_include_static_macs` | `true` | Read static MAC entries too (`show mac address-table vlan N`); the switch's own MACs are left out |
+| `discovery_collect_ipv6` | `true` | Read IPv6 neighbors on SVIs with IPv6; global addresses join the endpoint row of their MAC |
 | `migration_tier` (inventory group/host var) | `eos_devices`: `fabric`; `nxos_devices`: `legacy`; `ios_devices`: `access` | `fabric`: Arista leaf (a VTEP when Vxlan1 exists, otherwise a non-VTEP switch). `legacy`: the MLS / core being retired. `access`: a non-VTEP L2 switch that stays and must attach through a VTEP. Set `access` per host for any switch in the discovery list that is not a VTEP |
 | `vni_ranges` / `vni_default_customer_type` | Lisle 20000 / 22000, Omaha 10000 / 11000 / `external` | Per-DC VNI ranges for `internal` and `external` customers (`inventory/group_vars/all/vni_ranges.yml`). A VLAN record without `vni` gets the next free VNI in its DC and `customer_type`, skipping VNIs in the DC's VLAN DB and VNIs (L2 and L3) already mapped on discovered switches. Proposed, never written: confirm it into the SSOT |
 | `vtep_source_interface` | `Loopback1` | Expected VTEP source on fabric leaves (AVD default). Also the source for underlay pings in verify |
@@ -96,6 +101,8 @@ Collects VLAN, MAC, SVI, ARP, trunks, LLDP/CDP neighbors, spanning tree, and (on
 | `discovery_write_json` | `true` | Write `.json` report |
 | `discovery_write_yaml` | `true` | Write the deployable YAML model |
 | `discovery_write_vlan_db_snippet` | `true` | Write YAML snippet for pasting into VLAN DB |
+| `discovery_write_mop_input` | `true` | Write `<vlan>_mop_input_<ts>.json` (see [MOP_INPUT.md](MOP_INPUT.md)) |
+| `discovery_write_run_index` | `true` | Write `reports/<dc>/_runs/run_<ts>.json` and `.md`: all VLANs of the run, suggested order, shared switches, SHA-256 manifest |
 
 ### Examples
 
@@ -144,12 +151,15 @@ ansible-playbook -i inventory/hosts.yml playbooks/core/discover_vlan.yml \
 | `<vlan>_prune_<ts>.md` | Human prune report: EOS session + commit timer, NXOS checkpoint |
 | `<vlan>_prune_<ts>.json` | Execution-shaped prune payload (`apply_automated: false`) |
 | `{vid}_{slug}.yml` | Starter deploy model for `vars/vlans/<dc>/` (confirm the proposed VNI; `gateway_leafs` only for `centralized_anycast`) |
+| `<vlan>_mop_input_<ts>.json` | MOP input: run metadata, coverage, facts, typed findings (blocker / decision / risk / task), change steps with CLI and rollback, acceptance checks. Schema `schemas/mop_input.schema.json`; see [MOP_INPUT.md](MOP_INPUT.md) |
+| `_runs/run_<ts>.json` / `.md` | Run index across the run's VLANs with a SHA-256 manifest of every file written |
 
 Key **discovery** fields:
 
 - `action_items` — what to do, one imperative line each: fix reachability, create a missing VRF / L3 VNI on named leaves, rebuild DHCP relay / ACL / PBR on the fabric SVI, recreate statics and BGP peers on the VLAN, re-home firewall ports, review switches, STP root outside scope, VNI collisions, endpoints that could not be located
 - `gateway_assessment` — where the gateway lives today (`legacy`, `fabric`, `mixed`, `external`), subnets and VIPs, redundancy (HSRP / VRRP / VARP / anycast), what moves with it (DHCP relay, ACL, PBR, IPv6, multicast, NAT, uRPF, and any SVI line not understood), firewall/router ports (`external_exits`, report and JSON only), and the recommended migration type
 - `endpoint_table` — active IPs from ARP joined to the MAC table edge port (`edge`, `uplink_only`, `not_in_mac_table`), plus MAC-only endpoints. Gateway and FHRP addresses are flagged
+- `gateway_mac` — the HSRP/VRRP virtual MAC hosts use for the gateway today, the fabric's `ip virtual-router mac-address`, and whether it changes at cutover
 - `spanning_tree` — root bridge resolved to a discovered switch, or flagged as outside discovery scope
 - `fabric_readiness` — `show interfaces Vxlan1` on each fabric leaf that will carry the VLAN: VTEP source, replication mode, flood list source, and the gateway VRF's L3 VNI. The fabric uses head-end replication with EVPN flood lists only; anything else is an action item
 - `not_discovered` — switches in the play that never reported back

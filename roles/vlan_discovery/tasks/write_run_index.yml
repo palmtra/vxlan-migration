@@ -1,0 +1,58 @@
+---
+# -----------------------------------------------------------------------------
+# Run index: every VLAN of this run in one place, with a SHA-256 manifest
+# -----------------------------------------------------------------------------
+# reports/<dc>/_runs/run_<ts>.json (run-index schema, see docs/MOP_INPUT.md) and
+# a short .md. The manifest lists every file this run wrote, so a MOP built from
+# them can name exactly which discovery it relied on.
+
+- name: List the files this run wrote
+  ansible.builtin.set_fact:
+    _run_index_paths: >-
+      {% set out = [] %}{% for pair in (_vlan_discovery_reports | zip(_mop_inputs | default([]))) %}{% set report = pair[0] %}{%
+      set dir = discovery_reports_dir ~ '/' ~ (report.data_center | default('unknown')) ~ '/' ~ report.vlan_slug %}{%
+      for name in (report | report_file_names(_report_timestamp_ms)).values() %}{% set _ = out.append(dir ~ '/' ~ name) %}{% endfor %}{%
+      set _ = out.append(dir ~ '/' ~ (report.vlan_id | vlan_db_record_filename(report.vlan_name))) %}{% endfor %}{%
+      for plan in _device_prune_plans | default([]) %}{% set _ = out.append(discovery_reports_dir ~ '/' ~ _mop_run.data_center
+      ~ '/_prune_plans/' ~ plan.hostname ~ '_prune_plan_' ~ _report_timestamp_ms ~ '.json') %}{% endfor %}{{ out }}
+  delegate_to: localhost
+  become: false
+  run_once: true
+  check_mode: false
+
+- name: Ensure the run index directory exists
+  ansible.builtin.file:
+    path: "{{ discovery_reports_dir }}/{{ _mop_run.data_center }}/_runs"
+    state: directory
+    mode: '0755'
+  delegate_to: localhost
+  become: false
+  run_once: true
+
+- name: Build the run index
+  ansible.builtin.set_fact:
+    _run_index: >-
+      {{ _mop_inputs | default([]) | build_run_index(_mop_run,
+         _run_index_paths | file_manifest(discovery_reports_dir ~ '/' ~ _mop_run.data_center)) }}
+  delegate_to: localhost
+  become: false
+  run_once: true
+  check_mode: false
+
+- name: Write the run index JSON
+  ansible.builtin.copy:
+    content: "{{ _run_index | to_nice_json }}\n"
+    dest: "{{ discovery_reports_dir }}/{{ _mop_run.data_center }}/_runs/run_{{ _report_timestamp_ms }}.json"
+    mode: '0644'
+  delegate_to: localhost
+  become: false
+  run_once: true
+
+- name: Write the run index Markdown
+  ansible.builtin.template:
+    src: run_index.md.j2
+    dest: "{{ discovery_reports_dir }}/{{ _mop_run.data_center }}/_runs/run_{{ _report_timestamp_ms }}.md"
+    mode: '0644'
+  delegate_to: localhost
+  become: false
+  run_once: true

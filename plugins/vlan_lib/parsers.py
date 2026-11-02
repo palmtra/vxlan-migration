@@ -1010,6 +1010,7 @@ def _empty_svi_stanza():
         "addresses": [],
         "virtual_router_addresses": [],
         "fhrp_groups": [],
+        "hsrp_version": 1,
         "ipv6_addresses": [],
         "dhcp_relay": [],
         "acls": [],
@@ -1019,6 +1020,42 @@ def _empty_svi_stanza():
         "urpf": [],
         "other_lines": [],
     }
+
+
+def fhrp_virtual_mac(group, hsrp_version=1):
+    """``(mac, source)`` hosts learn for an HSRP/VRRP virtual address.
+
+    *source* is ``configured`` (``mac-address`` in the group), ``derived``
+    (the protocol's well-known MAC for the group number and version), or
+    ``use-bia`` / ``unknown`` with an empty MAC: each router answers with its
+    own burned-in MAC, or the group cannot have a well-known MAC.
+    """
+    if group.get("mac"):
+        return normalize_mac_address(group["mac"]), "configured"
+    if group.get("use_bia"):
+        return "", "use-bia"
+    number = int(group.get("group") or 0)
+    v6 = group.get("family") == "ipv6"
+    if group.get("protocol") == "hsrp":
+        if v6:
+            return ("00:05:73:a0:%02x:%02x" % (number >> 8, number & 0xFF), "derived") if number <= 4095 else ("", "unknown")
+        if int(hsrp_version or 1) >= 2:
+            return ("00:00:0c:9f:f%x:%02x" % (number >> 8, number & 0xFF), "derived") if number <= 4095 else ("", "unknown")
+        return ("00:00:0c:07:ac:%02x" % number, "derived") if number <= 255 else ("", "unknown")
+    if group.get("protocol") == "vrrp":
+        if number < 1 or number > 255:
+            return "", "unknown"
+        return ("00:00:5e:00:%s:%02x" % ("02" if v6 else "01", number), "derived")
+    return "", "unknown"
+
+
+_VIRTUAL_ROUTER_MAC_RE = re.compile(r"^\s*ip\s+virtual-router\s+mac-address\s+(\S+)", re.I | re.M)
+
+
+def parse_virtual_router_mac(config_text):
+    """The EOS ``ip virtual-router mac-address`` (anycast gateway MAC), or ''."""
+    match = _VIRTUAL_ROUTER_MAC_RE.search(str(config_text or ""))
+    return normalize_mac_address(match.group(1)) if match else ""
 
 
 def _fhrp_group(groups, protocol, number, family="ipv4"):
@@ -1037,6 +1074,8 @@ def _fhrp_group(groups, protocol, number, family="ipv4"):
         "secondary_ips": [],
         "priority": None,
         "preempt": False,
+        "mac": "",
+        "use_bia": False,
     }
     groups.append(group)
     return group
@@ -1066,6 +1105,13 @@ def _parse_fhrp_child(group, line):
     match = re.match(r"^priority(?:-level)?\s+(\d+)", line, re.I)
     if match:
         group["priority"] = int(match.group(1))
+        return
+    match = re.match(r"^mac-address\s+(\S+)", line, re.I)
+    if match:
+        group["mac"] = normalize_mac_address(match.group(1))
+        return
+    if re.match(r"^use-bia\b", line, re.I):
+        group["use_bia"] = True
         return
     if re.match(r"^preempt\b", line, re.I):
         group["preempt"] = True
@@ -1207,7 +1253,9 @@ def _parse_svi_stanza(svi_config):
             result["urpf"].append(line)
             continue
 
-        if re.match(r"^hsrp\s+version\b", line, re.I):
+        match = re.match(r"^(?:hsrp|standby)\s+version\s+(\d)\b", line, re.I)
+        if match:
+            result["hsrp_version"] = int(match.group(1))
             continue
         match = re.match(r"^hsrp\s+(\d+)(?:\s+(ipv4|ipv6))?$", line, re.I)
         if match:
@@ -1307,6 +1355,9 @@ def parse_svi_details(svi_config, platform="eos"):
         for vip in [group.get("ip")] + list(group.get("secondary_ips") or []):
             if vip and vip not in bucket:
                 bucket.append(vip)
+
+    for group in parsed["fhrp_groups"]:
+        group["virtual_mac"], group["mac_source"] = fhrp_virtual_mac(group, parsed.get("hsrp_version") or 1)
 
     gateways = []
     for vip in parsed["virtual_router_addresses"] + hsrp_addrs + vrrp_addrs + anycast:
