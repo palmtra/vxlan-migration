@@ -34,6 +34,7 @@ Short, runnable task guides in [examples/](examples/):
 
 | Example | Description |
 |---|---|
+| [examples/migrate-vlan.md](examples/migrate-vlan.md) | Migrate a VLAN end to end with one command |
 | [examples/discover-vlan.md](examples/discover-vlan.md) | Read-only VLAN discovery and prune report |
 | [examples/prune-vlan.md](examples/prune-vlan.md) | Prune eligible switches (dry-run default, explicit approval to apply) |
 | [examples/generate-config-without-cvp-push.md](examples/generate-config-without-cvp-push.md) | Generate CVP configlets locally without push |

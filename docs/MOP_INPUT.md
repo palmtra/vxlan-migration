@@ -39,7 +39,7 @@ Nothing in these files is applied to a device. The steps carry CLI that already 
 | `sequencing` | `Q-NN` | Waits on an earlier step (teardown waits for the gateway move). Already reflected in the step order. |
 | `info` | `I-NN` | Context only. |
 
-Each finding has a `category` (coverage, scope, gateway, fabric, routing, l2, prune, placement, naming, vni, endpoints) and a `severity` (high, medium, low). IDs are numbered per kind in a fixed order, so the same network state gives the same IDs.
+Each finding has a `category` (coverage, scope, gateway, fabric, routing, l2, prune, placement, naming, vni, endpoints) and a `severity` (high, medium, low). IDs are numbered per kind in a fixed order, so the same network state gives the same IDs. L2 VNI findings also carry `topic` (`proposed`, `missing`, `existing_mapping`) and `vni`: `migrate_vlan.yml` uses them to tell which VNI findings a VNI from NetBox settles.
 
 ### Steps
 

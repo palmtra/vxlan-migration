@@ -55,6 +55,35 @@ Full guide: **[VXLAN_SERVICE_TYPES.md](VXLAN_SERVICE_TYPES.md)**.
 
 ---
 
+## End to end (one command)
+
+**Playbook:** `playbooks/core/migrate_vlan.yml`
+
+Runs the sections below in order for one VLAN:
+
+1. Discovery.
+2. A readiness check: blockers, open decisions, VLAN DB record, NetBox VNI and route targets.
+3. The deploy, with the CloudVision change control and the wait for it.
+4. Verification.
+5. A prune dry run.
+
+It never prunes. Runbook: [examples/migrate-vlan.md](examples/migrate-vlan.md).
+
+```bash
+ansible-playbook -i inventory/hosts.yml playbooks/core/migrate_vlan.yml \
+  -e manual_vlan_id=100 -e manual_data_center=lisle --limit dc_lisle
+```
+
+| Variable | Default | Description |
+|---|---|---|
+| `migrate_push_to_cvp` | `true` | `false` stops after generating the configlets |
+| `migrate_decisions_reviewed` | `false` | Proceed past open decisions once they are settled in the VLAN record. Blockers always stop the run |
+| `migrate_prune_readiness` | `true` | Run the prune dry run after verification |
+
+Summary: `reports/<dc>/_runs/migrate_vlan<id>_<ts>.json`, with the outcome (`deployed_and_verified`, `verification_failed`, `waiting_for_change_control`, `configlets_generated`), the readiness result, the NetBox sources, the change control, the verification, and the prune readiness per switch.
+
+---
+
 ## 1. Discovery (read-only)
 
 **Playbook:** `playbooks/core/discover_vlan.yml`

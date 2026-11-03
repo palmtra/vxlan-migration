@@ -1,0 +1,205 @@
+---
+# -----------------------------------------------------------------------------
+# Migrate one VLAN to VXLAN, end to end
+# -----------------------------------------------------------------------------
+#   ansible-playbook -i inventory/hosts.yml playbooks/core/migrate_vlan.yml \
+#     -e manual_vlan_id=100 -e manual_data_center=lisle --limit dc_lisle
+#
+# 1. Discovery (discover_vlan.yml): reports, endpoint baseline, prune plan,
+#    MOP input, run index.
+# 2. Readiness gate: stops on any blocker, on a VLAN not in the VLAN DB, and
+#    on open decisions (until -e migrate_decisions_reviewed=true). Reads the
+#    VNI and route targets from NetBox first, so a VNI NetBox holds is not a
+#    decision.
+# 3. Deploy (workflow_deploy.yml): re-discovery, NetBox VNI / route targets,
+#    configlets, CloudVision push, change control, wait for it to run.
+#    -e migrate_push_to_cvp=false stops after generating the configlets.
+# 4. Verification (workflow_verify.yml), once the change control completed.
+# 5. Prune readiness (prune_vlan.yml, dry run): discovery again with the VNI
+#    live, then which legacy switches can be pruned now and which wait, by
+#    phase. Nothing is pruned. -e migrate_prune_readiness=false skips it.
+# 6. Summary: reports/<dc>/_runs/migrate_vlan<id>_<ts>.json.
+#
+# Pruning stays a separate, approved step: playbooks/core/prune_vlan.yml
+# -e prune_apply=true -e prune_approval=approve. See docs/examples/migrate-vlan.md.
+# -----------------------------------------------------------------------------
+
+# network_devices, not localhost: --limit dc_<dc> leaves localhost out.
+- name: Step 0 - arguments
+  hosts: network_devices
+  gather_facts: false
+  any_errors_fatal: true
+  tasks:
+    - name: Fail without a VLAN and data center
+      ansible.builtin.fail:
+        msg: "Pass -e manual_vlan_id=<id> -e manual_data_center=<dc> and --limit dc_<dc>."
+      when: manual_vlan_id | default('') | string | length == 0 or manual_data_center | default('') | string | length == 0
+      run_once: true
+
+    - name: Refuse to prune from the migration
+      ansible.builtin.fail:
+        msg: >-
+          migrate_vlan.yml never prunes; it ends with a prune dry run. Prune afterwards with
+          playbooks/core/prune_vlan.yml -e prune_apply=true -e prune_approval=approve.
+      when: prune_apply | default(false) | bool
+      run_once: true
+
+- name: Step 1 - discovery
+  ansible.builtin.import_playbook: discover_vlan.yml
+  vars:
+    discovery_write_mop_input: true
+
+- name: Step 2 - readiness gate
+  hosts: network_devices
+  gather_facts: false
+  tasks:
+    - name: Check the VLAN is ready to deploy
+      run_once: true
+      block:
+        - name: Collect the MOP input discovery wrote
+          ansible.builtin.set_fact:
+            _migrate_mop_inputs: >-
+              {{ ansible_play_hosts_all | map('extract', hostvars) | selectattr('_mop_inputs', 'defined')
+                 | map(attribute='_mop_inputs') | first | default([]) }}
+            _migrate_started: "{{ lookup('ansible.builtin.pipe', 'date -u +%Y%m%dT%H%M%SZ') }}"
+            # The VLAN's VRF, unless the run names one: the deploy and verification use it.
+            _migrate_vrf: "{{ manual_target_vrf | default(hostvars['localhost']['_target_vlan_record'].vrf | default('default', true), true) }}"
+          delegate_to: localhost
+          delegate_facts: true
+
+        # NetBox before the gate: a VNI NetBox holds settles discovery's VNI proposal.
+        - name: Read the VNI and route targets from NetBox
+          ansible.builtin.include_role:
+            name: netbox_check
+          vars:
+            target_vlan_id: "{{ hostvars['localhost']['target_vlan_id'] | default(manual_vlan_id) }}"
+            target_data_center: "{{ hostvars['localhost']['_vlan_db_data_center'] | default(manual_data_center) }}"
+
+        # Kept here: later plays reload the record from the VLAN DB alone.
+        - name: Decide
+          ansible.builtin.set_fact:
+            _migrate_record: "{{ hostvars['localhost']['_target_vlan_record'] | default({}) }}"
+            _migrate_gate: >-
+              {{ hostvars['localhost']['_migrate_mop_inputs']
+                 | migrate_readiness(hostvars['localhost']['_target_vlan_record'] | default({}),
+                                     migrate_decisions_reviewed | default(false) | bool,
+                                     hostvars['localhost']['_target_vlan_record'].vni | default(none)
+                                     if (hostvars['localhost']['_netbox_evpn_sources'].vni | default('')) in ['netbox', 'record and netbox']
+                                     else none) }}
+          delegate_to: localhost
+          delegate_facts: true
+
+        - name: Show the gate
+          ansible.builtin.debug:
+            msg: >-
+              {{ (['READY to deploy VLAN ' ~ (manual_vlan_id | string)] if hostvars['localhost']['_migrate_gate'].ready
+                   else ['NOT READY: VLAN ' ~ (manual_vlan_id | string)] + hostvars['localhost']['_migrate_gate'].reasons)
+                 + hostvars['localhost']['_migrate_gate'].blockers + hostvars['localhost']['_migrate_gate'].decisions
+                 + (['High risks (proceeding; see the MOP input):'] + hostvars['localhost']['_migrate_gate'].high_risks
+                    if hostvars['localhost']['_migrate_gate'].high_risks else []) }}
+
+        - name: Stop when the VLAN is not ready
+          ansible.builtin.fail:
+            msg: >-
+              VLAN {{ manual_vlan_id }} is not ready to deploy: {{ hostvars['localhost']['_migrate_gate'].reasons | join(' ') }}
+              The discovery report and MOP input are under reports/{{ manual_data_center }}/.
+          when: not hostvars['localhost']['_migrate_gate'].ready
+
+- name: Step 3 - deploy (NetBox, configlets, CloudVision change control)
+  ansible.builtin.import_playbook: workflow_deploy.yml
+  vars:
+    cvp_apply_configlets: "{{ migrate_push_to_cvp | default(true) | bool }}"
+    manual_target_vrf: "{{ hostvars['localhost']['_migrate_vrf'] }}"
+
+- name: Step 4 - verification (after the change control completed)
+  ansible.builtin.import_playbook: workflow_verify.yml
+  when:
+    - hostvars['localhost']['_cvp_deploy'] is defined
+    - hostvars['localhost']['_cvp_deploy'].status in ['completed', 'no_change']
+
+- name: Step 5 - prune readiness (dry run, nothing is pruned)
+  ansible.builtin.import_playbook: prune_vlan.yml
+  vars:
+    prune_apply: false
+    prune_approval: ""
+  when:
+    - migrate_prune_readiness | default(true) | bool
+    - hostvars['localhost']['_cvp_deploy'] is defined
+    - hostvars['localhost']['_cvp_deploy'].status in ['completed', 'no_change']
+
+- name: Step 6 - summary
+  hosts: network_devices
+  gather_facts: false
+  tasks:
+    - name: Write the migration summary
+      run_once: true
+      delegate_to: localhost
+      block:
+        - name: Collect the outcome of every step
+          ansible.builtin.set_fact:
+            _migrate_summary: >-
+              {{ {
+                'vlan_id': manual_vlan_id | int,
+                'data_center': hostvars['localhost']['_vlan_db_data_center'] | default(manual_data_center),
+                'started_at': hostvars['localhost']['_migrate_started'],
+                'finished_at': lookup('ansible.builtin.pipe', 'date -u +%Y%m%dT%H%M%SZ'),
+                'readiness': hostvars['localhost']['_migrate_gate'],
+                'mop_input': (hostvars['localhost']['_migrate_mop_inputs'] | first | default({})).files | default({}),
+                'netbox': {
+                  'status': hostvars['localhost']['_netbox_sync_status'] | default('not_configured'),
+                  'sources': hostvars['localhost']['_netbox_evpn_sources'] | default({}),
+                },
+                'vni': hostvars['localhost']['_migrate_record'].vni | default(none),
+                'cloudvision': hostvars['localhost']['_cvp_deploy'] | default({'status': 'not_pushed'}),
+                'prune': {
+                  'checked_after_deploy': hostvars['localhost']['_prune_eligible_plans'] is defined,
+                } | combine(ansible_play_hosts_all | map('extract', hostvars) | selectattr('_vlan_discovery_reports', 'defined')
+                            | map(attribute='_vlan_discovery_reports') | first | default([]) | prune_readiness),
+                'verification': {
+                  'ran': ansible_play_hosts_all | map('extract', hostvars) | selectattr('_verification_passed', 'defined') | list | length > 0,
+                  'passed': ansible_play_hosts_all | map('extract', hostvars) | selectattr('_verification_passed', 'defined')
+                            | map(attribute='_verification_passed') | map('bool') | list,
+                  'failed_switches': ansible_play_hosts_all | map('extract', hostvars)
+                            | selectattr('_verification_passed', 'defined') | rejectattr('_verification_passed')
+                            | map(attribute='inventory_hostname') | list,
+                },
+              } }}
+
+        - name: Decide the overall outcome
+          ansible.builtin.set_fact:
+            _migrate_outcome: >-
+              {{ 'deployed_and_verified' if _migrate_summary.verification.ran and _migrate_summary.verification.failed_switches | length == 0
+                 else 'verification_failed' if _migrate_summary.verification.ran
+                 else 'waiting_for_change_control' if _migrate_summary.cloudvision.status in ['created', 'timed_out']
+                 else 'configlets_generated' if _migrate_summary.cloudvision.status == 'not_pushed'
+                 else _migrate_summary.cloudvision.status }}
+
+        - name: Ensure the run directory exists
+          ansible.builtin.file:
+            path: "{{ reports_dir | default(project_root ~ '/reports') }}/{{ _migrate_summary.data_center }}/_runs"
+            state: directory
+            mode: '0755'
+
+        - name: Write the summary JSON
+          ansible.builtin.copy:
+            content: "{{ _migrate_summary | combine({'outcome': _migrate_outcome}) | to_nice_json }}\n"
+            dest: >-
+              {{ reports_dir | default(project_root ~ '/reports') }}/{{ _migrate_summary.data_center }}/_runs/migrate_vlan{{
+              _migrate_summary.vlan_id }}_{{ _migrate_summary.finished_at }}.json
+            mode: '0644'
+
+        - name: Report the outcome
+          ansible.builtin.debug:
+            msg:
+              - "VLAN {{ _migrate_summary.vlan_id }}: {{ _migrate_outcome }}"
+              - "VNI {{ _migrate_summary.vni }} (NetBox: {{ _migrate_summary.netbox.sources.vni | default('') or _migrate_summary.netbox.status }})"
+              - >-
+                CloudVision: {{ _migrate_summary.cloudvision.status }}{{ (' - change control ' ~ _migrate_summary.cloudvision.change_control_id)
+                if _migrate_summary.cloudvision.change_control_id | default('') else '' }}
+              - >-
+                Prune {{ 'after the deploy' if _migrate_summary.prune.checked_after_deploy else 'before the deploy (not re-checked)' }}:
+                ready {{ _migrate_summary.prune.ready | join(', ') or 'none' }}; waiting {{ _migrate_summary.prune.blocked | join(', ') or 'none' }}
+              - >-
+                {{ 'Next: prune with playbooks/core/prune_vlan.yml -e prune_apply=true -e prune_approval=approve (dry run under reports/'
+                   ~ _migrate_summary.data_center ~ '/_prune/).' if _migrate_summary.prune.ready
+                   else 'Next: nothing to prune yet; re-run prune_vlan.yml (dry run) after the next cutover step.' }}

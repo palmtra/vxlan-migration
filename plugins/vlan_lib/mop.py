@@ -541,3 +541,105 @@ def file_manifest(paths, base=""):
             }
         )
     return out
+
+
+def _settled_by_netbox(finding, netbox_vni):
+    if finding.get("category") != "vni":
+        return False
+    topic = finding.get("topic")
+    if topic in ("proposed", "missing"):
+        return True
+    return topic == "existing_mapping" and finding.get("vni") == netbox_vni
+
+
+def migrate_readiness(mop_inputs, record=None, decisions_reviewed=False, netbox_vni=None):
+    """Can the migration go on from discovery to the deploy? ``{ready, reasons, ...}``.
+
+    Stops on: no discovery report; a VLAN that is not in the VLAN DB (a
+    discovery probe: an engineer writes the record from the discovery
+    snippet first); any blocker; any open decision unless
+    *decisions_reviewed*. High risks never stop it; they are listed. A VNI from NetBox
+    (*netbox_vni*) settles discovery's VNI proposal and its "no VNI" blocker,
+    and an existing VXLAN mapping to that same VNI; a mapping to another VNI
+    stays a decision.
+    """
+    docs = [d for d in mop_inputs or [] if isinstance(d, dict)]
+    record = record if isinstance(record, dict) else {}
+    try:
+        netbox_vni = int(netbox_vni) if netbox_vni not in (None, "", False) else None
+    except (TypeError, ValueError):
+        netbox_vni = None
+    reasons = []
+    blockers, decisions, risks = [], [], []
+    for doc in docs:
+        vlan = (doc.get("vlan") or {}).get("id")
+        for finding in doc.get("findings") or []:
+            line = "VLAN %s [%s] %s" % (vlan, finding.get("id"), finding.get("text"))
+            if netbox_vni is not None and _settled_by_netbox(finding, netbox_vni):
+                continue
+            if finding.get("kind") == "blocker":
+                blockers.append(line)
+            elif finding.get("kind") == "decision":
+                decisions.append(line)
+            elif finding.get("kind") == "risk" and finding.get("severity") == "high":
+                risks.append(line)
+    if not docs:
+        reasons.append("Discovery wrote no report for the VLAN, so there is nothing to check.")
+    if record.get("_probe"):
+        reasons.append(
+            "VLAN %s is not in the VLAN DB (vars/vlans/<dc>/). Review the discovery report, put the VLAN DB "
+            "snippet discovery wrote there, decide what it leaves open (gateway mode and leaves, VNI), and run "
+            "again." % record.get("id")
+        )
+    if blockers:
+        reasons.append("%d blocker(s) must be fixed first (see below)." % len(blockers))
+    if decisions and not decisions_reviewed:
+        reasons.append(
+            "%d decision(s) are open. Answer them in the VLAN record, then run again with "
+            "-e migrate_decisions_reviewed=true." % len(decisions)
+        )
+    return {
+        "ready": not reasons,
+        "reasons": reasons,
+        "blockers": blockers,
+        "decisions": decisions,
+        "high_risks": risks,
+        "decisions_reviewed": bool(decisions_reviewed),
+    }
+
+
+def prune_readiness(reports):
+    """What the legacy prune can do now, per switch: ``{plans, ready, blocked}``.
+
+    *reports* are discovery reports (``prune_plans`` and
+    ``link_prune_plans``). A plan with CLI in ``actions`` is ready; one whose
+    CLI sits in ``blocked_actions`` keeps its status (VNI not live yet,
+    gateway not in the fabric, SVI still the active gateway). Plans with
+    nothing to remove are left out. Ordered by phase, then switch.
+    """
+    rows = []
+    for report in reports or []:
+        if not isinstance(report, dict):
+            continue
+        for plan in report.get("prune_plans") or []:
+            if not isinstance(plan, dict):
+                continue
+            if plan.get("placement_role") not in ("prune_eligible", "link_prune"):
+                continue
+            if not plan.get("actions") and not plan.get("blocked_actions"):
+                continue
+            ready = bool(plan.get("actions"))
+            rows.append({
+                "hostname": plan.get("hostname") or "",
+                "vlan_ids": list(plan.get("vlan_ids") or []),
+                "kind": "link" if plan.get("placement_role") == "link_prune" else "teardown",
+                "phase": plan.get("phase") or 3,
+                "status": "ready" if ready else (plan.get("status") or "blocked"),
+                "reason": "" if ready else (plan.get("blocked_reason") or ""),
+            })
+    rows.sort(key=lambda row: (row["phase"], row["hostname"]))
+    return {
+        "plans": rows,
+        "ready": [row["hostname"] for row in rows if row["status"] == "ready"],
+        "blocked": [row["hostname"] for row in rows if row["status"] != "ready"],
+    }
