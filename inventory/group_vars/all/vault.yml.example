@@ -11,5 +11,6 @@ ansible_password: changeme
 # Integration endpoints and tokens
 netbox_url: https://netbox.example.com
 netbox_token: "<netbox-api-token>"
-cvp_url: https://cvp.example.com
-cvp_token: "<cvp-api-token>"
+# CloudVision service-account token (CVaaS or on-prem); used by
+# inventory/group_vars/CVAAS/cvaas_auth.yml.
+vault_cvp_token: "<cloudvision-service-account-token>"

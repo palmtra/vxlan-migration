@@ -46,7 +46,7 @@ cp inventory/group_vars/all/vault.yml.example inventory/group_vars/all/vault.yml
 ansible-vault encrypt inventory/group_vars/all/vault.yml
 ```
 
-CVP push (`cvp_apply_configlets=true`) also needs `cvp_url` and `cvp_token` in vault.
+CloudVision push (`cvp_apply_configlets=true`) also needs `vault_cvp_token` in vault, and the CloudVision host in `inventory/group_vars/CVAAS/` (CVaaS by default; on-prem notes in that file).
 Generate-only runs (`cvp_apply_configlets=false`) do not call CVP.
 
 Full credential options: [docs/examples/discover-vlan.md](docs/examples/discover-vlan.md) (preflight section).

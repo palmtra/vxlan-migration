@@ -134,58 +134,14 @@
 
 - name: Build full CVP configlet map
   ansible.builtin.set_fact:
-    _cvp_configlets: "{{ _cvp_leaf_configlets | default({}) | combine({
-      ('vxlan_vlan' + target_vlan_id | string + '_borderleaf_import'):
-      (_cvp_borderleaf_configlet | default(''))
-    }) }}"
+    _cvp_configlets: >-
+      {{ _cvp_leaf_configlets | default({}) | combine({
+         ('vxlan_vlan' + target_vlan_id | string + '_borderleaf_import'): _cvp_borderleaf_configlet}
+         if cvp_build_borderleaf_config | bool else {}) }}
   delegate_to: localhost
   become: false
   run_once: true
   check_mode: false
-
-- name: Enforce explicit approval before any auto-executing CVP change control
-  ansible.builtin.fail:
-    msg: >-
-      cvp_change_control_state is set to '{{ cvp_change_control_state }}' which would
-      auto-execute on CVP. Set cvp_change_control_auto_execute_allowed=true and confirm
-      the change control has been reviewed before proceeding.
-  when:
-    - cvp_apply_configlets | bool
-    - cvp_change_control_state in ['approve', 'execute', 'approve_and_execute', 'schedule_and_approve']
-    - not cvp_change_control_auto_execute_allowed | bool
-
-- name: Apply CVP configlets (only when cvp_apply_configlets is true)
-  arista.cvp.cv_configlet_v3:
-    cvp_server: "{{ cvp_server }}"
-    cvp_token: "{{ cvp_token }}"
-    configlets: "{{ _cvp_configlets }}"
-    state: present
-  delegate_to: localhost
-  become: false
-  run_once: true
-  no_log: true
-  when:
-    - cvp_apply_configlets | bool
-    - cvp_server | length > 0
-    - cvp_token | length > 0
-
-- name: Assign configlets to target devices (only when cvp_apply_configlets is true)
-  arista.cvp.cv_device_v3:
-    cvp_server: "{{ cvp_server }}"
-    cvp_token: "{{ cvp_token }}"
-    devices:
-      - fqdn: "{{ item }}"
-        configlets:
-          - "vxlan_vlan{{ target_vlan_id }}_{{ item }}"
-  loop: "{{ _cvp_target_devices }}"
-  delegate_to: localhost
-  become: false
-  run_once: true
-  no_log: true
-  when:
-    - cvp_apply_configlets | bool
-    - cvp_server | length > 0
-    - cvp_token | length > 0
 
 - name: Identify border leaf devices
   ansible.builtin.set_fact:
@@ -196,46 +152,16 @@
   run_once: true
   check_mode: false
 
-- name: Assign border-leaf import configlet to border leafs (only when applying)
-  arista.cvp.cv_device_v3:
-    cvp_server: "{{ cvp_server }}"
-    cvp_token: "{{ cvp_token }}"
-    devices:
-      - fqdn: "{{ item }}"
-        configlets:
-          - "vxlan_vlan{{ target_vlan_id }}_borderleaf_import"
-  loop: "{{ _cvp_borderleaf_devices }}"
-  delegate_to: localhost
-  become: false
-  run_once: true
-  no_log: true
-  when:
-    - cvp_apply_configlets | bool
-    - cvp_build_borderleaf_config | bool
-    - _cvp_borderleaf_devices | length > 0
-    - cvp_server | length > 0
-    - cvp_token | length > 0
-
-- name: Create CVP change control (only when cvp_apply_configlets is true)
-  arista.cvp.cv_change_control_v3:
-    cvp_server: "{{ cvp_server }}"
-    cvp_token: "{{ cvp_token }}"
-    state: "{{ cvp_change_control_state }}"
-    name: "{{ cvp_change_control_name }}"
-    notes: "{{ cvp_change_control_notes }}"
-    activities:
-      - action: "Configlet Push"
-        name: "Apply VXLAN VLAN {{ target_vlan_id }} configlets"
-        arguments:
-          - "{{ _cvp_configlets.keys() | list }}"
-  delegate_to: localhost
-  become: false
-  run_once: true
-  no_log: true
-  when:
-    - cvp_apply_configlets | bool
-    - cvp_server | length > 0
-    - cvp_token | length > 0
+- name: Push to CloudVision, create the change control and wait for it (cvp_apply_configlets)
+  ansible.builtin.include_role:
+    name: cvp_change_control
+  vars:
+    cvp_push_configlets: "{{ _cvp_configlets }}"
+    cvp_push_assignments: >-
+      {% set out = {} %}{% for host in _cvp_target_devices %}{% set _ = out.update({host: ['vxlan_vlan' ~ target_vlan_id ~ '_' ~ host]}) %}{% endfor %}{%
+      if cvp_build_borderleaf_config | bool %}{% for host in _cvp_borderleaf_devices %}{% set _ = out.update({host: out.get(host, [])
+      + ['vxlan_vlan' ~ target_vlan_id ~ '_borderleaf_import']}) %}{% endfor %}{% endif %}{{ out }}
+  when: cvp_apply_configlets | bool
 
 - name: Report generated CVP configlets
   ansible.builtin.debug:

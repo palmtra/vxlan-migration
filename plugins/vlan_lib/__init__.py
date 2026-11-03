@@ -12,4 +12,5 @@ from vlan_lib.prune import *  # noqa: F401,F403
 from vlan_lib.reports import *  # noqa: F401,F403
 from vlan_lib.db import *  # noqa: F401,F403
 from vlan_lib.mop import *  # noqa: F401,F403
+from vlan_lib.cvp import *  # noqa: F401,F403
 from vlan_lib.schema import validate_against_schema  # noqa: F401

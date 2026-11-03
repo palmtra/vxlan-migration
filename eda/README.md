@@ -113,7 +113,7 @@ Templates for `playbooks/advanced/workflow_deploy.yml` and
 `playbooks/advanced/workflow_verify.yml`, and map
 `event.payload.*` fields to the Job Template's survey/extra vars the same
 way this rulebook maps them to `extra_vars` here. Store `netbox_url`,
-`cvp_url`, `snow_url`, and their credentials in AAP Credentials rather than
+the CloudVision token (`vault_cvp_token`), `snow_url`, and their credentials in AAP Credentials rather than
 in `eda/extra_vars.yml`.
 
 ## Local testing without a live CVP/ServiceNow

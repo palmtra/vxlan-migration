@@ -17,10 +17,7 @@
 # same way here too so forward deploy and rollback stay consistent.
 # -----------------------------------------------------------------------------
 
-cvp_url: ""
-cvp_token: ""
-cvp_validate_certs: true
-cvp_server: "{{ cvp_url }}"
+# CloudVision connection: see roles/cvp_change_control (CVAAS inventory host).
 
 cvp_configlet_build_dir: "{{ reports_dir | default(project_root ~ '/reports') }}/cvp_configlets"
 
