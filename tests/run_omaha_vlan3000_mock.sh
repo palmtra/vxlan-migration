@@ -108,6 +108,21 @@ ansible-playbook -i "$MOCK_INV" playbooks/core/workflow_deploy.yml \
   -e cvp_apply_configlets=false -e vlan_db_dir="$OUT/vlans" -e artifacts_dir="$OUT/deploy" \
   --limit dc_omaha > "$OUT/deploy.log" 2>&1 \
   || { cat "$OUT/deploy.log"; echo "FAIL: generate-only deploy failed" >&2; exit 1; }
+# 3n. Generate again from the record alone (deploy_discovery=false): no switch
+#     is contacted (all unreachable here), and the configlets are the same.
+ansible-playbook -i "$MOCK_INV" playbooks/core/workflow_deploy.yml \
+  -e manual_vlan_id=3000 -e manual_data_center=omaha -e manual_target_vrf=v0000822a \
+  -e cvp_apply_configlets=false -e vlan_db_dir="$OUT/vlans" -e artifacts_dir="$OUT/deploy_nodisc" \
+  -e deploy_discovery=false -e mock_unreachable=true \
+  --limit dc_omaha > "$OUT/deploy_nodisc.log" 2>&1 \
+  || { cat "$OUT/deploy_nodisc.log"; echo "FAIL: generate without discovery failed" >&2; exit 1; }
+expect "$OUT/deploy_nodisc.log" "deploy_discovery=false: discovery skipped, no switch contacted"
+if grep -q "UNREACHABLE\|unreachable=[1-9]" "$OUT/deploy_nodisc.log"; then
+  echo "FAIL: deploy_discovery=false contacted a switch" >&2; fail=1
+fi
+diff -r "$OUT/deploy/reports/cvp_configlets" "$OUT/deploy_nodisc/reports/cvp_configlets" >/dev/null \
+  || { echo "FAIL: configlets differ without discovery" >&2; fail=1; }
+
 CFG="$OUT/deploy/reports/cvp_configlets/vxlan_vlan3000_fntc-aggacc-sw01.cfg"
 expect "$CFG" " ip address virtual 10.230.0.1/24"
 expect "$CFG" " vxlan vlan 3000 vni 11002"
@@ -294,6 +309,7 @@ if ! ls "$OUT"/migrate/reports/omaha/_prune/prune_dry_run_*.md >/dev/null 2>&1; 
 fi
 expect "$OUT/migrate.log" "Mode: dry-run."
 expect "$OUT/migrate.log" "Preflight: OK"
+expect "$OUT/migrate.log" "deploy_discovery=false: discovery skipped"
 expect "$OUT/migrate.log" "Endpoints: "
 if ! ls "$OUT"/migrate/reports/omaha/_runs/migrate_vlan3000_endpoints_*.csv >/dev/null 2>&1; then
   echo "FAIL: migrate wrote no endpoint comparison CSV" >&2; fail=1
