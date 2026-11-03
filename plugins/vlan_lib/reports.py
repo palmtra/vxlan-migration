@@ -1045,6 +1045,13 @@ def resolve_l3_vni(report):
     return {"vni": None, "source": "not found: no gateway leaf maps the VRF to a VNI", "by_vni": {}}
 
 
+def _finding_vni(value):
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
 def build_findings(report):
     """Everything an engineer must resolve or know before this VLAN migrates.
 
@@ -1058,13 +1065,17 @@ def build_findings(report):
       placement, naming, vni, endpoints.
     - severity: high, medium, low.
 
+    L2 VNI findings also carry ``topic`` (``proposed``, ``missing``,
+    ``existing_mapping``) and ``vni``, so the migration gate can tell which
+    ones a VNI from NetBox settles.
+
     The order is stable, so IDs assigned from it are stable between runs of
     the same network state.
     """
     found = []
 
-    def add(kind, category, severity, text):
-        found.append({"kind": kind, "category": category, "severity": severity, "text": text})
+    def add(kind, category, severity, text, **extra):
+        found.append(dict({"kind": kind, "category": category, "severity": severity, "text": text}, **extra))
 
     def add_all(kind, category, severity, texts):
         for text in texts or []:
@@ -1160,7 +1171,8 @@ def build_findings(report):
     for item in report.get("vxlan_already_mapped") or []:
         add("decision", "vni", "medium", 
             "Confirm VNI %s matches evpn.l2.vni: the VLAN is already VXLAN-mapped on %s."
-            % (item["vni"], item["hostname"])
+            % (item["vni"], item["hostname"]),
+            topic="existing_mapping", vni=_finding_vni(item.get("vni")),
         )
     summary = (report.get("endpoint_table") or {}).get("summary") or {}
     if summary.get("uplink_only"):
@@ -1245,12 +1257,14 @@ def build_findings(report):
     if allocation.get("vni"):
         add("decision", "vni", "medium", 
             "VNI %s proposed (%s). Confirm it in evpn.l2.vni of the SSOT record."
-            % (allocation["vni"], allocation.get("reason"))
+            % (allocation["vni"], allocation.get("reason")),
+            topic="proposed", vni=_finding_vni(allocation.get("vni")),
         )
     elif report.get("vni") in (None, "", 0) and report.get("vlan_id") is not None:
         add("blocker", "vni", "high", 
             "No VNI: %s. Set evpn.l2.vni in the SSOT record."
-            % (allocation.get("reason") or "assign one")
+            % (allocation.get("reason") or "assign one"),
+            topic="missing",
         )
     add_all("blocker", "vni", "high", report.get("vni_range_problems") or [])
     return found

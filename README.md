@@ -55,6 +55,15 @@ Full credential options: [docs/examples/discover-vlan.md](docs/examples/discover
 
 Run playbooks from the **repository root** so `ansible.cfg` and `collections/` resolve correctly.
 
+### One command, end to end
+
+```bash
+ansible-playbook -i inventory/hosts.yml playbooks/core/migrate_vlan.yml \
+  -e manual_vlan_id=100 -e manual_data_center=lisle --limit dc_lisle
+```
+
+The command runs discovery and reports, a readiness check, the VNI and route targets from NetBox, the configlets, a CloudVision change control (it waits for someone to approve and execute it), verification, and a prune dry run. It never prunes. Runbook: [docs/examples/migrate-vlan.md](docs/examples/migrate-vlan.md). The steps below run each stage on its own.
+
 ### 1. Discover a VLAN
 
 Probe an unknown VLAN (not yet in the VLAN DB):

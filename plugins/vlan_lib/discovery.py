@@ -5,7 +5,7 @@ import re
 
 from ansible.errors import AnsibleFilterError
 
-from vlan_lib.common import _str_equal, _vlan_present
+from vlan_lib.common import _MAC_ADDRESS_RE, _str_equal, _vlan_present
 from vlan_lib.endpoints import parse_nd_entries
 from vlan_lib.parsers import (
     _normalize_interface_name,
@@ -505,8 +505,8 @@ def build_vlan_verification(vlan_id, outputs):
             mac_output = entry.get("stdout", "")
             break
 
-    mac_pattern = r"([0-9a-fA-F]{2}[:.\-]){5}[0-9a-fA-F]{2}"
-    mac_learned = bool(re.search(mac_pattern, mac_output))
+    # Colon / dash form and the dotted form EOS and NX-OS print (0050.56b3.0010).
+    mac_learned = bool(_MAC_ADDRESS_RE.search(mac_output))
     arp_learned = bool(re.search(r"\d+\.\d+\.\d+\.\d+", arp_output))
 
     return {

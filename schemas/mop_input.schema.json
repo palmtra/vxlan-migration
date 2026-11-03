@@ -17,7 +17,9 @@
         "kind": { "enum": ["blocker", "decision", "risk", "task", "sequencing", "info"] },
         "category": { "type": "string" },
         "severity": { "enum": ["high", "medium", "low"] },
-        "text": { "type": "string", "minLength": 1 }
+        "text": { "type": "string", "minLength": 1 },
+        "topic": { "enum": ["proposed", "missing", "existing_mapping"] },
+        "vni": { "type": ["integer", "null"] }
       }
     },
     "step": {

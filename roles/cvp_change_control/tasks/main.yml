@@ -142,19 +142,19 @@
 
 - name: Record the CloudVision outcome
   ansible.builtin.set_fact:
-    _cvp_deploy:
-      vlan_id: "{{ target_vlan_id | int }}"
-      status: >-
-        {{ 'no_change' if _cvp_task_ids | length == 0
-           else (_cvp_cc_state.outcome | default('created')) }}
-      change_control_id: "{{ _cvp_cc_id }}"
-      change_control_name: "{{ cvp_change_control_name }}"
-      change_control_state: "{{ _cvp_cc_state }}"
-      task_ids: "{{ _cvp_task_ids }}"
-      configlets: "{{ cvp_push_configlets.keys() | list | sort }}"
-      switches: "{{ cvp_push_assignments.keys() | list | sort }}"
-      cloudvision: "{{ hostvars[_cvp_host].ansible_host | default(_cvp_host) }}"
-      recorded_at: "{{ _cvp_record_ts }}"
+    _cvp_deploy: >-
+      {{ {
+        'vlan_id': target_vlan_id | int,
+        'status': 'no_change' if _cvp_task_ids | length == 0 else (_cvp_cc_state.outcome | default('created')),
+        'change_control_id': _cvp_cc_id,
+        'change_control_name': cvp_change_control_name,
+        'change_control_state': _cvp_cc_state,
+        'task_ids': _cvp_task_ids,
+        'configlets': cvp_push_configlets.keys() | list | sort,
+        'switches': cvp_push_assignments.keys() | list | sort,
+        'cloudvision': hostvars[_cvp_host].ansible_host | default(_cvp_host),
+        'recorded_at': _cvp_record_ts,
+      } }}
   run_once: true
   delegate_to: localhost
   delegate_facts: true
@@ -169,7 +169,7 @@
 
 - name: Write the change-control record
   ansible.builtin.copy:
-    content: "{{ hostvars['localhost']['_cvp_deploy'] | combine({'vlan_id': target_vlan_id | int}) | to_nice_json }}\n"
+    content: "{{ hostvars['localhost']['_cvp_deploy'] | to_nice_json }}\n"
     dest: "{{ cvp_change_control_report_dir }}/vlan{{ target_vlan_id }}_cvp_{{ _cvp_record_ts }}.json"
     mode: '0644'
   run_once: true

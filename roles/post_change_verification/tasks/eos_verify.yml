@@ -91,7 +91,7 @@
         'vni_output': _eos_vxlan_vni.stdout | default(''),
         'mac_outputs': _eos_mac_verify.results | default([]),
         'arp_output': _eos_arp_verify.stdout | default(''),
-        'registry': vlan_registry.vlans | default([])
+        'registry': [hostvars['localhost']['_target_vlan_record'] | default({})] + (vlan_registry.vlans | default([]))
       }) | list }}"
 
 # --- Endpoint reachability against the discovery baseline (C1) --------------

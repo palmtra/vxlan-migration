@@ -40,6 +40,8 @@ from vlan_lib.netbox import (  # noqa: E402
 from vlan_lib import (  # noqa: E402,F401
     analyze_trunk_vlan_carriage,
     arp_discovery_command,
+    migrate_readiness,
+    prune_readiness,
     cvp_change_control,
     cvp_change_control_state,
     cvp_device_assignments,
@@ -208,6 +210,8 @@ class FilterModule(object):
             "svi_prefixes": svi_prefixes,
             "endpoint_reachability": endpoint_reachability,
             "parse_endpoint_baseline": parse_endpoint_baseline,
+            "migrate_readiness": migrate_readiness,
+            "prune_readiness": prune_readiness,
             "cvp_change_control": cvp_change_control,
             "cvp_change_control_state": cvp_change_control_state,
             "cvp_device_assignments": cvp_device_assignments,
