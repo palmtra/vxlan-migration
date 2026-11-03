@@ -145,7 +145,7 @@ Collects VLAN, MAC, SVI, ARP, trunks, LLDP/CDP neighbors, spanning tree, and (on
 | `vni_ranges` / `vni_default_customer_type` | Lisle 20000 / 22000, Omaha 10000 / 11000 / `external` | Per-DC VNI ranges for `internal` and `external` customers (`inventory/group_vars/all/vni_ranges.yml`). A VLAN record without `vni` gets the next free VNI in its DC and `customer_type`, skipping VNIs in the DC's VLAN DB and VNIs (L2 and L3) already mapped on discovered switches. Proposed, never written: confirm it into the SSOT |
 | `vtep_source_interface` | `Loopback1` | Expected VTEP source on fabric leaves (AVD default). Also the source for underlay pings in verify |
 | `discovery_write_prune_plan` | `true` | Write the separate prune report (trunk/SVI/VLAN + EOS session text; never applies deletes) |
-| `prune_commit_timer` | `00:10:00` | EOS `commit timer` value printed in the prune report and used when prune apply is approved |
+| `prune_commit_timer` | `00:20:00` | EOS `commit timer` value printed in the prune report and used when prune apply is approved |
 | `prune_apply` | `false` | `playbooks/core/prune_vlan.yml` only. `true` sends CLI to prune-eligible switches |
 | `prune_approval` | empty | Must be `approve` together with `prune_apply=true`. See [examples/prune-vlan.md](examples/prune-vlan.md) |
 | `discovery_write_device_prune_plans` | `true` | Write `reports/<dc>/_prune_plans/*.json` |
@@ -235,7 +235,7 @@ Key **prune** fields (separate files):
 - Participating leaves are `retained_participating`. Source gateways with no local endpoints are prune-eligible and listed first. Only that set keeps trunk / SVI / VLAN CLI
 - Static routes, BGP, and shared-VRF objects stay in `l3_review`, never actions
 - Device JSON: `reports/<dc>/_prune_plans/<host>_prune_plan_<ts>.json`
-- `prune_commit_timer` default `00:10:00` (report text only; nothing is applied)
+- `prune_commit_timer` default `00:20:00` (report text only; nothing is applied)
 
 ---
 

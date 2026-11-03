@@ -87,7 +87,7 @@ def _vlan_remove_cli(vlan_id):
     return "no vlan %s" % int(vlan_id)
 
 
-_DEFAULT_COMMIT_TIMER = "00:10:00"
+_DEFAULT_COMMIT_TIMER = "00:20:00"
 _EOS_SESSION_NAME_MAX = 32
 
 

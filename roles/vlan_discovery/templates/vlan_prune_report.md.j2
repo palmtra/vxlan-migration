@@ -13,7 +13,7 @@ Prune **prune-eligible** switches: the VLAN is present and no local endpoints we
 1. Confirm the discovery report has **no remaining compute MACs** on this VLAN.
 2. Paste the session on the switch.
 3. `show session-config diffs` and check the change.
-4. `commit timer 00:10:00` (or the timer in the device block). Traffic should keep flowing.
+4. `commit timer 00:20:00` (or the timer in the device block). Traffic should keep flowing.
 5. If checks pass, before the timer expires: `configure session <name> commit`.
 6. If checks fail: do nothing. The timer aborts the session and rolls back.
    To abort immediately: `configure session <name> abort`.

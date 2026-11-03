@@ -56,7 +56,7 @@ ansible-playbook -i inventory/hosts.yml playbooks/core/prune_vlan.yml \
 
 | Platform | What apply does | What it does not do |
 |---|---|---|
-| EOS | `configure session`, then `commit timer 00:10:00` | `configure session <name> commit`. Commit on the switch before the timer expires, or wait and the timer rolls back |
+| EOS | `configure session`, then `commit timer 00:20:00` | `configure session <name> commit`. Commit on the switch before the timer expires, or wait and the timer rolls back |
 | NXOS | Checkpoint, then the trunk/VLAN removal | `copy running-config startup-config`. Roll back with the checkpoint command in the dry-run |
 | IOS | Nothing | IOS prune stays manual |
 
@@ -66,6 +66,6 @@ ansible-playbook -i inventory/hosts.yml playbooks/core/prune_vlan.yml \
 |---|---|---|
 | `prune_apply` | `false` | `true` sends the CLI |
 | `prune_approval` | empty | Must be the exact word `approve` when `prune_apply` is true |
-| `prune_commit_timer` | `00:10:00` | EOS rollback timer written into the session |
+| `prune_commit_timer` | `00:20:00` | EOS rollback timer written into the session |
 
 Discovery and the prune report stay read-only. This playbook is the only apply path.
