@@ -1,0 +1,258 @@
+---
+# -----------------------------------------------------------------------------
+# preflight
+# -----------------------------------------------------------------------------
+# Read-only. Can a migration of this VLAN reach everything it needs?
+#   record      the VLAN record (vars/vlans/<dc>/), its target switches, a VNI source
+#   switch      each switch in scope answers show version, and is the OS the inventory says
+#   cloudvision the token works; every target switch is in CloudVision, in a container
+#   netbox      the API answers; the VLAN and its VXLAN-EVPN L2VPN (VNI, route targets)
+# Writes reports/<dc>/_runs/preflight_vlan<id>_<ts>.json and fails when a check
+# fails (preflight_fail_on_error).
+# Runs on the switches in scope; vlan_db must have run (see playbooks/core/preflight.yml).
+# -----------------------------------------------------------------------------
+
+- name: Preflight - work out what to check
+  ansible.builtin.set_fact:
+    _preflight_record: "{{ hostvars['localhost']['_target_vlan_record'] | default({}) }}"
+    _preflight_cvp_host: "{{ groups[preflight_cvp_group] | default([]) | first | default('') }}"
+    _preflight_netbox_set: "{{ (netbox_url | default('', true) | length > 0) and (netbox_token | default('', true) | length > 0) }}"
+    _preflight_started: "{{ lookup('ansible.builtin.pipe', 'date -u +%Y%m%dT%H%M%SZ') }}"
+  run_once: true
+  delegate_to: localhost
+  delegate_facts: true
+
+# --- record ------------------------------------------------------------------
+- name: Preflight - check the VLAN record
+  ansible.builtin.set_fact:
+    _preflight_checks_record: >-
+      {% set rec = hostvars['localhost']['_preflight_record'] %}{% set nb = hostvars['localhost']['_preflight_netbox_set'] | bool %}{%
+      set vni = rec.vni | default('') | string %}{{ [
+        {'check': 'record', 'target': 'VLAN ' ~ (manual_vlan_id | default(target_vlan_id | default('?'))),
+         'status': 'fail' if rec | length == 0 else ('warn' if rec._probe | default(false) else 'ok'),
+         'detail': 'no VLAN record was loaded' if rec | length == 0
+                   else ('not in the VLAN DB: discovery writes a starter record and the run stops at the readiness check'
+                         if rec._probe | default(false)
+                         else (rec.name | default('') ~ ', target switches ' ~ (rec.target_switches | default([]) | join(' ')) ~ ', VNI '
+                               ~ (vni if vni | length > 0 and vni != 'None' else ('from NetBox' if nb else 'none')))) }
+      ] + ([{'check': 'record', 'target': 'L2 VNI', 'status': 'fail',
+             'detail': 'no VNI in the record and NetBox is not configured: set evpn.l2.vni, or netbox_url and netbox_token'}]
+           if rec | length > 0 and not rec._probe | default(false) and (vni | length == 0 or vni == 'None') and not nb else []) }}
+  run_once: true
+  delegate_to: localhost
+  delegate_facts: true
+
+# --- switches ----------------------------------------------------------------
+- name: Preflight - log in to each switch
+  ansible.netcommon.cli_command:
+    command: show version
+  register: _preflight_version
+  ignore_unreachable: true
+  failed_when: false
+  changed_when: false
+  check_mode: false
+
+- name: Preflight - check each switch
+  ansible.builtin.set_fact:
+    _preflight_check_switch: >-
+      {% set out = _preflight_version.stdout | default('') %}{% set ident = out | switch_identity(network_os_family | default('')) %}{%
+      set err = (_preflight_version.msg | default('') | string).splitlines() | first | default('') %}{{
+      {'check': 'switch', 'target': inventory_hostname,
+       'status': 'fail' if (_preflight_version.unreachable | default(false) or _preflight_version.failed | default(false) or not out)
+                 else ('ok' if ident.matches else 'fail'),
+       'detail': ('cannot log in: ' ~ err[:200]) if (_preflight_version.unreachable | default(false) or _preflight_version.failed | default(false) or not out)
+                 else ((ident.os_family | upper) ~ ' ' ~ ident.model ~ ' ' ~ ident.version if ident.matches
+                       else 'inventory says ' ~ (network_os_family | default('?')) ~ ', the switch is ' ~ (ident.os_family or 'not recognised'))} }}
+
+# --- CloudVision -------------------------------------------------------------
+- name: Preflight - CloudVision
+  run_once: true
+  when: preflight_cloudvision | string | lower != 'false'
+  block:
+    - name: Preflight - no CloudVision host
+      ansible.builtin.set_fact:
+        _preflight_checks_cvp:
+          - check: cloudvision
+            target: "{{ preflight_cvp_group }}"
+            status: "{{ 'fail' if preflight_cloudvision | string | lower == 'true' else 'warn' }}"
+            detail: "no host in inventory group {{ preflight_cvp_group }}: the run can only generate configlets"
+      delegate_to: localhost
+      delegate_facts: true
+      when: hostvars['localhost']['_preflight_cvp_host'] | length == 0
+
+    - name: Preflight - read the switches CloudVision manages
+      when: hostvars['localhost']['_preflight_cvp_host'] | length > 0
+      block:
+        - name: Preflight - cv_facts_v3
+          arista.cvp.cv_facts_v3:
+            facts:
+              - devices
+          register: _preflight_cvp_facts
+          delegate_to: "{{ hostvars['localhost']['_preflight_cvp_host'] }}"
+
+        - name: Preflight - check the target switches in CloudVision
+          ansible.builtin.set_fact:
+            _preflight_checks_cvp: >-
+              {% set targets = hostvars['localhost']['_preflight_record'].target_switches | default([]) %}{%
+              set where = _preflight_cvp_facts | cvp_device_containers(targets) %}{%
+              set rows = [{'check': 'cloudvision', 'target': hostvars['localhost']['_preflight_cvp_host'], 'status': 'ok',
+                           'detail': 'token accepted'}] %}{%
+              for host in targets %}{% set _ = rows.append(
+                {'check': 'cloudvision', 'target': host,
+                 'status': 'ok' if host in where.found else 'fail',
+                 'detail': ('container ' ~ where.found[host].container) if host in where.found
+                           else 'not in CloudVision, or not in a container (hostnames must match the inventory)'}) %}{%
+              endfor %}{{ rows }}
+          delegate_to: localhost
+          delegate_facts: true
+      rescue:
+        - name: Preflight - CloudVision did not answer
+          ansible.builtin.set_fact:
+            _preflight_checks_cvp:
+              - check: cloudvision
+                target: "{{ hostvars['localhost']['_preflight_cvp_host'] }}"
+                status: fail
+                detail: "{{ ('cv_facts_v3 failed: ' ~ (ansible_failed_result.msg | default('') | string))[:300] }}"
+          delegate_to: localhost
+          delegate_facts: true
+
+# --- NetBox ------------------------------------------------------------------
+- name: Preflight - NetBox not configured
+  ansible.builtin.set_fact:
+    _preflight_checks_netbox:
+      - check: netbox
+        target: netbox_url
+        status: "{{ 'fail' if preflight_netbox | string | lower == 'true' else 'warn' }}"
+        detail: "not configured: the VNI and route targets come from the VLAN record alone"
+  run_once: true
+  delegate_to: localhost
+  delegate_facts: true
+  when:
+    - preflight_netbox | string | lower != 'false'
+    - not hostvars['localhost']['_preflight_netbox_set'] | bool
+
+- name: Preflight - NetBox
+  run_once: true
+  when:
+    - preflight_netbox | string | lower != 'false'
+    - hostvars['localhost']['_preflight_netbox_set'] | bool
+  block:
+    - name: Preflight - NetBox API status
+      ansible.builtin.uri:
+        url: "{{ netbox_url }}/api/status/"
+        method: GET
+        headers:
+          Authorization: "Token {{ netbox_token }}"
+          Accept: "application/json"
+        validate_certs: "{{ netbox_validate_certs | default(false) | bool }}"
+        timeout: "{{ netbox_timeout | default(30) | int }}"
+        status_code: 200
+      register: _preflight_netbox_status
+      delegate_to: localhost
+      failed_when: false
+      changed_when: false
+      no_log: true
+
+    - name: Preflight - NetBox did not answer
+      ansible.builtin.set_fact:
+        _preflight_checks_netbox:
+          - check: netbox
+            target: "{{ netbox_url }}"
+            status: fail
+            detail: "{{ [_preflight_netbox_status] | map('netbox_request_error', 200) | first | default('no answer', true) }}"
+      delegate_to: localhost
+      delegate_facts: true
+      when: _preflight_netbox_status.status | default(0) != 200
+
+    - name: Preflight - the VLAN and its L2VPN in NetBox
+      when: _preflight_netbox_status.status | default(0) == 200
+      block:
+        - name: Preflight - run the deploy's NetBox lookup
+          ansible.builtin.include_role:
+            name: netbox_check
+          vars:
+            target_vlan_id: "{{ hostvars['localhost']['target_vlan_id'] | default(manual_vlan_id) }}"
+            target_data_center: "{{ hostvars['localhost']['_vlan_db_data_center'] | default(manual_data_center) }}"
+
+        - name: Preflight - record what NetBox holds
+          ansible.builtin.set_fact:
+            _preflight_checks_netbox: >-
+              {% set evpn = hostvars['localhost']['_netbox_evpn'] | default(_netbox_evpn | default({})) %}{{ [
+                {'check': 'netbox', 'target': netbox_url, 'status': 'ok',
+                 'detail': 'NetBox ' ~ (_preflight_netbox_status.json['netbox-version'] | default('?'))},
+                {'check': 'netbox', 'target': 'VLAN ' ~ (hostvars['localhost']['target_vlan_id'] | default(manual_vlan_id)),
+                 'status': 'ok' if _netbox_sync_status | default('') == 'found' else 'warn',
+                 'detail': 'found' if _netbox_sync_status | default('') == 'found'
+                           else 'not found in NetBox (' ~ (_netbox_sync_status | default('?')) ~ ')'},
+                {'check': 'netbox', 'target': 'L2VPN',
+                 'status': 'ok' if evpn.found | default(false) else 'warn',
+                 'detail': ('L2VPN ' ~ evpn.name ~ ': VNI ' ~ evpn.vni ~ ', import ' ~ (evpn.import | join(' ') or '-')
+                            ~ ', export ' ~ (evpn.export | join(' ') or '-')) if evpn.found | default(false)
+                           else (evpn.note | default('no VXLAN-EVPN L2VPN read') or 'no VXLAN-EVPN L2VPN read')}
+              ] }}
+          delegate_to: localhost
+          delegate_facts: true
+      rescue:
+        - name: Preflight - NetBox lookup failed
+          ansible.builtin.set_fact:
+            _preflight_checks_netbox:
+              - check: netbox
+                target: "VLAN {{ hostvars['localhost']['target_vlan_id'] | default(manual_vlan_id) }}"
+                status: fail
+                detail: >-
+                  {{ (ansible_failed_result.msg | default('') if ansible_failed_result.msg | default('') is string
+                      else ansible_failed_result.msg | join(' ')) | regex_replace('\s+', ' ') | trim }}
+          delegate_to: localhost
+          delegate_facts: true
+
+# --- roll-up -----------------------------------------------------------------
+- name: Preflight - roll up
+  ansible.builtin.set_fact:
+    _preflight: >-
+      {{ (hostvars['localhost']['_preflight_checks_record'] | default([])
+          + (ansible_play_hosts_all | map('extract', hostvars) | selectattr('_preflight_check_switch', 'defined')
+             | map(attribute='_preflight_check_switch') | list)
+          + hostvars['localhost']['_preflight_checks_cvp'] | default([])
+          + hostvars['localhost']['_preflight_checks_netbox'] | default([])) | preflight_report }}
+  run_once: true
+  delegate_to: localhost
+  delegate_facts: true
+
+- name: Preflight - write the result
+  run_once: true
+  delegate_to: localhost
+  vars:
+    _dc: "{{ hostvars['localhost']['_vlan_db_data_center'] | default(manual_data_center | default('unknown')) }}"
+    _vid: "{{ hostvars['localhost']['target_vlan_id'] | default(manual_vlan_id | default('x')) }}"
+  block:
+    - name: Preflight - ensure the run directory exists
+      ansible.builtin.file:
+        path: "{{ preflight_report_dir }}/{{ _dc }}/_runs"
+        state: directory
+        mode: '0755'
+
+    - name: Preflight - write the JSON
+      ansible.builtin.copy:
+        content: "{{ hostvars['localhost']['_preflight'] | combine({'vlan_id': _vid | int, 'data_center': _dc,
+                     'checked_at': hostvars['localhost']['_preflight_started']}) | to_nice_json }}\n"
+        dest: "{{ preflight_report_dir }}/{{ _dc }}/_runs/preflight_vlan{{ _vid }}_{{ hostvars['localhost']['_preflight_started'] }}.json"
+        mode: '0644'
+
+- name: Preflight - show the result
+  ansible.builtin.debug:
+    msg: "{{ ['Preflight: ' ~ (hostvars['localhost']['_preflight'].status | upper)] + hostvars['localhost']['_preflight'].lines }}"
+  run_once: true
+
+- name: Preflight - stop on a failed check
+  ansible.builtin.fail:
+    msg: >-
+      {{ ['Preflight failed (' ~ hostvars['localhost']['_preflight'].failed ~ ' check(s)):']
+         + (hostvars['localhost']['_preflight'].checks | selectattr('status', 'equalto', 'fail')
+            | map(attribute='check') | zip(hostvars['localhost']['_preflight'].checks | selectattr('status', 'equalto', 'fail')
+            | map(attribute='target'), hostvars['localhost']['_preflight'].checks | selectattr('status', 'equalto', 'fail')
+            | map(attribute='detail')) | map('join', ' | ') | list)
+         + ['Fix them, or run with -e preflight_fail_on_error=false to go on.'] }}
+  run_once: true
+  when:
+    - hostvars['localhost']['_preflight'].status == 'fail'
+    - preflight_fail_on_error | bool

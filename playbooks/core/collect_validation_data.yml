@@ -1,0 +1,228 @@
+---
+# -----------------------------------------------------------------------------
+# Collect validation data for one VLAN (read-only)
+# -----------------------------------------------------------------------------
+# Saves what this repository reads from the switches, NetBox and CloudVision,
+# with secrets removed, so the parsers and API field names can be checked
+# against real data. Nothing is changed anywhere.
+#
+#   ansible-playbook -i inventory/hosts.yml playbooks/core/collect_validation_data.yml \
+#     -e manual_vlan_id=100 -e manual_data_center=lisle --limit dc_lisle \
+#     -e vxlan_capture_dir=captures/lisle_vlan100
+#
+# Writes into vxlan_capture_dir, then packs it as <dir>.tar.gz:
+#   devices/<host>/<command>.txt   every switch command (preflight + discovery)
+#   netbox/*.json                  API status, the VLAN, its L2VPN terminations
+#                                  and L2VPN objects (/api/vpn/ and /api/ipam/)
+#   cloudvision/*.json             cv_facts_v3 devices; with
+#                                  -e cvp_change_control_id=<id>, that change
+#                                  control as cv_change_control_v3 shows it
+#   reports/                       the discovery reports of this run
+#   capture_index.json, manifest.json (SHA-256 of every file), README.txt
+#
+# Hostnames, addresses and MACs stay in the files: the checks need them.
+# Review the bundle before sending it anywhere.
+#
+# The same capture works for any playbook here (the vxlan_capture callback):
+# add -e vxlan_capture_dir=<dir> to a migrate run to keep CloudVision's
+# answers to the push, or to workflow_verify.yml after a change.
+# -----------------------------------------------------------------------------
+
+- name: Check the capture directory
+  hosts: network_devices
+  gather_facts: false
+  any_errors_fatal: true
+  tasks:
+    - name: Fail without vxlan_capture_dir
+      ansible.builtin.fail:
+        msg: >-
+          Pass -e vxlan_capture_dir=<directory> (as an extra var: the capture callback reads it
+          when the run starts), plus -e manual_vlan_id=<id> -e manual_data_center=<dc> --limit dc_<dc>.
+      when: >-
+        vxlan_capture_dir | default('') | length == 0
+        or manual_vlan_id | default('') | string | length == 0
+        or manual_data_center | default('') | length == 0
+      run_once: true
+
+- name: Switches - preflight
+  ansible.builtin.import_playbook: preflight.yml
+  vars:
+    preflight_fail_on_error: false
+    reports_dir: "{{ vxlan_capture_dir | ansible.builtin.realpath }}/reports"
+
+- name: Switches - discovery
+  ansible.builtin.import_playbook: discover_vlan.yml
+  vars:
+    reports_dir: "{{ vxlan_capture_dir | ansible.builtin.realpath }}/reports"
+
+- name: NetBox and CloudVision
+  hosts: network_devices
+  gather_facts: false
+  tasks:
+    - name: Read NetBox and CloudVision once
+      run_once: true
+      delegate_to: localhost
+      vars:
+        _cap: "{{ vxlan_capture_dir | ansible.builtin.realpath }}"
+        _vid: "{{ manual_vlan_id | int }}"
+        _dc: "{{ hostvars['localhost']['_vlan_db_data_center'] | default(manual_data_center) }}"
+        _nb_scope: >-
+          {% for key, value in (netbox_vlan_query_by_dc | default({}))[_dc] | default({}) | dictsort %}&{{ key }}={{ value | urlencode }}{% endfor %}
+        _cvp_host: "{{ groups[cvp_inventory_group | default('CVAAS')] | default([]) | first | default('') }}"
+      block:
+        - name: Create the capture folders
+          ansible.builtin.file:
+            path: "{{ _cap }}/{{ item }}"
+            state: directory
+            mode: '0755'
+          loop: [netbox, cloudvision]
+
+        # ---- NetBox (responses only; the request carries the token) ----
+        - name: NetBox - API status and the VLAN
+          ansible.builtin.uri:
+            url: "{{ netbox_url }}/api/{{ item }}"
+            headers:
+              Authorization: "Token {{ netbox_token }}"
+              Accept: "application/json"
+            validate_certs: "{{ netbox_validate_certs | default(false) | bool }}"
+            timeout: "{{ netbox_timeout | default(30) | int }}"
+            status_code: [200, 404]
+          loop:
+            - status/
+            - "ipam/vlans/?vid={{ _vid }}{{ _nb_scope }}"
+          register: _cap_nb_base
+          failed_when: false
+          no_log: true
+          when: netbox_url | default('', true) | length > 0 and netbox_token | default('', true) | length > 0
+
+        - name: NetBox - L2VPN terminations on the VLAN (each API app)
+          ansible.builtin.uri:
+            url: "{{ netbox_url }}/api/{{ item[0] }}/l2vpn-terminations/?vlan_id={{ item[1] }}"
+            headers:
+              Authorization: "Token {{ netbox_token }}"
+              Accept: "application/json"
+            validate_certs: "{{ netbox_validate_certs | default(false) | bool }}"
+            timeout: "{{ netbox_timeout | default(30) | int }}"
+            status_code: [200, 404]
+          loop: >-
+            {{ (netbox_l2vpn_api_apps | default(['vpn', 'ipam']))
+               | product(_cap_nb_base.results[1].json.results | default([]) | map(attribute='id') | list) | list }}
+          register: _cap_nb_terms
+          failed_when: false
+          no_log: true
+          when: _cap_nb_base.results is defined and _cap_nb_base.results | length > 1
+
+        - name: NetBox - the L2VPN objects
+          ansible.builtin.uri:
+            url: "{{ netbox_url }}/api/{{ item[0] }}/l2vpns/{{ item[1] }}/"
+            headers:
+              Authorization: "Token {{ netbox_token }}"
+              Accept: "application/json"
+            validate_certs: "{{ netbox_validate_certs | default(false) | bool }}"
+            timeout: "{{ netbox_timeout | default(30) | int }}"
+            status_code: [200, 404]
+          loop: >-
+            {% set out = [] %}{% for answer in _cap_nb_terms.results | default([]) if answer.status | default(0) == 200 %}{%
+            for term in answer.json.results | default([]) %}{% set _ = out.append([answer.item[0], term.l2vpn.id]) %}{%
+            endfor %}{% endfor %}{{ out | unique | list }}
+          register: _cap_nb_l2vpns
+          failed_when: false
+          no_log: true
+          when: _cap_nb_terms.results is defined
+
+        - name: NetBox - save each answer
+          ansible.builtin.copy:
+            content: >-
+              {{ {'url': item.url | default('') | regex_replace('^' ~ (netbox_url | regex_escape), ''),
+                  'status': item.status | default(0),
+                  'body': item.json | default(item.msg | default(''))} | redact_data | to_nice_json }}
+            dest: >-
+              {{ _cap }}/netbox/{{ (item.url | default('') | regex_replace('^' ~ (netbox_url | regex_escape) ~ '/api/', '')) | command_slug }}.json
+            mode: '0644'
+          loop: >-
+            {{ (_cap_nb_base.results | default([])) + (_cap_nb_terms.results | default([])) + (_cap_nb_l2vpns.results | default([])) }}
+          loop_control:
+            label: "{{ item.url | default('') | regex_replace('^' ~ (netbox_url | regex_escape), '') }}"
+          when: item.skipped is not defined and item.url is defined
+
+        # ---- CloudVision (the vxlan_capture callback saves these results) ----
+        - name: CloudVision - the devices it manages
+          arista.cvp.cv_facts_v3:
+            facts:
+              - devices
+          delegate_to: "{{ _cvp_host }}"
+          register: _cap_cvp_devices
+          failed_when: false
+          when: _cvp_host | length > 0
+
+        - name: CloudVision - a change control, as the wait reads it
+          arista.cvp.cv_change_control_v3:
+            state: show
+            change_id:
+              - "{{ cvp_change_control_id | string }}"
+          delegate_to: "{{ _cvp_host }}"
+          failed_when: false
+          when:
+            - _cvp_host | length > 0
+            - cvp_change_control_id | default('') | string | length > 0
+
+        - name: Write the README
+          ansible.builtin.copy:
+            content: |
+              Validation data for VLAN {{ _vid }} in {{ _dc }}, collected {{ lookup('ansible.builtin.pipe', 'date -u +%Y-%m-%dT%H:%M:%SZ') }}.
+              Read-only: nothing was changed.
+
+              devices/<host>/<command>.txt  switch outputs (.error: the command failed)
+              netbox/*.json                 NetBox answers: {url, status, body}
+              cloudvision/*.json            CloudVision module results (cv_facts_v3, cv_change_control_v3)
+              reports/                      discovery reports of this run
+              capture_index.json            hosts, inventory groups, commands per file
+              manifest.json                 SHA-256 of every file
+
+              Secrets were removed (passwords, keys, SNMP communities, tokens).
+              Hostnames, addresses and MACs were kept. Review before sharing.
+              NetBox: {{ 'not configured' if not (netbox_url | default('', true)) else 'read' }}.
+              CloudVision: {{ _cap_cvp_note }}.
+            dest: "{{ _cap }}/README.txt"
+          vars:
+            _cap_cvp_note: >-
+              {{ 'no host in the inventory' if not _cvp_host
+                 else ('failed: ' ~ (_cap_cvp_devices.msg | default('no device list') | string)[:200])
+                      if 'cvp_devices' not in (_cap_cvp_devices | to_json)
+                 else 'read' }}
+            mode: '0644'
+
+- name: Pack the capture
+  hosts: network_devices
+  gather_facts: false
+  tasks:
+    - name: Manifest and archive
+      run_once: true
+      delegate_to: localhost
+      vars:
+        _cap: "{{ vxlan_capture_dir | ansible.builtin.realpath }}"
+      block:
+        - name: List the captured files
+          ansible.builtin.find:
+            paths: "{{ _cap }}"
+            recurse: true
+            file_type: file
+            excludes: [manifest.json]
+          register: _cap_files
+
+        - name: Write the manifest
+          ansible.builtin.copy:
+            content: "{{ _cap_files.files | map(attribute='path') | list | file_manifest(_cap) | to_nice_json }}\n"
+            dest: "{{ _cap }}/manifest.json"
+            mode: '0644'
+
+        - name: Pack it
+          ansible.builtin.command:
+            argv: [tar, -czf, "{{ _cap }}.tar.gz", -C, "{{ _cap | dirname }}", "{{ _cap | basename }}"]
+          changed_when: true
+
+        - name: Say where it is
+          ansible.builtin.debug:
+            msg:
+              - "Validation data: {{ _cap }}.tar.gz ({{ _cap_files.files | length + 1 }} files)"
+              - "Review it before sharing: secrets are removed; hostnames, addresses and MACs are kept."

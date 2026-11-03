@@ -5,6 +5,8 @@
 #   ansible-playbook -i inventory/hosts.yml playbooks/core/migrate_vlan.yml \
 #     -e manual_vlan_id=100 -e manual_data_center=lisle --limit dc_lisle
 #
+# 0. Preflight (preflight.yml): every switch in scope answers, CloudVision
+#    knows the target switches, NetBox answers. -e migrate_preflight=false skips it.
 # 1. Discovery (discover_vlan.yml): reports, endpoint baseline, prune plan,
 #    MOP input, run index.
 # 2. Readiness gate: stops on any blocker, on a VLAN not in the VLAN DB, and
@@ -44,6 +46,12 @@
       when: prune_apply | default(false) | bool
       run_once: true
 
+- name: Step 0 - preflight (switches, CloudVision, NetBox, VLAN record)
+  ansible.builtin.import_playbook: preflight.yml
+  vars:
+    preflight_cloudvision: "{{ 'auto' if migrate_push_to_cvp | default(true) | bool else 'false' }}"
+  when: migrate_preflight | default(true) | bool
+
 - name: Step 1 - discovery
   ansible.builtin.import_playbook: discover_vlan.yml
   vars:
@@ -62,6 +70,10 @@
               {{ ansible_play_hosts_all | map('extract', hostvars) | selectattr('_mop_inputs', 'defined')
                  | map(attribute='_mop_inputs') | first | default([]) }}
             _migrate_started: "{{ lookup('ansible.builtin.pipe', 'date -u +%Y%m%dT%H%M%SZ') }}"
+            # The endpoints before the change, compared with the ones after it in the summary.
+            _migrate_endpoints_before: >-
+              {{ ansible_play_hosts_all | map('extract', hostvars) | selectattr('_vlan_discovery_reports', 'defined')
+                 | map(attribute='_vlan_discovery_reports') | first | default([]) | strip_endpoint_tables }}
             # The VLAN's VRF, unless the run names one: the deploy and verification use it.
             _migrate_vrf: "{{ manual_target_vrf | default(hostvars['localhost']['_target_vlan_record'].vrf | default('default', true), true) }}"
           delegate_to: localhost
@@ -135,6 +147,18 @@
       run_once: true
       delegate_to: localhost
       block:
+        # After = the prune-readiness discovery (step 5), which ran with the VNI live.
+        - name: Compare the endpoints before and after the change
+          ansible.builtin.set_fact:
+            _migrate_endpoints: >-
+              {{ hostvars['localhost']['_migrate_endpoints_before'] | default([])
+                 | compare_endpoints((ansible_play_hosts_all | map('extract', hostvars) | selectattr('_vlan_discovery_reports', 'defined')
+                                      | map(attribute='_vlan_discovery_reports') | first | default([]))
+                                     if hostvars['localhost']['_prune_eligible_plans'] is defined else [],
+                                     ansible_play_hosts_all | map('extract', hostvars) | selectattr('_endpoint_check', 'defined')
+                                     | map(attribute='_endpoint_check') | first | default({})) }}
+            _migrate_finished: "{{ lookup('ansible.builtin.pipe', 'date -u +%Y%m%dT%H%M%SZ') }}"
+
         - name: Collect the outcome of every step
           ansible.builtin.set_fact:
             _migrate_summary: >-
@@ -142,11 +166,11 @@
                 'vlan_id': manual_vlan_id | int,
                 'data_center': hostvars['localhost']['_vlan_db_data_center'] | default(manual_data_center),
                 'started_at': hostvars['localhost']['_migrate_started'],
-                'finished_at': lookup('ansible.builtin.pipe', 'date -u +%Y%m%dT%H%M%SZ'),
+                'finished_at': _migrate_finished,
                 'readiness': hostvars['localhost']['_migrate_gate'],
                 'mop_input': (hostvars['localhost']['_migrate_mop_inputs'] | first | default({})).files | default({}),
                 'netbox': {
-                  'status': hostvars['localhost']['_netbox_sync_status'] | default('not_configured'),
+                  'status': _netbox_sync_status | default(hostvars['localhost']['_netbox_sync_status'] | default('not_configured')),
                   'sources': hostvars['localhost']['_netbox_evpn_sources'] | default({}),
                 },
                 'vni': hostvars['localhost']['_migrate_record'].vni | default(none),
@@ -155,6 +179,10 @@
                   'checked_after_deploy': hostvars['localhost']['_prune_eligible_plans'] is defined,
                 } | combine(ansible_play_hosts_all | map('extract', hostvars) | selectattr('_vlan_discovery_reports', 'defined')
                             | map(attribute='_vlan_discovery_reports') | first | default([]) | prune_readiness),
+                'endpoints': _migrate_endpoints | dict2items | rejectattr('key', 'in', ['rows', 'new']) | items2dict
+                             | combine({'new': _migrate_endpoints.new | length,
+                                        'csv': ('migrate_vlan' ~ (manual_vlan_id | int) ~ '_endpoints_' ~ _migrate_finished ~ '.csv')
+                                               if _migrate_endpoints.compared else ''}),
                 'verification': {
                   'ran': ansible_play_hosts_all | map('extract', hostvars) | selectattr('_verification_passed', 'defined') | list | length > 0,
                   'passed': ansible_play_hosts_all | map('extract', hostvars) | selectattr('_verification_passed', 'defined')
@@ -180,6 +208,13 @@
             state: directory
             mode: '0755'
 
+        - name: Write the endpoint comparison CSV
+          ansible.builtin.copy:
+            content: "{{ _migrate_endpoints | endpoint_comparison_csv }}"
+            dest: "{{ reports_dir | default(project_root ~ '/reports') }}/{{ _migrate_summary.data_center }}/_runs/{{ _migrate_summary.endpoints.csv }}"
+            mode: '0644'
+          when: _migrate_endpoints.compared
+
         - name: Write the summary JSON
           ansible.builtin.copy:
             content: "{{ _migrate_summary | combine({'outcome': _migrate_outcome}) | to_nice_json }}\n"
@@ -196,6 +231,11 @@
               - >-
                 CloudVision: {{ _migrate_summary.cloudvision.status }}{{ (' - change control ' ~ _migrate_summary.cloudvision.change_control_id)
                 if _migrate_summary.cloudvision.change_control_id | default('') else '' }}
+              - >-
+                {{ ('Endpoints: ' ~ _migrate_summary.endpoints.counts_line
+                    ~ (('; check ' ~ _migrate_summary.endpoints.problems ~ ' in ' ~ _migrate_summary.endpoints.csv)
+                       if _migrate_summary.endpoints.problems else ''))
+                   if _migrate_summary.endpoints.compared else 'Endpoints: not compared (no discovery after the change)' }}
               - >-
                 Prune {{ 'after the deploy' if _migrate_summary.prune.checked_after_deploy else 'before the deploy (not re-checked)' }}:
                 ready {{ _migrate_summary.prune.ready | join(', ') or 'none' }}; waiting {{ _migrate_summary.prune.blocked | join(', ') or 'none' }}

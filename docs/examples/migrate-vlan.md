@@ -2,13 +2,14 @@
 
 One command takes a VLAN from the legacy MLS network into the VXLAN fabric:
 
-1. Discover it.
-2. Check that it is ready.
-3. Read its VNI and route targets from NetBox.
-4. Generate the configlets.
-5. Push them to CloudVision with a change control and wait for it to run.
-6. Verify the switches.
-7. Check what can be pruned on the legacy side.
+1. Check that it can reach the switches, CloudVision and NetBox.
+2. Discover it.
+3. Check that it is ready.
+4. Read its VNI and route targets from NetBox.
+5. Generate the configlets.
+6. Push them to CloudVision with a change control and wait for it to run.
+7. Verify the switches and compare every endpoint before and after.
+8. Check what can be pruned on the legacy side.
 
 ```bash
 ansible-playbook -i inventory/hosts.yml playbooks/core/migrate_vlan.yml \
@@ -44,12 +45,13 @@ netbox_vlan_query_by_dc:
 | Step | What happens | Stops the run when |
 |---|---|---|
 | 0. Arguments | Checks `manual_vlan_id` and `manual_data_center` | Either is missing, or `prune_apply=true` is passed |
-| 1. Discovery | Reads every switch in scope. Writes the report, endpoint baseline CSV, prune plan, MOP input and run index under `reports/<dc>/` | A switch cannot be reached (see the report's coverage) |
+| 0. Preflight | Logs in to every switch in scope (`show version`, and the OS matches the inventory), reads CloudVision's devices (token, every target switch in a container), reads NetBox (API, the VLAN, its L2VPN). Writes `reports/<dc>/_runs/preflight_vlan<id>_<ts>.json` | Any check fails: a switch that does not answer or runs another OS, a target switch CloudVision does not manage, NetBox not answering or disagreeing with the record, no VNI source at all |
+| 1. Discovery | Reads every switch in scope. Writes the report, endpoint baseline CSV, prune plan, MOP input and run index under `reports/<dc>/` | — (a switch that stops answering becomes a blocker in step 2) |
 | 2. Readiness check | Reads the VNI and route targets from NetBox, then checks the MOP input's findings | Any blocker; the VLAN is not in the VLAN DB; open decisions (see below); NetBox and the record disagree on the VNI or route targets |
 | 3. Deploy | Re-discovers, renders one configlet per target leaf, pushes them to CloudVision, creates one pending change control, waits for it | No L2 VNI; a switch CloudVision does not manage; the change control fails |
 | 4. Verification | Checks the VNI mapping and MAC/ARP learning on the target leaves, and pings every host in the endpoint baseline in the VLAN's VRF | Runs only after the change control has completed |
 | 5. Prune readiness | Discovers again with the VNI live and writes a prune dry run: which legacy switches can be pruned now, and which wait, by phase | Never changes a switch |
-| 6. Summary | `reports/<dc>/_runs/migrate_vlan<id>_<ts>.json` and a short result on screen | — |
+| 6. Summary | `reports/<dc>/_runs/migrate_vlan<id>_<ts>.json`, the endpoint comparison `migrate_vlan<id>_endpoints_<ts>.csv`, and a short result on screen | — |
 
 ### Open decisions
 
@@ -95,7 +97,24 @@ The summary's `outcome` and the first line printed at the end:
 | `configlets_generated` | Run with `-e migrate_push_to_cvp=false`: configlets under `reports/cvp_configlets/`, nothing pushed |
 | `no_change` | CloudVision created no task: the configlets were already on the switches |
 
-The summary also holds the readiness result, the MOP input paths, the NetBox source of the VNI and route targets, the change control record, and the prune readiness per switch.
+The summary also holds the readiness result, the MOP input paths, the NetBox source of the VNI and route targets, the change control record, the endpoint comparison counts, and the prune readiness per switch.
+
+### Endpoints before and after
+
+Every endpoint discovery found before the change (step 1) is looked up again in the discovery after it (step 5), with the verification pings. One row per endpoint in `migrate_vlan<id>_endpoints_<ts>.csv`:
+
+| Status | Meaning |
+|---|---|
+| `same_port` | Learned on the same switch port |
+| `moved` | Learned on another edge port (expected for hosts re-cabled to fabric leaves) |
+| `not_located` | Still in ARP or the MAC tables, but only on trunks or in no MAC table (`after_location`) |
+| `mac_only` | No ARP entry any more; the MAC is still learned |
+| `reachable_not_learned` | In no table, but answered the ping |
+| `mac_changed` | **Check:** the IP now answers from another MAC |
+| `ping_failed` | **Check:** in the tables, but did not answer the ping |
+| `missing` | **Check:** in no table and no ping answer (`note` says when it was already intermittent before) |
+
+The last three are counted as problems in the summary and on screen (`Endpoints: 40 same_port, 1 missing; check 1 in ...csv`). Quiet hosts age out of the tables, so look at the CSV before you prune. Endpoints seen only after the change are counted as `new`. Without step 5 (`migrate_prune_readiness=false`) there is nothing to compare against.
 
 ## After the run: prune
 
@@ -114,7 +133,8 @@ Read the dry run (`reports/<dc>/_prune/prune_dry_run_<ts>.md`) and follow the ph
 |---|---|---|
 | `migrate_push_to_cvp` | `true` | `false` stops after generating the configlets |
 | `migrate_decisions_reviewed` | `false` | `true` once every open decision is settled in the record |
-| `migrate_prune_readiness` | `true` | `false` skips step 5 (and its extra discovery) |
+| `migrate_preflight` | `true` | `false` skips step 0's preflight |
+| `migrate_prune_readiness` | `true` | `false` skips step 5 (and its extra discovery, so no endpoint comparison) |
 | `use_avd` | `false` | `true` renders the configlets with Arista AVD |
 | `manual_target_vrf` | the record's VRF | VRF for the deploy and the endpoint pings |
 | `cvp_change_control_wait_minutes` / `cvp_change_control_poll_seconds` | `240` / `60` | How long to wait for the change control |
@@ -133,5 +153,11 @@ ansible-playbook -i inventory/hosts.yml playbooks/core/migrate_vlan.yml \
 ```
 
 Then run the command again without `migrate_push_to_cvp=false`.
+
+## Run it once against a real VLAN, read-only
+
+Before the first real push, collect the data this was built against mocks for
+(switch outputs, NetBox L2VPN answers, CloudVision device list): see
+[collect-validation-data.md](collect-validation-data.md).
 
 Back to [examples](README.md).

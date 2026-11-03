@@ -1,0 +1,58 @@
+---
+# -----------------------------------------------------------------------------
+# Preflight - can a migration of this VLAN reach everything it needs?
+# -----------------------------------------------------------------------------
+# Read-only. Nothing is changed on a switch, in CloudVision or in NetBox.
+#
+#   ansible-playbook -i inventory/hosts.yml playbooks/core/preflight.yml \
+#     -e manual_vlan_id=100 -e manual_data_center=lisle --limit dc_lisle
+#
+# Checks:
+#   record       the VLAN record, its target switches, a source for the L2 VNI
+#   switch       every switch in scope answers `show version` and runs the OS
+#                the inventory says
+#   cloudvision  the token works; every target switch is in CloudVision, in a
+#                container (when the inventory has a CloudVision host)
+#   netbox       the API answers; the VLAN and its VXLAN-EVPN L2VPN (when
+#                netbox_url and netbox_token are set)
+# Result: reports/<dc>/_runs/preflight_vlan<id>_<ts>.json. Fails when a check
+# fails. migrate_vlan.yml runs it first (-e migrate_preflight=false skips it).
+# -----------------------------------------------------------------------------
+
+- name: Preflight
+  hosts: network_devices
+  gather_facts: false
+
+  vars:
+    _discovery_hosts: "{{ hostvars['localhost']['_workflow_discovery_hosts'] | default([]) }}"
+    discovery_scan_all_switches: "{{ hostvars['localhost']['_discovery_scan_all_switches'] | default(false) | bool }}"
+
+  pre_tasks:
+    # A VLAN not in the VLAN DB is a warning here, not a failure: discovery
+    # writes its starter record.
+    - name: Default discovery_allow_probe to true for this run
+      ansible.builtin.set_fact:
+        discovery_allow_probe: "{{ discovery_allow_probe | default(true) | bool }}"
+      run_once: true
+
+    - name: Load the service bundle and the VLAN DB on the control node
+      delegate_to: localhost
+      delegate_facts: true
+      run_once: true
+      block:
+        - name: Include service_db role
+          ansible.builtin.include_role:
+            name: service_db
+        - name: Include vlan_db role
+          ansible.builtin.include_role:
+            name: vlan_db
+
+    - name: Check only the switches the VLAN DB names for this VLAN
+      ansible.builtin.meta: end_host
+      when:
+        - not discovery_scan_all_switches
+        - _discovery_hosts | length > 0
+        - inventory_hostname not in _discovery_hosts
+
+  roles:
+    - preflight

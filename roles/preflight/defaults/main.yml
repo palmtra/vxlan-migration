@@ -1,0 +1,13 @@
+---
+# -----------------------------------------------------------------------------
+# preflight defaults
+# -----------------------------------------------------------------------------
+# auto: check CloudVision when the inventory has a CloudVision host, and
+# NetBox when netbox_url and netbox_token are set. true: required (a missing
+# host or URL fails). false: skip.
+preflight_cloudvision: auto
+preflight_netbox: auto
+preflight_cvp_group: "{{ cvp_inventory_group | default('CVAAS') }}"
+# Stop the run when any check fails.
+preflight_fail_on_error: true
+preflight_report_dir: "{{ reports_dir | default(project_root ~ '/reports') }}"
