@@ -111,3 +111,182 @@ def netbox_request_error(result, expected=(200, 201)):
     elif status == 404:
         reason += ". Check netbox_url: it should be the NetBox address without /api"
     return reason
+
+
+# --------------------------------------------------------------------------
+# VNI and route targets from NetBox (L2VPN, type VXLAN-EVPN)
+# --------------------------------------------------------------------------
+
+_EVPN_TYPES = ("vxlan-evpn", "vxlan")
+
+
+def _choice(value):
+    """A NetBox choice field: ``{"value": "vxlan-evpn", "label": ...}`` or a plain string."""
+    if isinstance(value, Mapping):
+        return str(value.get("value") or "").lower()
+    return str(value or "").lower()
+
+
+def _target_names(targets):
+    names = []
+    for target in targets or []:
+        name = target.get("name") if isinstance(target, Mapping) else target
+        name = str(name or "").strip()
+        if name and name not in names:
+            names.append(name)
+    return names
+
+
+def netbox_vlan_pick(lookup_json, vlan_id):
+    """``{vlan, matches, problem}`` from a ``/ipam/vlans/?vid=`` answer.
+
+    VIDs repeat across sites and VLAN groups. More than one match means the
+    query needs a scope (netbox_vlan_query_by_dc); the VLAN is then not used.
+    """
+    results = [r for r in ((lookup_json or {}).get("results") or []) if isinstance(r, Mapping)]
+    matches = [
+        "%s (id %s, %s)" % (
+            r.get("name") or "?",
+            r.get("id"),
+            ", ".join(
+                "%s %s" % (key, (r.get(key) or {}).get("slug") or (r.get(key) or {}).get("name"))
+                for key in ("site", "group")
+                if isinstance(r.get(key), Mapping)
+            ) or "no site or group",
+        )
+        for r in results
+    ]
+    if len(results) > 1:
+        return {
+            "vlan": {},
+            "matches": matches,
+            "problem": "NetBox has %d VLANs with VID %s (%s). Set netbox_vlan_query_by_dc to pick the site or "
+            "VLAN group of this data center." % (len(results), vlan_id, "; ".join(matches)),
+        }
+    return {"vlan": dict(results[0]) if results else {}, "matches": matches, "problem": ""}
+
+
+def netbox_l2vpn_evpn(terminations_json, l2vpns):
+    """The VXLAN-EVPN L2VPN terminated on a VLAN: ``{found, vni, import, export, name, problems}``.
+
+    *terminations_json* is the ``l2vpn-terminations/?vlan_id=`` answer;
+    *l2vpns* the full L2VPN objects it names (a list, or looped uri results
+    with ``json``). The L2VPN identifier is the VNI; its import and export
+    route targets are the VLAN's.
+    """
+    problems = []
+    objects = []
+    for item in l2vpns or []:
+        body = item.get("json") if isinstance(item, Mapping) and "json" in item else item
+        if isinstance(body, Mapping) and body.get("id") is not None:
+            objects.append(body)
+    if not objects:
+        for term in (terminations_json or {}).get("results") or []:
+            if isinstance(term, Mapping) and isinstance(term.get("l2vpn"), Mapping):
+                objects.append(term["l2vpn"])
+    evpn = [o for o in objects if _choice(o.get("type")) in _EVPN_TYPES]
+    if not evpn:
+        others = ["%s (%s)" % (o.get("name"), _choice(o.get("type")) or "no type") for o in objects]
+        return {
+            "found": False, "vni": None, "import": [], "export": [], "name": "",
+            "problems": [],
+            "note": ("NetBox L2VPNs on this VLAN are not VXLAN-EVPN: %s" % ", ".join(others)) if others
+            else "NetBox has no L2VPN terminated on this VLAN",
+        }
+    if len(evpn) > 1:
+        problems.append(
+            "The VLAN is terminated on %d VXLAN-EVPN L2VPNs in NetBox (%s); it must be one"
+            % (len(evpn), ", ".join(str(o.get("name")) for o in evpn))
+        )
+    l2vpn = evpn[0]
+    vni = l2vpn.get("identifier")
+    try:
+        vni = int(vni) if vni not in (None, "") else None
+    except (TypeError, ValueError):
+        problems.append("NetBox L2VPN %s identifier %r is not a VNI" % (l2vpn.get("name"), vni))
+        vni = None
+    if vni is None and not problems:
+        problems.append("NetBox L2VPN %s has no identifier (the VNI)" % l2vpn.get("name"))
+    return {
+        "found": True,
+        "vni": vni,
+        "import": _target_names(l2vpn.get("import_targets")),
+        "export": _target_names(l2vpn.get("export_targets")),
+        "name": str(l2vpn.get("name") or ""),
+        "problems": problems,
+        "note": "",
+    }
+
+
+def merge_netbox_evpn(record, evpn):
+    """Apply a NetBox L2VPN's VNI and route targets to a VLAN record.
+
+    Returns ``{record, vni_source, rt_source, problems, notes}``. NetBox
+    fills what the record leaves empty. A value both have must agree: a
+    different VNI, or an explicit ``l2_rt`` that differs, is a problem and
+    the record is returned unchanged. More than one import or export target
+    is a problem (one route-target line each is generated).
+    """
+    record = dict(record or {})
+    evpn = evpn or {}
+    notes = []
+    problems = list(evpn.get("problems") or [])
+    if not evpn.get("found"):
+        if evpn.get("note"):
+            notes.append(evpn["note"])
+        return {"record": record, "vni_source": "record" if record.get("vni") else "", "rt_source": "",
+                "problems": problems, "notes": notes}
+    if problems:
+        return {"record": record, "vni_source": "", "rt_source": "", "problems": problems, "notes": notes}
+
+    merged = dict(record)
+    vni = evpn.get("vni")
+    have = record.get("vni")
+    vni_source = "netbox"
+    if have not in (None, "") and str(have).strip().isdigit():
+        if int(have) != vni:
+            problems.append(
+                "VNI conflict for VLAN %s: the record says %s, NetBox L2VPN %s says %s"
+                % (record.get("id"), have, evpn.get("name"), vni)
+            )
+        vni_source = "record and netbox"
+    merged["vni"] = vni
+
+    imports, exports = evpn.get("import") or [], evpn.get("export") or []
+    rt_source = ""
+    if len(imports) > 1 or len(exports) > 1:
+        problems.append(
+            "NetBox L2VPN %s has more than one import or export route target (%s / %s); one each is supported"
+            % (evpn.get("name"), ", ".join(imports) or "-", ", ".join(exports) or "-")
+        )
+    elif imports or exports:
+        rt_import = imports[0] if imports else (exports[0] if exports else "")
+        rt_export = exports[0] if exports else rt_import
+        explicit = str(record.get("l2_rt") or "").strip()
+        if rt_import == rt_export:
+            if explicit and explicit != rt_import:
+                problems.append(
+                    "Route-target conflict for VLAN %s: the record says %s, NetBox L2VPN %s says %s"
+                    % (record.get("id"), explicit, evpn.get("name"), rt_import)
+                )
+            merged["l2_rt"] = rt_import
+            merged.pop("l2_rt_import", None)
+            merged.pop("l2_rt_export", None)
+        else:
+            if explicit:
+                problems.append(
+                    "Route-target conflict for VLAN %s: the record says both %s, NetBox L2VPN %s says import %s, "
+                    "export %s" % (record.get("id"), explicit, evpn.get("name"), rt_import, rt_export)
+                )
+            merged.pop("l2_rt", None)
+            merged["l2_rt_import"] = rt_import
+            merged["l2_rt_export"] = rt_export
+        rt_source = "netbox"
+    else:
+        notes.append(
+            "NetBox L2VPN %s has no route targets; using %s"
+            % (evpn.get("name"), record.get("l2_rt") or "<vni>:<vlan id>")
+        )
+    if problems:
+        return {"record": record, "vni_source": "", "rt_source": "", "problems": problems, "notes": notes}
+    return {"record": merged, "vni_source": vni_source, "rt_source": rt_source, "problems": [], "notes": notes}

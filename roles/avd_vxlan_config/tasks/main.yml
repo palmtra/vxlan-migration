@@ -39,6 +39,16 @@
   run_once: true
   when: not _avd_vlan
 
+- name: Fail without an L2 VNI (from the VLAN record or NetBox)
+  ansible.builtin.fail:
+    msg: >-
+      VLAN {{ target_vlan_id }} has no L2 VNI. Set evpn.l2.vni in its record (vars/vlans/), or terminate the
+      VLAN on a VXLAN-EVPN L2VPN in NetBox (identifier = VNI) and keep netbox_evpn_lookup on.
+  when: not (_avd_vlan.vni | default('') | string | trim is match('^[0-9]+$'))
+  delegate_to: localhost
+  become: false
+  run_once: true
+
 - name: Refuse a multicast BUM group (the fabric uses head-end replication only)
   ansible.builtin.fail:
     msg: >-

@@ -565,7 +565,8 @@ def _vlan_route_target(record):
     """Route-target for ``router bgp / vlan``: the L2 VNI's, both directions.
 
     The fabric (both DCs) uses ``<l2 vni>:<vlan id>``. An explicit ``l2_rt``
-    on the record wins. The L3 VRF targets (``rt_import`` / ``rt_export``,
+    on the record wins; ``l2_rt_import`` with ``l2_rt_export`` (different
+    targets, from NetBox) come next. The L3 VRF targets (``rt_import`` / ``rt_export``,
     ``l3_vni``) belong to the VRF, which is already built, never to the VLAN.
     """
     if not isinstance(record, dict):
@@ -573,6 +574,11 @@ def _vlan_route_target(record):
     l2_rt = str(record.get("l2_rt") or "").strip()
     if l2_rt:
         return {"rt_both": l2_rt}
+    rt_import = str(record.get("l2_rt_import") or "").strip()
+    rt_export = str(record.get("l2_rt_export") or "").strip()
+    if rt_import and rt_export:
+        # Different import and export targets (from a NetBox L2VPN).
+        return {"rt_import": rt_import, "rt_export": rt_export}
     vni = record.get("vni")
     vlan_id = record.get("id")
     if str(vni or "").strip().isdigit() and vlan_id not in (None, ""):

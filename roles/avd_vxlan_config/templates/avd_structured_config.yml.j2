@@ -5,7 +5,7 @@
 {% set _vxlan_intf = eos_vxlan_interface | default('Vxlan1') %}
 {% set _vlan_name = _avd_vlan.vlan_name | default(_avd_vlan.name, true) | default('VLAN' ~ target_vlan_id, true) %}
 {% set _svi_description = (_avd_vlan.svi_description | default(_avd_vlan.description, true) | string) %}
-{% set _vni = _avd_vlan.vni | default(_avd_vlan.l3_vni, true) %}
+{% set _vni = _avd_vlan.vni %}
 {% set _vrf = (_avd_vlan.vrf | default(target_vrf | default('default')) | string) %}
 {% set _is_gateway = _target_device in (_avd_vlan | vlan_gateway_hosts) %}
 {% set _virtual = (_avd_vlan.gateway | default('', true) | string) | virtual_gateway_address(_avd_vlan.prefixes | default([])) %}

@@ -30,7 +30,13 @@ from vlan_lib.avd_services import (  # noqa: E402
     avd_services_file_text,
     merge_avd_services,
 )
-from vlan_lib.netbox import netbox_request_error, netbox_route_target  # noqa: E402
+from vlan_lib.netbox import (  # noqa: E402
+    merge_netbox_evpn,
+    netbox_l2vpn_evpn,
+    netbox_request_error,
+    netbox_route_target,
+    netbox_vlan_pick,
+)
 from vlan_lib import (  # noqa: E402,F401
     analyze_trunk_vlan_carriage,
     arp_discovery_command,
@@ -130,6 +136,9 @@ class FilterModule(object):
             "merge_avd_services": merge_avd_services,
             "netbox_request_error": netbox_request_error,
             "netbox_route_target": netbox_route_target,
+            "netbox_l2vpn_evpn": netbox_l2vpn_evpn,
+            "netbox_vlan_pick": netbox_vlan_pick,
+            "merge_netbox_evpn": merge_netbox_evpn,
             "select_vlans_for_run": select_vlans_for_run,
             "border_bgp_targets": border_bgp_targets,
             "extract_vlan_discovery": extract_vlan_discovery,
