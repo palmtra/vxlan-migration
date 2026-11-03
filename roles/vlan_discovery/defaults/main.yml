@@ -35,11 +35,14 @@ discovery_keep_idle_endpoint_ports: false
 # bulk:     each switch's whole MAC, ARP and IPv6 neighbor tables read once as
 #           JSON and split by VLAN. A switch whose JSON cannot be read falls
 #           back to per_vlan, and the report says so.
-# auto:     bulk when the run covers discovery_bulk_min_vlans VLANs or more, or
-#           takes more than one sample; per_vlan otherwise.
-discovery_endpoint_collection: auto
+# auto:     bulk when the run covers discovery_bulk_min_vlans VLANs or more;
+#           per_vlan otherwise.
+# The default is per_vlan until the JSON readers have been checked against real
+# EOS and NX-OS output (see docs/WORKFLOWS.md). discovery_passes > 1 always reads
+# whole tables, because samples need them.
+discovery_endpoint_collection: per_vlan
 discovery_bulk_min_vlans: 5
-# Samples of the endpoint tables (bulk only), discovery_pass_interval seconds
+# Samples of the endpoint tables (whole tables), discovery_pass_interval seconds
 # apart. A host that is quiet during one sample can show up in another; each
 # endpoint records how many samples saw it, and one missing from some is
 # flagged intermittent. Keep passes x interval under the MAC aging time to

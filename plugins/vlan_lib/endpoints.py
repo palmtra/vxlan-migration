@@ -70,19 +70,26 @@ def endpoint_collection_mode(setting, vlan_count, passes=1, refresh=False, min_v
     """``bulk`` or ``per_vlan`` for one switch.
 
     *setting* is ``bulk``, ``per_vlan`` or ``auto``. Auto reads the whole
-    tables when the run covers *min_vlans* VLANs or more, or takes more than
-    one sample. Platforms without bulk commands always go per VLAN.
+    tables when the run covers *min_vlans* VLANs or more. More than one
+    sample always reads the whole tables: per-VLAN commands cannot take
+    samples. Platforms without bulk commands always go per VLAN.
     """
     if not endpoint_bulk_command(platform, "mac"):
         return "per_vlan"
+    try:
+        sampled = int(passes or 1) > 1
+    except (TypeError, ValueError):
+        sampled = False
     setting = str(setting or "auto").lower()
-    if setting in ("bulk", "per_vlan"):
-        return setting
+    if sampled or setting == "bulk":
+        return "bulk"
+    if setting == "per_vlan":
+        return "per_vlan"
     try:
         many = int(vlan_count) >= int(min_vlans)
     except (TypeError, ValueError):
         many = False
-    return "bulk" if many or int(passes or 1) > 1 else "per_vlan"
+    return "bulk" if many else "per_vlan"
 
 
 # --------------------------------------------------------------------------
@@ -201,7 +208,53 @@ def _mac_valued(row):
     value = _first(row, ("macAddress", "disp_mac_addr", "mac", "hwAddress", "mac-addr", "mac_address"))
     if value is not None and _MAC_ADDRESS_RE.fullmatch(str(value).strip()):
         return normalize_mac_address(value)
+    # Key names differ between releases: any MAC-shaped value will do.
+    for item in row.values():
+        if isinstance(item, str) and _MAC_ADDRESS_RE.fullmatch(item.strip()):
+            return normalize_mac_address(item)
     return ""
+
+
+def _row_slots(data, list_keys, container_keys):
+    """``(slots, known)``: rows the vendor format holds, and whether its shape is known.
+
+    *slots* counts the dicts under any of *list_keys* (a list, or a single
+    dict as NX-OS returns for one row). *known* is true when any of
+    *container_keys* or *list_keys* appears anywhere. A reader compares
+    *slots* with the rows it understood, so a format change is caught
+    instead of reading as an empty table.
+    """
+    slots = 0
+    known = False
+    stack = [data]
+    while stack:
+        item = stack.pop()
+        if isinstance(item, list):
+            stack.extend(item)
+            continue
+        if not isinstance(item, dict):
+            continue
+        for key, value in item.items():
+            if key in list_keys:
+                known = True
+                if isinstance(value, dict):
+                    slots += 1
+                elif isinstance(value, list):
+                    slots += len([v for v in value if isinstance(v, dict)])
+            elif key in container_keys:
+                known = True
+            if isinstance(value, (dict, list)):
+                stack.append(value)
+    return slots, known
+
+
+def _shape_problems(table, rows, slots, known):
+    """Problems when the JSON is not in a shape the reader fully understood."""
+    if not known and rows == 0:
+        return ["%s JSON is not in a format this parser knows" % table]
+    if slots > rows:
+        return ["%d of %d %s rows were not understood" % (slots - rows, slots, table)]
+    return []
 
 
 # --------------------------------------------------------------------------
@@ -297,7 +350,12 @@ def parse_mac_table_json(output, vlan_ids=None):
         result["problems"].append(
             "%d MAC table row(s) not understood, e.g. %s" % (len(result["unparsed"]), result["unparsed"][0])
         )
-    result["ok"] = not result["unparsed"]
+    slots, known = _row_slots(
+        data, ("tableEntries", "ROW_mac_address"), ("unicastTable", "multicastTable", "TABLE_mac_address")
+    )
+    shape = _shape_problems("MAC table", result["rows"], slots, known)
+    result["problems"].extend(shape)
+    result["ok"] = not result["unparsed"] and not shape
     return result
 
 
@@ -369,7 +427,15 @@ def parse_neighbors_json(output, family=4, vlan_ids=None):
                 "vrf": vrf or "",
             }
         )
-    result["ok"] = True
+    table = "ARP" if family == 4 else "IPv6 neighbor"
+    slots, known = _row_slots(
+        data,
+        ("ipV4Neighbors", "ipV6Neighbors", "ROW_adj"),
+        ("vrfs", "TABLE_vrf", "TABLE_adj", "totalEntries"),
+    )
+    shape = _shape_problems(table, result["rows"], slots, known)
+    result["problems"].extend(shape)
+    result["ok"] = not shape
     return result
 
 
