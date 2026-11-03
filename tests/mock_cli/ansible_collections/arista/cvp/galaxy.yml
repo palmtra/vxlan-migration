@@ -1,0 +1,11 @@
+---
+# Test-only shadow of arista.cvp. Its modules check their arguments against
+# the real arista.cvp 3.x argument specs, record every call, and answer from
+# canned state, so the CloudVision push runs end to end without CloudVision.
+# Never put this directory on a production collections path.
+namespace: arista
+name: cvp
+version: 0.0.0-mock
+readme: README.md
+authors:
+  - vxlan-migration tests
