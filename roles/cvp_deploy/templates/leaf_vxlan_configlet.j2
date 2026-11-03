@@ -2,7 +2,7 @@
 {# Applied to: {{ _device_hostname }} #}
 {% set _vlan_name = (_vlan_to_migrate.vlan_name | default(_vlan_to_migrate.name, true) | string) %}
 {% set _svi_description = (_vlan_to_migrate.svi_description | default(_vlan_to_migrate.description, true) | string) %}
-{% set _vni = _vlan_to_migrate.vni | default(_vlan_to_migrate.l3_vni, true) %}
+{% set _vni = _vlan_to_migrate.vni %}
 {% set _vrf = (_vlan_to_migrate.vrf | default('default') | string) %}
 {% set _is_gateway = _device_hostname in (_vlan_to_migrate | vlan_gateway_hosts) %}
 {% set _virtual = (_vlan_to_migrate.gateway | default('', true) | string) | virtual_gateway_address(_vlan_to_migrate.prefixes | default([])) %}

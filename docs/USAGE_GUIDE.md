@@ -208,7 +208,7 @@ The arista.cvp modules run on the CloudVision host (`CVAAS` group, `inventory/gr
 | `manual_data_center` | Data center (`lisle`, `omaha`) |
 | `manual_target_vrf` | Target VRF (usually `default`) |
 
-The VLAN must exist in `vars/vlans/<dc>/{vid}_{slug}.yml` with `target_switches`, `vni`, `service_type`, etc.
+The VLAN must exist in `vars/vlans/<dc>/{vid}_{slug}.yml` with `target_switches`, `service_type`, etc. The L2 VNI comes from the record (`evpn.l2.vni`) or from NetBox (see **NetBox during deploy**); without one the deploy stops.
 See `vars/vlans/README.md`.
 
 ### Config generation
@@ -236,8 +236,19 @@ Deploy re-runs discovery on `discovery_switches` (or `target_switches`). Scope w
 
 ### NetBox during deploy
 
+With `netbox_url` and `netbox_token` set, the deploy looks the VLAN up in NetBox (Step 4) and reads its **VNI and route targets from the VXLAN-EVPN L2VPN terminated on it**: the L2VPN identifier is the VNI; its import and export targets are the VLAN's route targets (one each; the same value renders `route-target both`, different values render `route-target import` / `export`).
+
+- NetBox fills what the VLAN record (`vars/vlans/`) leaves empty, so a record without `evpn.l2.vni` can deploy from NetBox.
+- A value both have must agree. A different VNI, or an explicit `l2_rt` that differs, stops the run before any configlet is rendered (`netbox_evpn_conflict: warn` deploys from the record instead).
+- No VXLAN-EVPN L2VPN on the VLAN: the record is used as is. No VNI from either: the deploy stops.
+- VLAN IDs repeat across NetBox sites and VLAN groups: scope the lookup per data center with `netbox_vlan_query_by_dc`. Several matches without a scope stop the run.
+
 | Variable | Default | Description |
 |---|---|---|
+| `netbox_evpn_lookup` | `true` | Read VNI / route targets from the VLAN's VXLAN-EVPN L2VPN |
+| `netbox_vlan_query_by_dc` | `{}` | NetBox VLAN filters per data center, e.g. `{omaha: {group: omaha-vlans}, lisle: {site: lis01}}` |
+| `netbox_l2vpn_api_apps` | `[vpn, ipam]` | Where L2VPNs live: `/api/vpn/` (NetBox 4.x), then `/api/ipam/` (3.x) |
+| `netbox_evpn_conflict` | `fail` | `fail` stops on a VNI / route-target conflict; `warn` deploys from the record |
 | `netbox_ssot_required` | `false` | `true` → fail if VLAN missing in NetBox |
 | `netbox_warn_on_missing_record` | `true` | Log warning when NetBox has no record |
 

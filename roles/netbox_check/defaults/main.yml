@@ -20,3 +20,23 @@ netbox_ssot_required: false
 
 # When true, log a warning if NetBox is reachable but has no matching VLAN.
 netbox_warn_on_missing_record: true
+
+# VLAN IDs repeat across NetBox sites and VLAN groups. Scope the lookup per
+# data center with NetBox VLAN filters, e.g.
+#   netbox_vlan_query_by_dc:
+#     omaha: {group: omaha-vlans}
+#     lisle: {site: lis01}
+# Several matches without a scope stop the VNI / route-target lookup.
+netbox_vlan_query_by_dc: {}
+
+# Read the VNI and route targets from the VXLAN-EVPN L2VPN terminated on the
+# VLAN (L2VPN identifier = VNI; import / export targets). NetBox fills what the
+# VLAN record leaves empty; a value both have must agree.
+netbox_evpn_lookup: true
+# NetBox 4.x serves L2VPNs under /api/vpn/, 3.x under /api/ipam/: tried in order.
+netbox_l2vpn_api_apps:
+  - vpn
+  - ipam
+# A VNI or route target that differs between NetBox and the VLAN record:
+# fail (default) stops the run; warn keeps the record and says so.
+netbox_evpn_conflict: fail

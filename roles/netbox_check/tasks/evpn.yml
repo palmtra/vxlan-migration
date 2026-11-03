@@ -1,0 +1,125 @@
+---
+# -----------------------------------------------------------------------------
+# VNI and route targets from NetBox
+# -----------------------------------------------------------------------------
+# The VXLAN-EVPN L2VPN terminated on the VLAN carries the VNI (identifier) and
+# the route targets (import / export). They fill what the VLAN record
+# (_target_vlan_record on localhost) leaves empty; a value both have must agree.
+#
+# Sets on localhost:
+#   _netbox_evpn:         {found, vni, import, export, name, problems, note}
+#   _target_vlan_record:  updated with vni / l2_rt (or l2_rt_import + l2_rt_export)
+#   _netbox_evpn_sources: {vni, route_target}
+# -----------------------------------------------------------------------------
+
+- name: Stop when the VLAN is in several NetBox sites or groups
+  ansible.builtin.fail:
+    msg: "{{ _netbox_sync_error }}"
+  when: _netbox_sync_status == 'ambiguous'
+  delegate_to: localhost
+  run_once: true
+
+- name: Find the L2VPN terminated on the VLAN
+  ansible.builtin.uri:
+    url: "{{ netbox_url }}/api/{{ item }}/l2vpn-terminations/?vlan_id={{ _netbox_vlan.id }}"
+    method: GET
+    headers:
+      Authorization: "Token {{ netbox_token }}"
+      Accept: "application/json"
+    validate_certs: "{{ netbox_validate_certs | bool }}"
+    timeout: "{{ netbox_timeout | int }}"
+    status_code: [200, 404]
+  loop: "{{ netbox_l2vpn_api_apps }}"
+  register: _netbox_l2vpn_terms
+  delegate_to: localhost
+  become: false
+  run_once: true
+  failed_when: false
+  changed_when: false
+  no_log: true
+
+- name: Use the first NetBox API that serves L2VPNs
+  ansible.builtin.set_fact:
+    _netbox_l2vpn_answer: "{{ _netbox_l2vpn_terms.results | selectattr('status', 'equalto', 200) | list | first | default({}) }}"
+  delegate_to: localhost
+  run_once: true
+
+- name: Fail when NetBox serves no L2VPN API
+  ansible.builtin.fail:
+    msg: >-
+      NetBox did not answer the L2VPN terminations query under /api/{{ netbox_l2vpn_api_apps | join(' or /api/') }}/:
+      {{ _netbox_l2vpn_terms.results | map('netbox_request_error', 200) | reject('equalto', '') | join('; ') }}.
+      Set netbox_evpn_lookup=false to deploy from the VLAN record alone.
+  when: _netbox_l2vpn_answer | length == 0
+  delegate_to: localhost
+  run_once: true
+
+- name: Read each L2VPN the VLAN is terminated on
+  ansible.builtin.uri:
+    url: "{{ netbox_url }}/api/{{ _netbox_l2vpn_answer.item }}/l2vpns/{{ item }}/"
+    method: GET
+    headers:
+      Authorization: "Token {{ netbox_token }}"
+      Accept: "application/json"
+    validate_certs: "{{ netbox_validate_certs | bool }}"
+    timeout: "{{ netbox_timeout | int }}"
+    status_code: 200
+  loop: "{{ _netbox_l2vpn_answer.json.results | default([]) | map(attribute='l2vpn') | map(attribute='id') | unique | list }}"
+  register: _netbox_l2vpn_objects
+  delegate_to: localhost
+  become: false
+  run_once: true
+  changed_when: false
+  no_log: true
+
+- name: Pick the VXLAN-EVPN L2VPN and merge it into the VLAN record
+  ansible.builtin.set_fact:
+    _netbox_evpn: "{{ _netbox_l2vpn_answer.json | netbox_l2vpn_evpn(_netbox_l2vpn_objects.results | default([])) }}"
+    _netbox_evpn_merge: >-
+      {{ hostvars['localhost']['_target_vlan_record'] | default({})
+         | merge_netbox_evpn(_netbox_l2vpn_answer.json | netbox_l2vpn_evpn(_netbox_l2vpn_objects.results | default([]))) }}
+  delegate_to: localhost
+  run_once: true
+
+- name: Stop when NetBox and the VLAN record disagree
+  ansible.builtin.fail:
+    msg: >-
+      {{ ['NetBox and the VLAN record disagree for VLAN ' ~ target_vlan_id ~ ':'] + _netbox_evpn_merge.problems
+         + ['Fix NetBox or the record (vars/vlans/), or set netbox_evpn_conflict=warn to deploy from the record.'] }}
+  when:
+    - _netbox_evpn_merge.problems | length > 0
+    - netbox_evpn_conflict != 'warn'
+  delegate_to: localhost
+  run_once: true
+
+- name: Warn that the VLAN record is used despite NetBox
+  ansible.builtin.debug:
+    msg: "netbox_evpn_conflict=warn: deploying from the VLAN record. {{ _netbox_evpn_merge.problems | join(' ') }}"
+  when: _netbox_evpn_merge.problems | length > 0
+  delegate_to: localhost
+  run_once: true
+
+- name: Use the VNI and route targets from NetBox
+  ansible.builtin.set_fact:
+    _target_vlan_record: "{{ _netbox_evpn_merge.record }}"
+    _netbox_evpn: "{{ _netbox_evpn }}"
+    _netbox_evpn_sources:
+      vni: "{{ _netbox_evpn_merge.vni_source }}"
+      route_target: "{{ _netbox_evpn_merge.rt_source }}"
+      l2vpn: "{{ _netbox_evpn.name }}"
+  when: _netbox_evpn_merge.problems | length == 0
+  delegate_to: localhost
+  delegate_facts: true
+  run_once: true
+
+- name: Report the VNI and route targets
+  ansible.builtin.debug:
+    msg:
+      - >-
+        {{ ('NetBox L2VPN ' ~ _netbox_evpn.name ~ ': VNI ' ~ _netbox_evpn.vni ~ ', import '
+            ~ (_netbox_evpn.import | join(', ') or '-') ~ ', export ' ~ (_netbox_evpn.export | join(', ') or '-'))
+           if _netbox_evpn.found else _netbox_evpn.note }}
+      - "Deploying VLAN {{ target_vlan_id }} with VNI {{ _netbox_evpn_merge.record.vni | default('none') }}"
+      - "{{ _netbox_evpn_merge.notes | join(' ') }}"
+  delegate_to: localhost
+  run_once: true
