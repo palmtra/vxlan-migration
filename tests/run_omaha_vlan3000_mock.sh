@@ -116,6 +116,85 @@ expect "$CFG" "  rd 66.180.0.10:3000"
 expect "$CFG" "  route-target both 11002:3000"
 expect "$CFG" "  network 10.230.0.0/24"
 
+# 3c. Push to CloudVision (mock arista.cvp): configlets, device assignment in
+#     each switch's current container, one change control for the tasks, and
+#     the wait until it has run.
+export MOCK_CVP_LOG="$OUT/cvp_calls.jsonl"
+ansible-playbook -i "$MOCK_INV" playbooks/core/workflow_deploy.yml \
+  -e manual_vlan_id=3000 -e manual_data_center=omaha -e manual_target_vrf=v0000822a \
+  -e cvp_apply_configlets=true -e cvp_change_control_poll_seconds=1 \
+  -e vlan_db_dir="$OUT/vlans" -e artifacts_dir="$OUT/push" -e reports_dir="$OUT/push/reports" \
+  --limit dc_omaha > "$OUT/push.log" 2>&1 \
+  || { cat "$OUT/push.log"; echo "FAIL: CloudVision push failed" >&2; exit 1; }
+python3 - "$MOCK_CVP_LOG" "$OUT/push/reports/cvp_change_controls" <<'PY' || fail=1
+import glob, json, sys
+calls = [json.loads(line) for line in open(sys.argv[1])]
+problems = []
+def check(ok, text):
+    if not ok:
+        problems.append(text)
+modules = [c["module"] for c in calls]
+check(modules == ["cv_facts_v3", "cv_configlet_v3", "cv_device_v3", "cv_change_control_v3", "cv_change_control_v3"],
+      "call order: %s" % modules)
+check(all(c["host"] for c in calls), "every call ran with an inventory host")
+configlets = calls[1]["args"]["configlets"]
+check(sorted(configlets) == ["vxlan_vlan3000_fntc-aggacc-sw01", "vxlan_vlan3000_fntc-aggacc-sw02"],
+      "configlets pushed: %s" % sorted(configlets))
+check(" vxlan vlan 3000 vni 11002" in configlets["vxlan_vlan3000_fntc-aggacc-sw01"], "configlet content")
+devices = calls[2]["args"]
+check(devices["apply_mode"] == "loose" and devices["search_key"] == "hostname", "device apply mode")
+check([(d["hostname"], d["parentContainerName"], d["configlets"]) for d in devices["devices"]] == [
+    ("fntc-aggacc-sw01", "Leaves", ["vxlan_vlan3000_fntc-aggacc-sw01"]),
+    ("fntc-aggacc-sw02", "Leaves", ["vxlan_vlan3000_fntc-aggacc-sw02"])], "device assignments: %s" % devices["devices"])
+change = calls[3]["args"]
+check(change["state"] == "set", "change control created pending (state set)")
+check([a["task_id"] for a in change["change"]["activities"]] == ["101", "102"], "change control tasks")
+check(change["change"]["name"] == "VXLAN migration - VLAN 3000", "change control name")
+check(calls[4]["args"] == {"state": "show", "change_id": ["mock-cc-vlan"]}, "waited on the change control")
+records = glob.glob(sys.argv[2] + "/vlan3000_cvp_*.json")
+record = json.load(open(records[0])) if records else {}
+check(record.get("status") == "completed" and record.get("change_control_id") == "mock-cc-vlan"
+      and record.get("task_ids") == ["101", "102"], "change-control record: %s" % record)
+if problems:
+    print("FAIL: CloudVision push: " + "; ".join(problems), file=sys.stderr)
+    sys.exit(1)
+PY
+
+# 3d. A change control that fails in CloudVision fails the run, with the error.
+rc=0
+ansible-playbook -i "$MOCK_INV" playbooks/core/workflow_deploy.yml \
+  -e manual_vlan_id=3000 -e manual_data_center=omaha -e manual_target_vrf=v0000822a \
+  -e cvp_apply_configlets=true -e cvp_change_control_poll_seconds=1 \
+  -e "mock_cvp_cc_error='Task 101 failed: config session error'" \
+  -e vlan_db_dir="$OUT/vlans" -e artifacts_dir="$OUT/push_fail" -e reports_dir="$OUT/push_fail/reports" \
+  --limit dc_omaha > "$OUT/push_fail.log" 2>&1 || rc=$?
+if [ "$rc" -eq 0 ]; then echo "FAIL: a failed change control did not fail the run" >&2; fail=1; fi
+expect "$OUT/push_fail.log" "failed in CloudVision: Task 101 failed"
+
+# 3e. Nobody approves in time: the run ends without failing, says how to resume,
+#     and the resume playbook waits for it (fails while pending, passes once run).
+ansible-playbook -i "$MOCK_INV" playbooks/core/workflow_deploy.yml \
+  -e manual_vlan_id=3000 -e manual_data_center=omaha -e manual_target_vrf=v0000822a \
+  -e cvp_apply_configlets=true -e cvp_change_control_poll_seconds=1 -e cvp_change_control_wait_minutes=0 \
+  -e mock_cvp_cc_status=CHANGE_CONTROL_STATUS_NOT_STARTED \
+  -e vlan_db_dir="$OUT/vlans" -e artifacts_dir="$OUT/push_wait" -e reports_dir="$OUT/push_wait/reports" \
+  --limit dc_omaha > "$OUT/push_wait.log" 2>&1 \
+  || { cat "$OUT/push_wait.log"; echo "FAIL: a pending change control failed the run" >&2; exit 1; }
+expect "$OUT/push_wait.log" "cvp_change_control_id=mock-cc-vlan -e target_vlan_id=3000"
+expect "$(ls "$OUT"/push_wait/reports/cvp_change_controls/vlan3000_cvp_*.json)" '"status": "timed_out"'
+rc=0
+ansible-playbook -i "$MOCK_INV" playbooks/core/cvp_change_control_wait.yml \
+  -e cvp_change_control_id=mock-cc-vlan -e target_vlan_id=3000 \
+  -e cvp_change_control_wait_minutes=0 -e cvp_change_control_poll_seconds=1 \
+  -e mock_cvp_cc_status=CHANGE_CONTROL_STATUS_NOT_STARTED > "$OUT/resume_pending.log" 2>&1 || rc=$?
+if [ "$rc" -eq 0 ]; then echo "FAIL: resume passed while the change control was pending" >&2; fail=1; fi
+ansible-playbook -i "$MOCK_INV" playbooks/core/cvp_change_control_wait.yml \
+  -e cvp_change_control_id=mock-cc-vlan -e target_vlan_id=3000 -e cvp_change_control_poll_seconds=1 \
+  > "$OUT/resume_done.log" 2>&1 \
+  || { cat "$OUT/resume_done.log"; echo "FAIL: resume failed on a completed change control" >&2; fail=1; }
+expect "$OUT/resume_done.log" "Change control mock-cc-vlan: completed"
+unset MOCK_CVP_LOG
+
 # 3b. AVD services repo: export the record, then build with pyavd there.
 if [ -n "${AVD_REPO_DIR:-}" ]; then
   cp -r "$AVD_REPO_DIR" "$OUT/avd-vxlan-repo"
