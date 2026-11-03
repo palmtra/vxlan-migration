@@ -280,6 +280,9 @@ check(cv.get("status") == "completed" and cv.get("vlan_id") == 3000, "change con
 check(summary.get("verification", {}).get("ran") and summary["verification"]["failed_switches"] == [], "verification")
 prune = summary.get("prune", {})
 check(prune.get("checked_after_deploy") is True and isinstance(prune.get("plans"), list), "prune readiness: %s" % prune)
+ep = summary.get("endpoints", {})
+check(ep.get("compared") is True and ep.get("total", 0) > 0 and ep.get("csv", "").endswith(".csv"), "endpoint comparison: %s" % ep)
+check("rows" not in ep and isinstance(ep.get("new"), int), "endpoint rows stay in the CSV, not the summary")
 if problems:
     print("FAIL: migrate summary: " + "; ".join(problems), file=sys.stderr)
     sys.exit(1)
@@ -290,10 +293,24 @@ if ! ls "$OUT"/migrate/reports/omaha/_prune/prune_dry_run_*.md >/dev/null 2>&1; 
   echo "FAIL: migrate wrote no prune dry run" >&2; fail=1
 fi
 expect "$OUT/migrate.log" "Mode: dry-run."
+expect "$OUT/migrate.log" "Preflight: OK"
+expect "$OUT/migrate.log" "Endpoints: "
+if ! ls "$OUT"/migrate/reports/omaha/_runs/migrate_vlan3000_endpoints_*.csv >/dev/null 2>&1; then
+  echo "FAIL: migrate wrote no endpoint comparison CSV" >&2; fail=1
+fi
+if ! ls "$OUT"/migrate/reports/omaha/_runs/preflight_vlan3000_*.json >/dev/null 2>&1; then
+  echo "FAIL: migrate wrote no preflight result" >&2; fail=1
+fi
 
-# 3h. The same record without NetBox: discovery proposes a VNI, an open
-#     decision, so the gate stops before anything is deployed.
-migrate_run migrate_decision -e vlan_db_dir="$OUT/vlans_novni"
+# 3h. The same record without NetBox: no VNI source, so the preflight stops
+#     the run before discovery. With the preflight off, discovery proposes a
+#     VNI, an open decision, so the gate stops before anything is deployed.
+migrate_run migrate_novni -e vlan_db_dir="$OUT/vlans_novni"
+if [ "$mig_rc" -eq 0 ]; then echo "FAIL: migrate ran without a VNI source" >&2; fail=1; fi
+expect "$(ls "$OUT"/migrate_novni/reports/omaha/_runs/preflight_vlan3000_*.json | head -1)" "no VNI in the record and NetBox is not configured"
+expect "$OUT/migrate_novni.log" "Preflight failed (1 check(s)):"
+if grep -q "TASK \[vlan_discovery" "$OUT/migrate_novni.log"; then echo "FAIL: discovery ran after a failed preflight" >&2; fail=1; fi
+migrate_run migrate_decision -e vlan_db_dir="$OUT/vlans_novni" -e migrate_preflight=false
 if [ "$mig_rc" -eq 0 ]; then echo "FAIL: migrate deployed with an open decision" >&2; fail=1; fi
 expect "$OUT/migrate_decision.log" "decision(s) are open"
 if ls "$OUT"/migrate_decision/reports/cvp_configlets/*.cfg >/dev/null 2>&1; then
@@ -311,6 +328,88 @@ migrate_run migrate_prune -e prune_apply=true -e prune_approval=approve
 if [ "$mig_rc" -eq 0 ]; then echo "FAIL: migrate accepted prune_apply" >&2; fail=1; fi
 expect "$OUT/migrate_prune.log" "migrate_vlan.yml never prunes"
 if grep -q "TASK \[vlan_discovery" "$OUT/migrate_prune.log"; then echo "FAIL: discovery ran before the prune refusal" >&2; fail=1; fi
+
+# 3k. Preflight finds what would break the run, without changing anything:
+#     a target switch CloudVision does not manage, a VNI NetBox disagrees with.
+start_netbox() {
+  python3 tests/mock_netbox/server.py "$NB_PORT" "tests/mock_netbox/$1" "$OUT/$2.writes" &
+  NB_PID=$!
+  for _ in $(seq 50); do
+    python3 -c "import socket; socket.create_connection(('127.0.0.1', $NB_PORT), 0.2)" 2>/dev/null && break
+    sleep 0.1
+  done
+}
+stop_netbox() { kill "$NB_PID" 2>/dev/null || true; wait "$NB_PID" 2>/dev/null || true; }
+start_netbox omaha_evpn_conflict.json preflight_fail
+pf_rc=0
+ansible-playbook -i "$MOCK_INV" playbooks/core/preflight.yml \
+  -e manual_vlan_id=3000 -e manual_data_center=omaha -e vlan_db_dir="$OUT/vlans" \
+  -e netbox_url="http://127.0.0.1:$NB_PORT" -e netbox_token=test -e artifacts_dir="$OUT/preflight_fail" \
+  -e '{"mock_cvp_devices": [{"hostname": "fntc-aggacc-sw01", "parentContainerName": "Leaves"}]}' \
+  --limit dc_omaha > "$OUT/preflight_fail.log" 2>&1 || pf_rc=$?
+stop_netbox
+if [ "$pf_rc" -eq 0 ]; then echo "FAIL: preflight passed with a missing CloudVision switch and a VNI conflict" >&2; fail=1; fi
+expect "$OUT/preflight_fail.log" "Preflight: FAIL"
+expect "$OUT/preflight_fail.log" "Preflight failed (2 check(s)):"
+expect "$OUT/preflight_fail.log" "cloudvision | fntc-aggacc-sw02 | not in CloudVision"
+expect "$OUT/preflight_fail.log" "the record says 11002, NetBox L2VPN"
+python3 - "$(ls "$OUT"/preflight_fail/reports/omaha/_runs/preflight_vlan3000_*.json 2>/dev/null | head -1)" <<'PY' || fail=1
+import json, sys
+result = json.load(open(sys.argv[1])) if sys.argv[1] else {}
+switches = [c for c in result.get("checks", []) if c["check"] == "switch"]
+problems = []
+if result.get("status") != "fail" or result.get("failed") != 2:
+    problems.append("status %s, failed %s" % (result.get("status"), result.get("failed")))
+if len(switches) != 9 or any(c["status"] != "ok" for c in switches):
+    problems.append("switch checks: %s" % switches)
+nxos = [c for c in switches if c["target"] == "fnts-fntc03-aggpe-mls01"]
+if not nxos or nxos[0]["detail"] != "NXOS Nexus7000 C7010 8.4(2)":
+    problems.append("NX-OS identity: %s" % nxos)
+if problems:
+    print("FAIL: preflight result: " + "; ".join(problems), file=sys.stderr)
+    sys.exit(1)
+PY
+
+# 3l. Validation data capture: switch outputs (preflight + discovery), NetBox
+#     answers and CloudVision results, secrets removed, packed as .tar.gz.
+CAP="$OUT/capture/omaha_vlan3000"
+start_netbox omaha_evpn_v4.json capture
+cap_rc=0
+ansible-playbook -i "$MOCK_INV" playbooks/core/collect_validation_data.yml \
+  -e manual_vlan_id=3000 -e manual_data_center=omaha -e vlan_db_dir="$OUT/vlans_novni" \
+  -e netbox_url="http://127.0.0.1:$NB_PORT" -e netbox_token=test -e cvp_change_control_id=mock-cc-1 \
+  -e vxlan_capture_dir="$CAP" --limit dc_omaha > "$OUT/capture.log" 2>&1 || cap_rc=$?
+stop_netbox
+if [ "$cap_rc" -ne 0 ]; then cat "$OUT/capture.log"; echo "FAIL: collect_validation_data.yml failed" >&2; fail=1; fi
+for f in README.txt capture_index.json manifest.json netbox/status.json netbox/vpn_l2vpns_5.json \
+         cloudvision/001_cv_facts_v3.json devices/fntc-aggacc-sw01/show_version.txt \
+         devices/fntc-aggacc-sw01/show_vxlan_vlan_to_vni.txt devices/fnts-fntc03-aggpe-mls01/show_version.txt; do
+  [ -f "$CAP/$f" ] || { echo "FAIL: capture has no $f" >&2; fail=1; }
+done
+[ -f "$CAP.tar.gz" ] || { echo "FAIL: capture was not packed" >&2; fail=1; }
+if grep -rq "Token test" "$CAP"; then echo "FAIL: the NetBox token is in the capture" >&2; fail=1; fi
+ls "$CAP"/cloudvision/*_cv_change_control_v3.json >/dev/null 2>&1 || { echo "FAIL: no change control in the capture" >&2; fail=1; }
+expect "$CAP/netbox/vpn_l2vpns_5.json" '"identifier": 11002'
+
+# 3m. A capture replays through the mock CLI as is: discovery from the
+#     captured outputs finds the same endpoints as discovery from the fixtures.
+rp_rc=0
+ansible-playbook -i "$MOCK_INV" playbooks/core/discover_vlan.yml \
+  -e manual_vlan_id=3000 -e manual_data_center=omaha -e vlan_db_dir="$OUT/vlans_novni" \
+  -e mock_cli_root="$CAP" -e reports_dir="$OUT/replay/reports" --limit dc_omaha > "$OUT/replay.log" 2>&1 || rp_rc=$?
+if [ "$rp_rc" -ne 0 ]; then cat "$OUT/replay.log"; echo "FAIL: discovery from the capture failed" >&2; fail=1; fi
+python3 - "$CAP/reports" "$OUT/replay/reports" <<'PY' || fail=1
+import glob, json, sys
+def endpoints(root):
+    files = sorted(glob.glob(root + "/omaha/*/*_discovery_*.json"))
+    report = json.load(open(files[-1])) if files else {}
+    table = (report.get("discovery") or {}).get("endpoint_table") or {}
+    return sorted((r.get("ip"), r.get("mac"), r.get("hostname"), r.get("interface")) for r in table.get("endpoints") or [])
+original, replayed = endpoints(sys.argv[1]), endpoints(sys.argv[2])
+if not original or original != replayed:
+    print("FAIL: replayed endpoints differ: %d vs %d" % (len(original), len(replayed)), file=sys.stderr)
+    sys.exit(1)
+PY
 
 # 3b. AVD services repo: export the record, then build with pyavd there.
 if [ -n "${AVD_REPO_DIR:-}" ]; then
