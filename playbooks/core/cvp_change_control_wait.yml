@@ -23,6 +23,12 @@
         msg: "Pass -e cvp_change_control_id=<id> (printed by the deploy run, and in reports/cvp_change_controls/)."
       when: cvp_change_control_id | default('') | string | length == 0
 
+    # set_fact, not a task var: the default reads the caller's value without
+    # referring to itself.
+    - name: Default the VLAN shown in messages
+      ansible.builtin.set_fact:
+        target_vlan_id: "{{ target_vlan_id | default('?') }}"
+
     - name: Wait for the change control
       ansible.builtin.include_role:
         name: cvp_change_control
@@ -30,7 +36,6 @@
       vars:
         _cvp_host: "{{ groups[cvp_inventory_group | default('CVAAS')] | default([]) | first | default('') }}"
         _cvp_cc_id: "{{ cvp_change_control_id | string }}"
-        target_vlan_id: "{{ target_vlan_id | default('?') }}"
 
     - name: Report the change control
       ansible.builtin.debug:
