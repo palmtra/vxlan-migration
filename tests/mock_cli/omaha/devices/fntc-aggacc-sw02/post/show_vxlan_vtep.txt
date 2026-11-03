@@ -1,0 +1,7 @@
+Remote VTEPS for Vxlan1:
+
+VTEP              Tunnel Type(s)
+----------------- --------------
+66.180.1.3        unicast, flood
+
+Total number of remote VTEPS:  1
