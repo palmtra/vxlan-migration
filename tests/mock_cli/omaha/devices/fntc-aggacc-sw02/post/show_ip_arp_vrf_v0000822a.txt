@@ -1,0 +1,4 @@
+Address         Age (sec)  Hardware Addr   Interface
+10.230.0.10       0:00:04  0050.56b3.0010  Vlan3000, Ethernet5
+10.230.0.11       0:00:06  0050.56b3.0011  Vlan3000, Vxlan1
+10.230.0.20       0:00:09  0050.56b3.0020  Vlan3000, Port-Channel3

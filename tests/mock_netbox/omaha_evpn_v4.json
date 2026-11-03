@@ -1,0 +1,57 @@
+{
+  "ipam/vlans": [
+    {
+      "id": 300,
+      "vid": 3000,
+      "name": "ACME_APP",
+      "site": {
+        "id": 1,
+        "slug": "oma01",
+        "name": "Omaha"
+      },
+      "group": null
+    }
+  ],
+  "vpn/l2vpn-terminations": [
+    {
+      "id": 9,
+      "vlan_id": 300,
+      "assigned_object_type": "ipam.vlan",
+      "assigned_object_id": 300,
+      "l2vpn": {
+        "id": 5,
+        "identifier": 11002,
+        "name": "ACME_APP",
+        "slug": "acme-app",
+        "type": {
+          "value": "vxlan-evpn",
+          "label": "VXLAN-EVPN"
+        }
+      }
+    }
+  ],
+  "vpn/l2vpns": [
+    {
+      "id": 5,
+      "identifier": 11002,
+      "name": "ACME_APP",
+      "slug": "acme-app",
+      "type": {
+        "value": "vxlan-evpn",
+        "label": "VXLAN-EVPN"
+      },
+      "import_targets": [
+        {
+          "id": 41,
+          "name": "11002:3000"
+        }
+      ],
+      "export_targets": [
+        {
+          "id": 42,
+          "name": "11002:3000"
+        }
+      ]
+    }
+  ]
+}

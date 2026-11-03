@@ -1,6 +1,8 @@
 # -*- coding: utf-8 -*-
 """Mock cv_change_control_v3: create, approve/execute, show."""
 
+import os
+
 from ansible_collections.arista.cvp.plugins.action._mock_cvp import _ONE_LINE, MockCvpAction
 
 
@@ -31,12 +33,19 @@ class ActionModule(MockCvpAction):
             return {"id": "mock-cc-vlan"}
         if state == "show":
             cc_id = (args.get("change_id") or ["mock-cc-vlan"])[0]
+            status = self.var(task_vars, "mock_cvp_cc_status", "CHANGE_CONTROL_STATUS_COMPLETED")
+            error = self.var(task_vars, "mock_cvp_cc_error", "")
+            state_file = os.environ.get("MOCK_CLI_STATE_FILE")
+            if state_file and status == "CHANGE_CONTROL_STATUS_COMPLETED" and not error:
+                # The change ran: the mock switches now answer from devices/<host>/post/.
+                with open(state_file, "w", encoding="utf-8") as handle:
+                    handle.write("post\n")
             return {"change_controls": [{"value": {
                 "key": {"id": cc_id},
                 "change": {
                     "name": "mock",
-                    "status": self.var(task_vars, "mock_cvp_cc_status", "CHANGE_CONTROL_STATUS_COMPLETED"),
-                    "error": self.var(task_vars, "mock_cvp_cc_error", ""),
+                    "status": status,
+                    "error": error,
                 },
                 "approve": {"value": True},
             }}]}

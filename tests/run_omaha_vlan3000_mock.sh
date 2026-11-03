@@ -195,6 +195,123 @@ ansible-playbook -i "$MOCK_INV" playbooks/core/cvp_change_control_wait.yml \
 expect "$OUT/resume_done.log" "Change control mock-cc-vlan: completed"
 unset MOCK_CVP_LOG
 
+# 3f. VNI and route targets from NetBox: the VXLAN-EVPN L2VPN terminated on the
+#     VLAN (mock NetBox). 4.x API with matching values; 3.x API (no /api/vpn/)
+#     with different import and export targets; a VNI that conflicts stops the run.
+NB_PORT="${MOCK_NETBOX_PORT:-18081}"
+netbox_deploy() {
+  local name="$1" seed="$2" pid
+  python3 tests/mock_netbox/server.py "$NB_PORT" "tests/mock_netbox/$seed" "$OUT/$name.writes" &
+  pid=$!
+  for _ in $(seq 50); do
+    python3 -c "import socket; socket.create_connection(('127.0.0.1', $NB_PORT), 0.2)" 2>/dev/null && break
+    sleep 0.1
+  done
+  nb_rc=0
+  ansible-playbook -i "$MOCK_INV" playbooks/core/workflow_deploy.yml \
+    -e manual_vlan_id=3000 -e manual_data_center=omaha -e manual_target_vrf=v0000822a \
+    -e cvp_apply_configlets=false -e netbox_url="http://127.0.0.1:$NB_PORT" -e netbox_token=test \
+    -e vlan_db_dir="$OUT/vlans" -e artifacts_dir="$OUT/$name" \
+    --limit dc_omaha > "$OUT/$name.log" 2>&1 || nb_rc=$?
+  kill "$pid" 2>/dev/null || true
+  wait "$pid" 2>/dev/null || true
+}
+netbox_deploy nb_v4 omaha_evpn_v4.json
+if [ "$nb_rc" -ne 0 ]; then cat "$OUT/nb_v4.log"; echo "FAIL: deploy with NetBox L2VPN failed" >&2; fail=1; fi
+expect "$OUT/nb_v4.log" "NetBox L2VPN ACME_APP: VNI 11002, import 11002:3000, export 11002:3000"
+expect "$OUT/nb_v4/reports/cvp_configlets/vxlan_vlan3000_fntc-aggacc-sw01.cfg" "  route-target both 11002:3000"
+netbox_deploy nb_v3 omaha_evpn_v3_split_rt.json
+if [ "$nb_rc" -ne 0 ]; then cat "$OUT/nb_v3.log"; echo "FAIL: deploy with NetBox 3.x L2VPN failed" >&2; fail=1; fi
+NB3_CFG="$OUT/nb_v3/reports/cvp_configlets/vxlan_vlan3000_fntc-aggacc-sw01.cfg"
+expect "$NB3_CFG" "  route-target import 65000:3000"
+expect "$NB3_CFG" "  route-target export 65000:3001"
+if grep -qF "route-target both" "$NB3_CFG"; then echo "FAIL: split NetBox route targets rendered as both" >&2; fail=1; fi
+netbox_deploy nb_conflict omaha_evpn_conflict.json
+if [ "$nb_rc" -eq 0 ]; then echo "FAIL: a VNI conflict with NetBox did not stop the deploy" >&2; fail=1; fi
+expect "$OUT/nb_conflict.log" "VNI conflict for VLAN 3000: the record says 11002, NetBox L2VPN ACME_APP"
+if ls "$OUT"/nb_conflict/reports/cvp_configlets/*.cfg >/dev/null 2>&1; then
+  echo "FAIL: configlets were rendered despite the NetBox conflict" >&2; fail=1
+fi
+
+# 3g. One command, end to end (playbooks/core/migrate_vlan.yml): the VLAN record
+#     has no VNI, NetBox's L2VPN supplies it; discovery, readiness gate, deploy,
+#     CloudVision change control, verification against the switches as they are
+#     after the change (the mock change control flips the mock CLI to post/).
+mkdir -p "$OUT/vlans_novni/omaha"
+python3 - "$OUT/vlans/omaha/3000_acme_app.yml" "$OUT/vlans_novni/omaha/3000_acme_app.yml" <<'PY'
+import sys, yaml
+doc = yaml.safe_load(open(sys.argv[1], encoding="utf-8"))
+doc["evpn"]["l2"].pop("vni", None)
+doc["evpn"]["l2"].pop("vni_proposed", None)
+yaml.safe_dump(doc, open(sys.argv[2], "w", encoding="utf-8"), sort_keys=False)
+PY
+migrate_run() {
+  local name="$1"; shift
+  mig_rc=0
+  ansible-playbook -i "$MOCK_INV" playbooks/core/migrate_vlan.yml \
+    -e manual_vlan_id=3000 -e manual_data_center=omaha -e cvp_change_control_poll_seconds=1 \
+    -e artifacts_dir="$OUT/$name" "$@" --limit dc_omaha > "$OUT/$name.log" 2>&1 || mig_rc=$?
+}
+python3 tests/mock_netbox/server.py "$NB_PORT" tests/mock_netbox/omaha_evpn_v4.json "$OUT/migrate.writes" &
+NB_PID=$!
+for _ in $(seq 50); do
+  python3 -c "import socket; socket.create_connection(('127.0.0.1', $NB_PORT), 0.2)" 2>/dev/null && break
+  sleep 0.1
+done
+export MOCK_CVP_LOG="$OUT/migrate_cvp.jsonl" MOCK_CLI_STATE_FILE="$OUT/migrate_cli_state"
+migrate_run migrate -e vlan_db_dir="$OUT/vlans_novni" -e netbox_url="http://127.0.0.1:$NB_PORT" -e netbox_token=test
+unset MOCK_CVP_LOG MOCK_CLI_STATE_FILE
+kill "$NB_PID" 2>/dev/null || true
+wait "$NB_PID" 2>/dev/null || true
+if [ "$mig_rc" -ne 0 ]; then cat "$OUT/migrate.log"; echo "FAIL: migrate_vlan.yml failed" >&2; fail=1; fi
+python3 - "$(ls "$OUT"/migrate/reports/omaha/_runs/migrate_vlan3000_*.json 2>/dev/null | head -1)" <<'PY' || fail=1
+import json, sys
+summary = json.load(open(sys.argv[1])) if sys.argv[1] else {}
+problems = []
+def check(ok, text):
+    if not ok:
+        problems.append(text)
+check(summary.get("outcome") == "deployed_and_verified", "outcome: %s" % summary.get("outcome"))
+check(summary.get("vni") == 11002, "VNI from NetBox: %s" % summary.get("vni"))
+check(summary.get("netbox", {}).get("sources", {}).get("vni") in ("netbox", "record and netbox"), "NetBox VNI source")
+check(summary.get("readiness", {}).get("ready") is True and summary["readiness"]["decisions"] == [], "gate passed with no decision")
+cv = summary.get("cloudvision", {})
+check(cv.get("status") == "completed" and cv.get("vlan_id") == 3000, "change control: %s" % cv)
+check(summary.get("verification", {}).get("ran") and summary["verification"]["failed_switches"] == [], "verification")
+prune = summary.get("prune", {})
+check(prune.get("checked_after_deploy") is True and isinstance(prune.get("plans"), list), "prune readiness: %s" % prune)
+if problems:
+    print("FAIL: migrate summary: " + "; ".join(problems), file=sys.stderr)
+    sys.exit(1)
+PY
+expect "$OUT/migrate.log" "VLAN 3000: deployed_and_verified"
+expect "$OUT/migrate.log" "Prune after the deploy:"
+if ! ls "$OUT"/migrate/reports/omaha/_prune/prune_dry_run_*.md >/dev/null 2>&1; then
+  echo "FAIL: migrate wrote no prune dry run" >&2; fail=1
+fi
+expect "$OUT/migrate.log" "Mode: dry-run."
+
+# 3h. The same record without NetBox: discovery proposes a VNI, an open
+#     decision, so the gate stops before anything is deployed.
+migrate_run migrate_decision -e vlan_db_dir="$OUT/vlans_novni"
+if [ "$mig_rc" -eq 0 ]; then echo "FAIL: migrate deployed with an open decision" >&2; fail=1; fi
+expect "$OUT/migrate_decision.log" "decision(s) are open"
+if ls "$OUT"/migrate_decision/reports/cvp_configlets/*.cfg >/dev/null 2>&1; then
+  echo "FAIL: configlets rendered past a closed gate" >&2; fail=1
+fi
+
+# 3i. A VLAN that is not in the VLAN DB stops at the gate: discovery only.
+mkdir -p "$OUT/vlans_empty/omaha"
+migrate_run migrate_probe -e vlan_db_dir="$OUT/vlans_empty"
+if [ "$mig_rc" -eq 0 ]; then echo "FAIL: migrate deployed a VLAN that is not in the VLAN DB" >&2; fail=1; fi
+expect "$OUT/migrate_probe.log" "VLAN 3000 is not in the VLAN DB"
+
+# 3j. migrate never prunes: prune_apply is refused before discovery starts.
+migrate_run migrate_prune -e prune_apply=true -e prune_approval=approve
+if [ "$mig_rc" -eq 0 ]; then echo "FAIL: migrate accepted prune_apply" >&2; fail=1; fi
+expect "$OUT/migrate_prune.log" "migrate_vlan.yml never prunes"
+if grep -q "TASK \[vlan_discovery" "$OUT/migrate_prune.log"; then echo "FAIL: discovery ran before the prune refusal" >&2; fail=1; fi
+
 # 3b. AVD services repo: export the record, then build with pyavd there.
 if [ -n "${AVD_REPO_DIR:-}" ]; then
   cp -r "$AVD_REPO_DIR" "$OUT/avd-vxlan-repo"

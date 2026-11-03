@@ -7,6 +7,11 @@ characters replaced by ``_``. A ``<slug>.error`` file makes the command fail
 with its content as the message. A missing file returns empty output, like a
 command that prints nothing. ``mock_unreachable: true`` on a host makes every
 command unreachable.
+
+After a change: when ``$MOCK_CLI_STATE_FILE`` holds ``post`` (the mock
+CloudVision writes it when a change control completes), a file under
+``devices/<host>/post/`` answers first, so verification sees the switches as
+they are after the change.
 """
 
 import os
@@ -31,9 +36,15 @@ class ActionModule(ActionBase):
             return result
         # task_vars arrive untemplated; mock_cli_root is "{{ inventory_dir }}/..".
         mock_root = self._templar.template(task_vars["mock_cli_root"])
-        base = os.path.join(
-            mock_root, "devices", task_vars["inventory_hostname"], command_slug(command)
-        )
+        host_dir = os.path.join(mock_root, "devices", task_vars["inventory_hostname"])
+        base = os.path.join(host_dir, command_slug(command))
+        state_file = os.environ.get("MOCK_CLI_STATE_FILE")
+        if state_file and os.path.exists(state_file):
+            with open(state_file, encoding="utf-8") as handle:
+                phase = handle.read().strip()
+            post = os.path.join(host_dir, phase, command_slug(command))
+            if phase and (os.path.exists(post + ".txt") or os.path.exists(post + ".error")):
+                base = post
         result["invocation"] = {"module_args": {"command": command}}
         if os.path.exists(base + ".error"):
             with open(base + ".error", encoding="utf-8") as handle:

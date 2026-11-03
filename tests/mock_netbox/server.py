@@ -4,8 +4,9 @@
     server.py <port> <seed.json> <writes.jsonl>
 
 Serves ``/api/<app>/<model>/`` from the seed: GET filters by exact match on
-every query parameter, POST adds an object, PATCH ``.../<id>/`` merges into
-one. Every POST and PATCH is appended to the writes file as one JSON line
+every query parameter, GET ``.../<id>/`` returns one object, POST adds an
+object, PATCH ``.../<id>/`` merges into one. Apps listed in the seed's
+``_missing_apps`` answer 404, like NetBox 3.x for ``/api/vpn/``. Every POST and PATCH is appended to the writes file as one JSON line
 (method, path, body). Requests without ``Authorization: Token test`` get 403.
 """
 
@@ -60,7 +61,17 @@ def main():
         def do_GET(self):
             if not self._authorized():
                 return
-            key, _ = self._route()
+            key, obj_id = self._route()
+            if key and key.split("/")[0] in store.get("_missing_apps", []):
+                self._reply(404, {"detail": "Not found."})
+                return
+            if obj_id is not None:
+                for obj in store.get(key, []):
+                    if obj.get("id") == obj_id:
+                        self._reply(200, obj)
+                        return
+                self._reply(404, {"detail": "Not found."})
+                return
             query = parse_qs(urlsplit(self.path).query)
             results = [
                 obj for obj in store.get(key, [])

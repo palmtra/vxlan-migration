@@ -1,0 +1,5 @@
+PING 10.230.0.20 (10.230.0.20) 72(100) bytes of data.
+80 bytes from 10.230.0.20: icmp_seq=1 ttl=64 time=0.4 ms
+
+--- 10.230.0.20 ping statistics ---
+2 packets transmitted, 2 received, 0% packet loss, time 1ms
