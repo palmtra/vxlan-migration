@@ -152,6 +152,9 @@ class CommandTests(unittest.TestCase):
         self.assertEqual(endpoint_collection_mode("per_vlan", 50), "per_vlan")
         self.assertEqual(endpoint_collection_mode("bulk", 1), "bulk")
         self.assertEqual(endpoint_collection_mode("bulk", 9, platform="ios"), "per_vlan")
+        # Samples need whole tables, even when per_vlan is the setting.
+        self.assertEqual(endpoint_collection_mode("per_vlan", 1, passes=3), "bulk")
+        self.assertEqual(endpoint_collection_mode("per_vlan", 1, passes=3, platform="ios"), "per_vlan")
 
 
 class MacJsonTests(unittest.TestCase):
@@ -186,6 +189,47 @@ class MacJsonTests(unittest.TestCase):
         self.assertIn("Weird9", result["problems"][0])
         self.assertEqual(parse_mac_table_json("% Invalid input", [3000])["problems"], ["MAC table output is not JSON"])
         self.assertEqual(parse_mac_table_json("", [3000])["problems"], ["no MAC table output"])
+
+
+class JsonShapeGuardTests(unittest.TestCase):
+    """Valid JSON in a shape the readers do not know must fall back, not read as empty."""
+
+    def test_empty_tables_in_known_shapes_are_fine(self):
+        empty_eos = json.dumps({"unicastTable": {"tableEntries": []}, "multicastTable": {"tableEntries": []}})
+        self.assertEqual(parse_mac_table_json(empty_eos, [3000])["problems"], [])
+        self.assertTrue(parse_neighbors_json(json.dumps({"vrfs": {"default": {"ipV4Neighbors": []}}}), 4, [3000])["ok"])
+        nxos_empty = json.dumps({"TABLE_vrf": {"ROW_vrf": {"vrf-name-out": "default", "cnt-total": 0}}})
+        self.assertTrue(parse_neighbors_json(nxos_empty, 4, [3000])["ok"])
+        self.assertTrue(parse_neighbors_json(json.dumps({"vrfs": {}}), 6, [3000])["ok"])
+
+    def test_unknown_shape_is_not_ok(self):
+        odd = json.dumps({"macTable": {"rows": [{"a": 1}]}})
+        result = parse_mac_table_json(odd, [3000])
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["problems"], ["MAC table JSON is not in a format this parser knows"])
+        arp = parse_neighbors_json(json.dumps({"neighbors": [1, 2]}), 4, [3000])
+        self.assertEqual((arp["ok"], arp["problems"]), (False, ["ARP JSON is not in a format this parser knows"]))
+        sample = parse_endpoint_tables_json("eos", odd, EOS_ARP_JSON, "", [3000])
+        self.assertFalse(sample["ok"])  # the switch falls back to per-VLAN commands
+
+    def test_rows_without_a_mac_or_address_are_not_ok(self):
+        no_mac = json.dumps({"unicastTable": {"tableEntries": [
+            {"vlanId": 3000, "macAddress": "00:50:56:b3:00:10", "entryType": "dynamic", "interface": "Ethernet5"},
+            {"vlanId": 3000, "station": "unknown", "entryType": "dynamic", "interface": "Ethernet6"},
+        ]}})
+        result = parse_mac_table_json(no_mac, [3000])
+        self.assertEqual((result["ok"], result["problems"]), (False, ["1 of 2 MAC table rows were not understood"]))
+        no_ip = json.dumps({"vrfs": {"v1": {"ipV4Neighbors": [
+            {"addr4": "not-an-ip", "hwAddress": "0050.56b3.0010", "interface": "Vlan3000, Ethernet5"}]}}})
+        arp = parse_neighbors_json(no_ip, 4, [3000])
+        self.assertEqual((arp["ok"], arp["problems"]), (False, ["1 of 1 ARP rows were not understood"]))
+
+    def test_renamed_mac_key_is_still_read(self):
+        renamed = json.dumps({"unicastTable": {"tableEntries": [
+            {"vlanId": 3000, "stationMac": "00:50:56:b3:00:10", "entryType": "dynamic", "interface": "Ethernet5"}]}})
+        result = parse_mac_table_json(renamed, [3000])
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["entries"][3000][0]["mac"], "00:50:56:b3:00:10")
 
 
 class NeighborJsonTests(unittest.TestCase):
