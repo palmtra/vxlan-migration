@@ -22,6 +22,34 @@ CloudVision credentials (`vault_cvp_token`) are **not required** for generate-on
 
 ---
 
+## Discover once, generate as often as you like
+
+The deploy re-runs discovery by default, to read the switches as they are right before the change. To iterate on the config without that wait, discover once and generate from the VLAN record:
+
+1. Discover:
+
+   ```bash
+   ansible-playbook -i inventory/hosts.yml playbooks/core/discover_vlan.yml \
+     -e manual_vlan_id=3000 -e manual_data_center=omaha --limit dc_omaha
+   ```
+
+2. Review the record discovery wrote, `reports/<dc>/<vlan_name>/<vid>_<VLAN_NAME>.yml` (the deployable model): VNI, VRF, gateway, prefixes, and under `placement` each leaf's `asn`, `router_id` and `rd`. Copy it to `vars/vlans/<dc>/` (the file says where).
+3. Generate, with no switch contacted:
+
+   ```bash
+   ansible-playbook -i inventory/hosts.yml playbooks/core/workflow_deploy.yml \
+     -e manual_vlan_id=3000 -e manual_data_center=omaha -e manual_target_vrf=<vrf> \
+     -e cvp_apply_configlets=false -e deploy_discovery=false --limit dc_omaha
+   ```
+
+   The configlets land in `reports/cvp_configlets/`. Edit the record and run step 3 again as often as needed; it takes seconds. The NetBox VNI / route-target lookup still runs when NetBox is configured.
+
+4. Push when the config is right: the same command with `-e cvp_apply_configlets=true` (with or without `deploy_discovery=false`).
+
+With `deploy_discovery=false`, each leaf's ASN and router ID come from its `placement` entry in the record, else from inventory `bgp_as` / `router_id`. A leaf with neither stops the run and says which. The configlets match what a run with discovery renders, as long as nothing changed on the switches in between. Re-run discovery (step 1) when it might have.
+
+---
+
 ## Prerequisites
 
 1. VLAN record exists in the local SSOT: `vars/vlans/<data_center>/{vid}_{slug}.yml`

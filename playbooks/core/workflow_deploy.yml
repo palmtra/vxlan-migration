@@ -80,12 +80,40 @@
         - name: Step 2a - Gather common network facts / backup
           ansible.builtin.include_role:
             name: network_common
+          when: deploy_discovery | default(true) | bool
 
         - name: Step 2b - Discover legacy VLAN state
           ansible.builtin.include_role:
             name: vlan_discovery
           vars:
             vlan_prompt_for_labels: true
+          when: deploy_discovery | default(true) | bool
+
+        # deploy_discovery=false: no switch is contacted. The configlets come from
+        # the VLAN record alone: VNI, VRF, gateway, prefixes, and each leaf's ASN,
+        # router ID and RD from its placement entries (as discovery wrote them).
+        # A discovery earlier in the same run (migrate_vlan.yml) still supplies
+        # its labels and per-switch BGP facts.
+        - name: Step 2 - Use the VLAN record without re-running discovery
+          ansible.builtin.set_fact:
+            _target_vlan_record: >-
+              {{ hostvars['localhost']['_target_vlan_record'] | default({})
+                 | merge_discovered_labels(ansible_play_hosts_all | map('extract', hostvars)
+                                           | selectattr('_vlan_discovery_reports', 'defined')
+                                           | map(attribute='_vlan_discovery_reports') | first | default([])) }}
+          delegate_to: localhost
+          delegate_facts: true
+          run_once: true
+          when: not deploy_discovery | default(true) | bool
+
+        - name: Step 2 - Say that discovery was skipped
+          ansible.builtin.debug:
+            msg: >-
+              deploy_discovery=false: discovery skipped, no switch contacted. Configlets for VLAN
+              {{ hostvars['localhost']['target_vlan_id'] }} come from the VLAN record
+              ({{ hostvars['localhost']['_target_vlan_record'].target_switches | default([]) | join(', ') }}).
+          run_once: true
+          when: not deploy_discovery | default(true) | bool
 
         - name: Step 3 - Hand off discovered VLAN to external cleanup tool
           ansible.builtin.include_role:
@@ -95,6 +123,10 @@
             target_data_center: "{{ hostvars['localhost']['target_data_center'] | default('') }}"
             target_vrf: "{{ hostvars['localhost']['target_vrf'] | default('') }}"
           run_once: true
+          # Needs discovery facts: this run's, or an earlier play's in the same run.
+          when: >-
+            deploy_discovery | default(true) | bool
+            or ansible_play_hosts_all | map('extract', hostvars) | selectattr('_vlan_discovery', 'defined') | list | length > 0
 
         - name: Step 4 - Optional NetBox sync check (secondary SSOT)
           ansible.builtin.include_role:

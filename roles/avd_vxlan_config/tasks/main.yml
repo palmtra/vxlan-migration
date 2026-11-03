@@ -64,8 +64,9 @@
   ansible.builtin.fail:
     msg: >-
       VLAN {{ target_vlan_id }} on {{ item }} needs {{ _bgp.missing | join(' and ') }}
-      to publish the EVPN VLAN. Discovery did not find that on the switch,
-      and the VLAN record has no value for it.
+      to publish the EVPN VLAN. Discovery did not find that on the switch (or did not run:
+      deploy_discovery=false), and the VLAN record has no value for it: add asn and router_id
+      (or rd) to its entry under placement.participating_leafs in vars/vlans/.
   loop: "{{ ansible_play_hosts }}"
   vars:
     _vtep_bgp: "{{ hostvars[item] | host_vtep_bgp }}"

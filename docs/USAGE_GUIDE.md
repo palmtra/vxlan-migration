@@ -288,6 +288,8 @@ Detailed generate-only walkthrough: [examples/generate-config-without-cvp-push.m
 
 Deploy re-runs discovery on `discovery_switches` (or `target_switches`). Scope with the VLAN DB — not with extra vars.
 
+`-e deploy_discovery=false` skips it, and no switch is contacted: the configlets come from the VLAN record (each leaf's `asn`, `router_id`, `rd` under `placement`, else inventory `bgp_as` / `router_id`). Use it to regenerate config after one discovery; see [examples/generate-config-without-cvp-push.md](examples/generate-config-without-cvp-push.md). `migrate_vlan.yml` sets it, because its own discovery ran moments before.
+
 ### NetBox during deploy
 
 With `netbox_url` and `netbox_token` set, the deploy looks the VLAN up in NetBox (Step 4) and reads its **VNI and route targets from the VXLAN-EVPN L2VPN terminated on it**: the L2VPN identifier is the VNI; its import and export targets are the VLAN's route targets (one each; the same value renders `route-target both`, different values render `route-target import` / `export`).
