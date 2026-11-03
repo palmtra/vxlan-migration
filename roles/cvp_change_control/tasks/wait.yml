@@ -1,0 +1,40 @@
+---
+# Wait for change control _cvp_cc_id on _cvp_host to finish running.
+# Sets _cvp_cc_state: {status, approved, error, done, outcome, attempts}.
+# outcome: completed | failed | timed_out (still waiting for approval or running).
+
+- name: Wait for the change control to run, minutes {{ cvp_change_control_wait_minutes }}
+  arista.cvp.cv_change_control_v3:
+    state: show
+    change_id:
+      - "{{ _cvp_cc_id }}"
+  register: _cvp_cc_show
+  until: (_cvp_cc_show | cvp_change_control_state).done
+  retries: "{{ [((cvp_change_control_wait_minutes | int) * 60) // ([cvp_change_control_poll_seconds | int, 1] | max), 1] | max }}"
+  delay: "{{ cvp_change_control_poll_seconds | int }}"
+  failed_when: false
+  delegate_to: "{{ _cvp_host }}"
+  run_once: true
+
+- name: Read where the change control ended up
+  ansible.builtin.set_fact:
+    _cvp_cc_state: >-
+      {{ (_cvp_cc_show | cvp_change_control_state)
+         | combine({'outcome': (_cvp_cc_show | cvp_change_control_state).status
+                               if (_cvp_cc_show | cvp_change_control_state).done else 'timed_out',
+                    'attempts': _cvp_cc_show.attempts | default(1)}) }}
+  run_once: true
+  delegate_to: localhost
+
+- name: Say how to resume when the wait timed out
+  ansible.builtin.debug:
+    msg:
+      - >-
+        Change control {{ _cvp_cc_id }} is still {{ _cvp_cc_state.status }}{{ ' (approved)' if _cvp_cc_state.approved
+        else ' (not approved yet)' }} after {{ cvp_change_control_wait_minutes }} minutes.
+      - "Approve and run it in CloudVision, then wait for it with:"
+      - >-
+        ansible-playbook -i inventory/hosts.yml playbooks/core/cvp_change_control_wait.yml
+        -e cvp_change_control_id={{ _cvp_cc_id }} -e target_vlan_id={{ target_vlan_id }}
+  when: _cvp_cc_state.outcome == 'timed_out'
+  run_once: true

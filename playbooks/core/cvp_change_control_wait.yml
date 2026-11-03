@@ -1,0 +1,49 @@
+---
+# -----------------------------------------------------------------------------
+# Wait for a CloudVision change control created by a deploy run
+# -----------------------------------------------------------------------------
+# The deploy creates the change control and waits for it
+# (cvp_change_control_wait_minutes). When that wait times out, approve and run
+# the change control in CloudVision, then wait for it here:
+#
+#   ansible-playbook -i inventory/hosts.yml playbooks/core/cvp_change_control_wait.yml \
+#     -e cvp_change_control_id=<id printed by the deploy> -e target_vlan_id=100
+#
+# Then verify: playbooks/core/workflow_verify.yml -e resume_vlan_id=100.
+# Exits non-zero when the change control failed or is still not done.
+# -----------------------------------------------------------------------------
+
+- name: Wait for a CloudVision change control
+  hosts: localhost
+  gather_facts: false
+
+  tasks:
+    - name: Fail without a change control ID
+      ansible.builtin.fail:
+        msg: "Pass -e cvp_change_control_id=<id> (printed by the deploy run, and in reports/cvp_change_controls/)."
+      when: cvp_change_control_id | default('') | string | length == 0
+
+    # set_fact, not a task var: the default reads the caller's value without
+    # referring to itself.
+    - name: Default the VLAN shown in messages
+      ansible.builtin.set_fact:
+        target_vlan_id: "{{ target_vlan_id | default('?') }}"
+
+    - name: Wait for the change control
+      ansible.builtin.include_role:
+        name: cvp_change_control
+        tasks_from: wait.yml
+      vars:
+        _cvp_host: "{{ groups[cvp_inventory_group | default('CVAAS')] | default([]) | first | default('') }}"
+        _cvp_cc_id: "{{ cvp_change_control_id | string }}"
+
+    - name: Report the change control
+      ansible.builtin.debug:
+        msg: "Change control {{ cvp_change_control_id }}: {{ _cvp_cc_state.outcome }}{{ ' - ' ~ _cvp_cc_state.error if _cvp_cc_state.error else '' }}"
+
+    - name: Fail unless the change control completed
+      ansible.builtin.fail:
+        msg: >-
+          Change control {{ cvp_change_control_id }} {{ 'failed: ' ~ _cvp_cc_state.error if _cvp_cc_state.outcome == 'failed'
+          else 'is still ' ~ _cvp_cc_state.status ~ '; run this again once it has been approved and executed' }}.
+      when: _cvp_cc_state.outcome != 'completed'

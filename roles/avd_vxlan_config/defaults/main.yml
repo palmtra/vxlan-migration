@@ -26,20 +26,9 @@ avd_build_borderleaf_config: false
 # Match both "border" and common "blf" naming (e.g. chi01-blf01).
 avd_borderleaf_regex: "(?i)(border|blf)"
 
-# CVP deployment controls (same interface as cvp_deploy role).
+# Push to CloudVision, create a change control and wait for it. The
+# change-control settings live in roles/cvp_change_control/defaults/main.yml.
 cvp_apply_configlets: false
-cvp_server: "{{ cvp_url | default('') }}"
-cvp_token_value: "{{ cvp_token | default('') }}"
-cvp_change_control_name: "VXLAN migrate VLAN {{ target_vlan_id }}"
-cvp_change_control_notes: |
-  Auto-generated change control for migrating legacy VLAN {{ target_vlan_id }}
-  to VXLAN in data center {{ target_data_center | default('unknown') }}.
-
-# Change control action. 'set' creates a pending change control that requires
-# manual approval/execution in CVP. Use 'approve_and_execute' only after
-# explicit review; it is intentionally not the default.
-cvp_change_control_state: "set"
-cvp_change_control_auto_execute_allowed: false
 
 # Default loopback / interface values used in the generated structured config.
 avd_vxlan_source_interface: Loopback1

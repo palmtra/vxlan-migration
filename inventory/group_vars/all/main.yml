@@ -76,10 +76,8 @@ netbox_token: ""
 # once the control node trusts the CA that signs NetBox's certificate.
 netbox_validate_certs: false
 
-# Arista CVP / CVAAS endpoint used by roles/cvp_deploy.
-# CVaaS tenant (us-central1-c). The token stays in Vault / AAP credentials.
-cvp_url: www.cv-prod-us-central1-c.arista.io
-cvp_token: ""
+# CloudVision (CVaaS / CVP) endpoint and credentials: inventory/group_vars/CVAAS/.
+# The token is vault_cvp_token in Vault / AAP credentials.
 
 # ServiceNow change-ticket integration used by roles/servicenow_input (intake)
 # and roles/servicenow_update (status callbacks). snow_ticket_sys_id is

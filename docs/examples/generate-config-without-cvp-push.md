@@ -16,9 +16,9 @@ Review VXLAN migration configlets locally before any CloudVision API call.
 | `cvp_apply_configlets` | Behaviour |
 |---|---|
 | `false` (default) | Render config to local files; **no** CVP upload, device assignment, or change control |
-| `true` | Upload configlets to CVP and create a pending change control |
+| `true` | Upload configlets to CloudVision, add them to their switches, create a change control for the resulting tasks, and wait for it to run |
 
-CVP credentials (`cvp_url`, `cvp_token`) are **not required** for generate-only runs.
+CloudVision credentials (`vault_cvp_token`) are **not required** for generate-only runs.
 
 ---
 
@@ -145,9 +145,9 @@ ansible-playbook -i inventory/hosts.yml playbooks/core/workflow_deploy.yml \
   --limit dc_lisle
 ```
 
-Requires `cvp_url` and `cvp_token` in vault or AAP credentials.
+Requires `vault_cvp_token` in vault or AAP credentials, and the CloudVision host in `inventory/group_vars/CVAAS/`.
 
-This creates a **pending** CVP change control (`cvp_change_control_state: set`). Approve and execute manually in CloudVision.
+This creates a **pending** change control (`cvp_change_control_state: set`) and waits up to `cvp_change_control_wait_minutes` (240) for someone to approve and execute it in CloudVision. The run ends when it completes; a failed change control fails the run. If the wait times out, resume with `playbooks/core/cvp_change_control_wait.yml` (the run prints the command). `-e cvp_change_control_wait=false` returns as soon as the change control exists.
 
 Optional verify after approval:
 

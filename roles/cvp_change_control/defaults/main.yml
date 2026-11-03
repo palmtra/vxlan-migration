@@ -1,0 +1,39 @@
+---
+# -----------------------------------------------------------------------------
+# cvp_change_control defaults
+# -----------------------------------------------------------------------------
+# Pushes rendered configlets to CloudVision, assigns them to their switches,
+# creates one change control for the tasks that creates, and waits for it.
+#
+# The arista.cvp modules run on the CloudVision inventory host over httpapi.
+# Its connection lives in inventory/group_vars/CVAAS/ (CVaaS: ansible_user
+# cvaas and a token; on-prem: svc_account and a service-account token).
+# -----------------------------------------------------------------------------
+
+# Inventory group whose first host is the CloudVision endpoint. Tasks are
+# delegated to it from the deploy play, so --limit dc_<dc> does not skip them.
+cvp_inventory_group: CVAAS
+
+# Nothing is sent to CloudVision unless this is true.
+cvp_apply_configlets: false
+
+# Change control. 'set' creates it and leaves approval and execution to a
+# person in CloudVision. 'approve_and_execute' also needs
+# cvp_change_control_auto_execute_allowed=true for the run.
+cvp_change_control_name: "VXLAN migration - VLAN {{ target_vlan_id }}"
+cvp_change_control_notes: >-
+  VLAN {{ target_vlan_id }} to VXLAN in {{ target_data_center | default('unknown') }}.
+  Created by vxlan-migration.
+cvp_change_control_state: "set"
+cvp_change_control_auto_execute_allowed: false
+cvp_configlets_notes: "Managed by vxlan-migration (VLAN {{ target_vlan_id }})"
+
+# After creating the change control, wait until it has run (someone approves
+# and executes it in CloudVision), checking every poll interval. A wait that
+# times out is not a failure: resume with playbooks/core/cvp_change_control_wait.yml.
+cvp_change_control_wait: true
+cvp_change_control_wait_minutes: 240
+cvp_change_control_poll_seconds: 60
+
+# Where the change-control record is written.
+cvp_change_control_report_dir: "{{ reports_dir | default(project_root ~ '/reports') }}/cvp_change_controls"

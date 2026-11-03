@@ -15,7 +15,7 @@ Credentials via vault (`inventory/group_vars/all/vault.yml`) or AAP custom crede
 | Variable | Used by |
 |---|---|
 | `ansible_user`, `ansible_password` | Device CLI |
-| `cvp_url`, `cvp_token` | CVP configlet push |
+| `vault_cvp_token` | CloudVision push (the `CVAAS` host in `inventory/group_vars/CVAAS/`; CVaaS by default, on-prem notes there) |
 | `netbox_url`, `netbox_token` | NetBox check / export |
 | `snow_url`, `snow_username`, `snow_password` | Advanced workflow only |
 
@@ -189,7 +189,16 @@ Key **prune** fields (separate files):
 
 **Playbook:** `playbooks/core/workflow_deploy.yml`
 
-Loads the VLAN from local SSOT, optionally re-discovers, generates configlets, pushes to CVP. Creates a **pending** change control and **stops**.
+Loads the VLAN from local SSOT, optionally re-discovers, and generates configlets. With `cvp_apply_configlets=true` it then pushes them to CloudVision (`roles/cvp_change_control`):
+
+1. Reads each target switch's current container in CloudVision. A switch CloudVision does not manage, or that is not in a container, fails the run (its hostname must match the inventory hostname or its FQDN's first label).
+2. Pushes the configlets and adds them to their switches (`apply_mode: loose`: nothing already on a switch is removed; the switch stays in its container).
+3. Creates **one pending change control** for the tasks CloudVision created. No change control when CloudVision created no task (the configlets were already in place).
+4. **Waits** for someone to approve and execute it in CloudVision, polling every `cvp_change_control_poll_seconds`, up to `cvp_change_control_wait_minutes`. Completed: the run succeeds. Failed: the run fails with CloudVision's error. Still pending at the timeout: the run ends without failing and prints the resume command (`playbooks/core/cvp_change_control_wait.yml -e cvp_change_control_id=<id>`).
+
+Each push writes `reports/cvp_change_controls/vlan<id>_cvp_<ts>.json`: change control ID, tasks, configlets, switches, outcome.
+
+The arista.cvp modules run on the CloudVision host (`CVAAS` group, `inventory/group_vars/CVAAS/`; token `vault_cvp_token`). The deploy play delegates to it, so `--limit dc_<dc>` does not need to include it.
 
 ### Required extra vars
 
@@ -210,8 +219,11 @@ See `vars/vlans/README.md`.
 | `cvp_apply_configlets` | `false` | `true` → push to CVP; `false` → render files only under `reports/cvp_configlets/` |
 
 Detailed generate-only walkthrough: [examples/generate-config-without-cvp-push.md](examples/generate-config-without-cvp-push.md).
-| `cvp_change_control_state` | `set` | CVP change control action (`set` = pending approval) |
+| `cvp_change_control_state` | `set` | `set` = pending, approved and executed by a person in CloudVision. `approve_and_execute` also needs `cvp_change_control_auto_execute_allowed=true` |
 | `cvp_change_control_auto_execute_allowed` | `false` | Must stay `false` unless explicitly overriding after review |
+| `cvp_change_control_wait` | `true` | Wait for the change control to run after creating it |
+| `cvp_change_control_wait_minutes` / `cvp_change_control_poll_seconds` | `240` / `60` | How long to wait, and how often to check |
+| `cvp_inventory_group` | `CVAAS` | Inventory group whose first host is CloudVision |
 | `cvp_build_borderleaf_config` | `false` | Border-leaf VRF/L3 VNI configlet. Off: do not create or rebind an existing VRF |
 | `avd_default_bgp_as` | `""` | Inventory fallback ASN when the VLAN record has no per-leaf `asn` |
 | `auto_rollback_on_verification_failure` | `false` | Attempt CVP rollback on verify failure (off by default) |

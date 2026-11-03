@@ -1,0 +1,21 @@
+---
+# CloudVision endpoint. The arista.cvp modules (roles/cvp_change_control) run
+# on this host over httpapi; the deploy play delegates to it.
+#
+# CVaaS: ansible_user cvaas and a service-account token as the password.
+# CloudVision on-prem: ansible_user svc_account and a service-account token,
+# with ansible_host set to the CVP address.
+#
+# The token comes from Ansible Vault (vault_cvp_token in
+# inventory/group_vars/all/vault.yml) or AAP credentials; never commit it.
+ansible_host: www.cv-prod-us-central1-c.arista.io
+ansible_user: cvaas
+ansible_password: "{{ vault_cvp_token | default('') }}"
+ansible_connection: httpapi
+ansible_network_os: eos
+ansible_httpapi_use_ssl: true
+ansible_httpapi_validate_certs: true
+ansible_httpapi_port: 443
+# Change-control waits poll for a long time; keep the persistent connection up.
+ansible_command_timeout: 1200
+ansible_connect_timeout: 600
