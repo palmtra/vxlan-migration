@@ -78,9 +78,34 @@ ansible-playbook -i inventory/hosts.yml playbooks/core/migrate_vlan.yml \
 |---|---|---|
 | `migrate_push_to_cvp` | `true` | `false` stops after generating the configlets |
 | `migrate_decisions_reviewed` | `false` | Proceed past open decisions once they are settled in the VLAN record. Blockers always stop the run |
-| `migrate_prune_readiness` | `true` | Run the prune dry run after verification |
+| `migrate_preflight` | `true` | Run the preflight first (below) |
+| `migrate_prune_readiness` | `true` | Run the prune dry run after verification. Its discovery is also the "after" side of the endpoint comparison |
+
+The summary also compares every endpoint before and after the change (`migrate_vlan<id>_endpoints_<ts>.csv`: `same_port`, `moved`, `missing`, `mac_changed`, `ping_failed`, ...); see the runbook.
 
 Summary: `reports/<dc>/_runs/migrate_vlan<id>_<ts>.json`, with the outcome (`deployed_and_verified`, `verification_failed`, `waiting_for_change_control`, `configlets_generated`), the readiness result, the NetBox sources, the change control, the verification, and the prune readiness per switch.
+
+### Preflight
+
+**Playbook:** `playbooks/core/preflight.yml` (also step 0 of `migrate_vlan.yml`). Read-only.
+
+| Check | Passes when |
+|---|---|
+| `record` | The VLAN record is loaded, with target switches and a VNI source (the record or NetBox). Not in the VLAN DB: a warning (discovery writes a starter record) |
+| `switch` | Every switch in scope answers `show version` and runs the OS its inventory group says |
+| `cloudvision` | `cv_facts_v3` answers (the token works) and every target switch is in a container. No CloudVision host in the inventory: a warning |
+| `netbox` | `/api/status/` answers, the VLAN is found, and its VXLAN-EVPN L2VPN agrees with the record. Not configured: a warning |
+
+| Variable | Default | Description |
+|---|---|---|
+| `preflight_cloudvision` / `preflight_netbox` | `auto` | `auto` checks when configured; `true` makes a missing host / URL a failure; `false` skips |
+| `preflight_fail_on_error` | `true` | `false` reports and goes on |
+
+Result: `reports/<dc>/_runs/preflight_vlan<id>_<ts>.json`.
+
+### Validation data
+
+`playbooks/core/collect_validation_data.yml -e vxlan_capture_dir=<dir>` collects switch outputs, NetBox answers and CloudVision results, read-only and with secrets removed. Adding `-e vxlan_capture_dir=<dir>` to any other playbook records that run. See [examples/collect-validation-data.md](examples/collect-validation-data.md).
 
 ---
 
