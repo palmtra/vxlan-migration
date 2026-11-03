@@ -184,13 +184,13 @@
               NetBox: {{ 'not configured' if not (netbox_url | default('', true)) else 'read' }}.
               CloudVision: {{ _cap_cvp_note }}.
             dest: "{{ _cap }}/README.txt"
+            mode: '0644'
           vars:
             _cap_cvp_note: >-
               {{ 'no host in the inventory' if not _cvp_host
                  else ('failed: ' ~ (_cap_cvp_devices.msg | default('no device list') | string)[:200])
                       if 'cvp_devices' not in (_cap_cvp_devices | to_json)
                  else 'read' }}
-            mode: '0644'
 
 - name: Pack the capture
   hosts: network_devices
