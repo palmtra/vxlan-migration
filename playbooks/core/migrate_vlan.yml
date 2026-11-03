@@ -13,7 +13,7 @@
 #    on open decisions (until -e migrate_decisions_reviewed=true). Reads the
 #    VNI and route targets from NetBox first, so a VNI NetBox holds is not a
 #    decision.
-# 3. Deploy (workflow_deploy.yml): re-discovery, NetBox VNI / route targets,
+# 3. Deploy (workflow_deploy.yml, using step 1's discovery): NetBox VNI / route targets,
 #    configlets, CloudVision push, change control, wait for it to run.
 #    -e migrate_push_to_cvp=false stops after generating the configlets.
 # 4. Verification (workflow_verify.yml), once the change control completed.
@@ -121,6 +121,8 @@
   ansible.builtin.import_playbook: workflow_deploy.yml
   vars:
     cvp_apply_configlets: "{{ migrate_push_to_cvp | default(true) | bool }}"
+    # Step 1 discovered the VLAN minutes ago; its facts are still in memory.
+    deploy_discovery: false
     manual_target_vrf: "{{ hostvars['localhost']['_migrate_vrf'] }}"
 
 - name: Step 4 - verification (after the change control completed)
