@@ -29,6 +29,7 @@ from vlan_filters import (  # noqa: E402
     parse_l2_interface_config,
     prune_apply_commands,
 )
+from vlan_lib.prune import _DEFAULT_COMMIT_TIMER  # noqa: E402
 
 
 Z14_CFG = """
@@ -174,7 +175,7 @@ Vlan    Mac Address       Type        Ports
         self.assertIn("Port-Channel2", prune_ifaces)
         self.assertNotIn("Ethernet22", prune_ifaces)
         self.assertIn("configure session", plan["execution"]["full_cli"])
-        self.assertIn("commit timer 00:10:00", plan["execution"]["full_cli"])
+        self.assertIn("commit timer %s" % _DEFAULT_COMMIT_TIMER, plan["execution"]["full_cli"])
         session = plan["execution"]["session_name"]
         self.assertEqual(plan["execution"]["confirm"], "configure session %s commit" % session)
         self.assertFalse(plan["apply_automated"])
@@ -204,7 +205,7 @@ class PruneExecutionTests(unittest.TestCase):
         self.assertIn("commit timer", cli)
         commands = prune_apply_commands(plan["execution"])
         self.assertTrue(commands[0].startswith("configure session"))
-        self.assertIn("commit timer 00:10:00", commands)
+        self.assertIn("commit timer %s" % _DEFAULT_COMMIT_TIMER, commands)
         # Apply stops at the timer: the operator commits the session on the switch.
         self.assertNotIn(plan["execution"]["confirm"], commands)
         self.assertEqual(plan["execution"]["confirm"], "configure session prune_v1107 commit")
