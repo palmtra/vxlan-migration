@@ -22,15 +22,15 @@
         "endpoint_collection": {
             "modes": {
                 "per_vlan": [
-                    "fnts-fntc03-aggpe-mls01",
-                    "fnts-fntc03-aggpe-mls02",
                     "oma01-blf01",
                     "oma01-blf02",
                     "fntc-aggacc-sw01",
                     "fntc-aggacc-sw02",
                     "fntc-aggacc-sw05",
                     "fntc-aggacc-sw06",
-                    "fntc-aggacc-sw03"
+                    "fntc-aggacc-sw03",
+                    "fnts-fntc03-aggpe-mls01",
+                    "fnts-fntc03-aggpe-mls02"
                 ]
             },
             "notes": [],
@@ -195,22 +195,15 @@
         }
     },
     "files": {
-        "deployable_model": "ACME_APP_discovery_20261102_221316_980.yml",
-        "discovery_json": "ACME_APP_discovery_20261102_221316_980.json",
-        "discovery_markdown": "ACME_APP_discovery_20261102_221316_980.md",
-        "endpoint_baseline": "ACME_APP_endpoints_20261102_221316_980.csv",
-        "mop_input": "ACME_APP_mop_input_20261102_221316_980.json",
-        "prune_json": "ACME_APP_prune_20261102_221316_980.json",
-        "prune_markdown": "ACME_APP_prune_20261102_221316_980.md"
+        "deployable_model": "ACME_APP_discovery_20261106_152034_710.yml",
+        "discovery_json": "ACME_APP_discovery_20261106_152034_710.json",
+        "discovery_markdown": "ACME_APP_discovery_20261106_152034_710.md",
+        "endpoint_baseline": "ACME_APP_endpoints_20261106_152034_710.csv",
+        "mop_input": "ACME_APP_mop_input_20261106_152034_710.json",
+        "prune_json": "ACME_APP_prune_20261106_152034_710.json",
+        "prune_markdown": "ACME_APP_prune_20261106_152034_710.md"
     },
     "findings": [
-        {
-            "category": "vni",
-            "id": "D-01",
-            "kind": "decision",
-            "severity": "medium",
-            "text": "VNI 11002 proposed (next free in omaha external 11000-11999). Confirm it in evpn.l2.vni of the SSOT record."
-        },
         {
             "category": "gateway",
             "id": "R-01",
@@ -448,13 +441,20 @@
         ],
         "static_routes": []
     },
+    "rules": [
+        "The VLAN record (vars/vlans/<dc>/<vid>_<name>.yml) is authoritative for the VNI. Use vlan.l2_vni only when vlan.l2_vni_source is record; never replace it with a discovery proposal.",
+        "Fabric interconnects (UCS FI) are the host boundary: MACs learned on an FI port are hosts of this VLAN, even though the port is a trunk. Nothing is traced beyond the FI.",
+        "The VLAN joins an existing VRF. Never create a VRF, L3 VNI or VRF route target for it; verify and reuse what is there.",
+        "Each trunk-removal line names this VLAN only. Never merge it with another VLAN on the same trunk.",
+        "The legacy gateway SVI is shut by hand in the window (manual step). It is removed only after the validation step passes and the legacy BGP origination is withdrawn."
+    ],
     "run": {
-        "ansible_version": "2.18.19",
+        "ansible_version": "2.18.20",
         "controller": "vm",
         "data_center": "omaha",
-        "finished_at": "2026-11-02T22:13:38Z",
+        "finished_at": "2026-11-06T15:20:51Z",
         "git": {
-            "commit": "92b5f35f9004ff7ecdf3626156ab83d68f5ac8b2",
+            "commit": "960f1288dce621a0b6d20468815b27ca42904cbe",
             "dirty": false
         },
         "inventory": [
@@ -465,15 +465,15 @@
             "allow_probe": true,
             "arp_refresh": false,
             "collect_ipv6": true,
-            "endpoint_collection": "auto",
+            "endpoint_collection": "per_vlan",
             "include_static_macs": true,
             "keep_idle_endpoint_ports": false,
             "pass_interval": 120,
             "passes": 1,
-            "scan_all_switches": true
+            "scan_all_switches": false
         },
-        "run_id": "omaha_20261102_221316_980",
-        "started_at": "2026-11-02T22:13:16Z",
+        "run_id": "omaha_20261106_152034_710",
+        "started_at": "2026-11-06T15:20:32Z",
         "switches_answered": [
             "fntc-aggacc-sw01",
             "fntc-aggacc-sw02",
@@ -496,13 +496,13 @@
             "oma01-blf01",
             "oma01-blf02"
         ],
-        "timestamp": "20261102_221316_980",
+        "timestamp": "20261106_152034_710",
         "vlan_ids": [
             3000
         ]
     },
     "schema": "vxlan-migration/mop-input",
-    "schema_version": "1.0",
+    "schema_version": "2.0",
     "steps": [
         {
             "cli": null,
@@ -524,14 +524,12 @@
             "cli": null,
             "cli_source": "",
             "depends_on": [],
-            "findings": [
-                "D-01"
-            ],
+            "findings": [],
             "id": "S-3000-02",
             "notes": [],
             "phase": "0-prechecks",
             "rollback": null,
-            "status": "needs_decision",
+            "status": "ready",
             "switch": "",
             "title": "Record the engineer's and app owner's decisions",
             "verify": []
@@ -541,7 +539,7 @@
             "cli_source": "",
             "depends_on": [],
             "files": [
-                "ACME_APP_endpoints_20261102_221316_980.csv"
+                "ACME_APP_endpoints_20261106_152034_710.csv"
             ],
             "id": "S-3000-03",
             "notes": [],
@@ -556,18 +554,83 @@
         },
         {
             "cli": null,
-            "cli_source": "configlet vxlan_vlan3000_fntc-aggacc-sw01.cfg written by playbooks/core/workflow_deploy.yml",
+            "cli_source": "",
+            "depends_on": [],
+            "findings": [],
+            "id": "S-3000-04",
+            "notes": [
+                "The VLAN joins the existing VRF. The configlet carries no VRF, L3 VNI or VRF route target: do not create them for this VLAN. If the VRF is missing on a gateway leaf, stop."
+            ],
+            "phase": "0-prechecks",
+            "rollback": null,
+            "status": "ready",
+            "switch": "",
+            "title": "Verify VRF v0000822a exists on the gateway leaves and reuse it",
+            "verify": [
+                "show vrf v0000822a on fntc-aggacc-sw01, fntc-aggacc-sw02: the VRF exists",
+                "show running-config interfaces Vxlan1 | include vrf v0000822a: the VRF has its L3 VNI",
+                "show running-config section router bgp | include vrf v0000822a: the VRF is in BGP with its RD and route targets"
+            ]
+        },
+        {
+            "cli": "interface Vlan3000\n  shutdown",
+            "cli_source": "mop_input (manual; the SVI is removed later, after validation)",
             "depends_on": [
                 "S-3000-01",
                 "S-3000-02",
-                "S-3000-03"
+                "S-3000-03",
+                "S-3000-04"
             ],
-            "id": "S-3000-04",
+            "id": "S-3000-05",
+            "manual": true,
             "notes": [
-                "Vlan3000 comes up with ip address virtual 10.230.0.1 as soon as this configlet is applied, while the legacy gateway still answers. Apply it in the cutover window, or make sure the fabric and the legacy L2 are not bridged for this VLAN until the legacy SVI is shut."
+                "The engineer shuts the SVI by hand in the maintenance window; the automation does not. Execute the fabric change control (deploy steps) right after."
             ],
-            "phase": "1-deploy",
-            "rollback": "Roll back the CVP change control (roles/cvp_rollback)",
+            "phase": "1-gateway-shutdown",
+            "rollback": "interface Vlan3000\n  no shutdown",
+            "status": "ready",
+            "switch": "fnts-fntc03-aggpe-mls01",
+            "title": "Shut the legacy gateway SVI (manual, in the window)",
+            "verify": [
+                "show interface Vlan3000: administratively down"
+            ]
+        },
+        {
+            "cli": "interface Vlan3000\n  shutdown",
+            "cli_source": "mop_input (manual; the SVI is removed later, after validation)",
+            "depends_on": [
+                "S-3000-01",
+                "S-3000-02",
+                "S-3000-03",
+                "S-3000-04"
+            ],
+            "id": "S-3000-06",
+            "manual": true,
+            "notes": [
+                "The engineer shuts the SVI by hand in the maintenance window; the automation does not. Execute the fabric change control (deploy steps) right after."
+            ],
+            "phase": "1-gateway-shutdown",
+            "rollback": "interface Vlan3000\n  no shutdown",
+            "status": "ready",
+            "switch": "fnts-fntc03-aggpe-mls02",
+            "title": "Shut the legacy gateway SVI (manual, in the window)",
+            "verify": [
+                "show interface Vlan3000: administratively down"
+            ]
+        },
+        {
+            "cli": null,
+            "cli_source": "configlet vxlan_vlan3000_fntc-aggacc-sw01.cfg written by playbooks/core/workflow_deploy.yml",
+            "depends_on": [
+                "S-3000-05",
+                "S-3000-06"
+            ],
+            "id": "S-3000-07",
+            "notes": [
+                "Vlan3000 comes up with ip address virtual 10.230.0.1 as soon as this configlet is applied. Execute the change control only after the legacy SVI is shut (S-3000-05, S-3000-06)."
+            ],
+            "phase": "2-deploy",
+            "rollback": "Remove configlet vxlan_vlan3000_fntc-aggacc-sw01 from fntc-aggacc-sw01 in CloudVision (roles/cvp_rollback renders the reversing configlet from leaf_vxlan_rollback_configlet.j2)",
             "status": "ready",
             "switch": "fntc-aggacc-sw01",
             "title": "Deploy VLAN 3000 / VNI 11002",
@@ -580,16 +643,15 @@
             "cli": null,
             "cli_source": "configlet vxlan_vlan3000_fntc-aggacc-sw02.cfg written by playbooks/core/workflow_deploy.yml",
             "depends_on": [
-                "S-3000-01",
-                "S-3000-02",
-                "S-3000-03"
+                "S-3000-05",
+                "S-3000-06"
             ],
-            "id": "S-3000-05",
+            "id": "S-3000-08",
             "notes": [
-                "Vlan3000 comes up with ip address virtual 10.230.0.1 as soon as this configlet is applied, while the legacy gateway still answers. Apply it in the cutover window, or make sure the fabric and the legacy L2 are not bridged for this VLAN until the legacy SVI is shut."
+                "Vlan3000 comes up with ip address virtual 10.230.0.1 as soon as this configlet is applied. Execute the change control only after the legacy SVI is shut (S-3000-05, S-3000-06)."
             ],
-            "phase": "1-deploy",
-            "rollback": "Roll back the CVP change control (roles/cvp_rollback)",
+            "phase": "2-deploy",
+            "rollback": "Remove configlet vxlan_vlan3000_fntc-aggacc-sw02 from fntc-aggacc-sw02 in CloudVision (roles/cvp_rollback renders the reversing configlet from leaf_vxlan_rollback_configlet.j2)",
             "status": "ready",
             "switch": "fntc-aggacc-sw02",
             "title": "Deploy VLAN 3000 / VNI 11002",
@@ -599,104 +661,44 @@
             ]
         },
         {
-            "cli": "interface Vlan3000\n  shutdown",
-            "cli_source": "mop_input (shut only; the SVI is removed in the teardown phase)",
+            "cli": null,
+            "cli_source": "playbooks/core/workflow_verify.yml; endpoint comparison in playbooks/core/migrate_vlan.yml",
             "depends_on": [
-                "S-3000-04",
-                "S-3000-05"
+                "S-3000-07",
+                "S-3000-08"
             ],
-            "id": "S-3000-06",
-            "notes": [
-                "Gateway MAC changes from 00:00:0c:9f:fb:b8 to 00:1c:73:00:00:99: hosts update their ARP entry for 10.230.0.1 when the fabric gateway ARPs for them (the ping above) or when it ages out."
-            ],
-            "phase": "4-gateway-cutover",
-            "rollback": "interface Vlan3000\n  no shutdown",
-            "status": "ready",
-            "switch": "fnts-fntc03-aggpe-mls01",
-            "title": "Shut the legacy gateway SVI",
-            "verify": [
-                "Ping every baseline endpoint from a fabric gateway leaf (playbooks/core/workflow_verify.yml)",
-                "show ip arp vrf v0000822a | include Vlan3000 on a fabric gateway leaf: the endpoints are there"
-            ]
-        },
-        {
-            "cli": "interface Vlan3000\n  shutdown",
-            "cli_source": "mop_input (shut only; the SVI is removed in the teardown phase)",
-            "depends_on": [
-                "S-3000-04",
-                "S-3000-05"
-            ],
-            "id": "S-3000-07",
-            "notes": [
-                "Gateway MAC changes from 00:00:0c:9f:fb:b8 to 00:1c:73:00:00:99: hosts update their ARP entry for 10.230.0.1 when the fabric gateway ARPs for them (the ping above) or when it ages out."
-            ],
-            "phase": "4-gateway-cutover",
-            "rollback": "interface Vlan3000\n  no shutdown",
-            "status": "ready",
-            "switch": "fnts-fntc03-aggpe-mls02",
-            "title": "Shut the legacy gateway SVI",
-            "verify": [
-                "Ping every baseline endpoint from a fabric gateway leaf (playbooks/core/workflow_verify.yml)",
-                "show ip arp vrf v0000822a | include Vlan3000 on a fabric gateway leaf: the endpoints are there"
-            ]
-        },
-        {
-            "blocked_reason": "Vlan SVI on fnts-fntc03-aggpe-mls01 is still the active gateway; move the gateway to the fabric first",
-            "cli": "checkpoint prune_v3000\nconfigure terminal\ninterface port-channel101\n  switchport trunk allowed vlan remove 3000\ninterface port-channel105\n  switchport trunk allowed vlan remove 3000\nno interface Vlan3000\nno vlan 3000\nend\n",
-            "cli_source": "ACME_APP_prune_20261102_221316_980.md",
-            "confirm": null,
-            "depends_on": [
-                "S-3000-06",
-                "S-3000-07"
-            ],
-            "id": "S-3000-08",
-            "notes": [],
-            "phase": "5-teardown",
-            "rollback": "rollback running-config checkpoint prune_v3000",
-            "save": "copy running-config startup-config",
-            "status": "blocked_until_gateway_moved",
-            "switch": "fnts-fntc03-aggpe-mls01",
-            "title": "teardown after the gateway moved (trunks, SVI, VLAN): fnts-fntc03-aggpe-mls01",
-            "verify": [
-                "Re-run discovery for VLAN 3000: fnts-fntc03-aggpe-mls01 shows the change"
-            ]
-        },
-        {
-            "blocked_reason": "Vlan SVI on fnts-fntc03-aggpe-mls02 is still the active gateway; move the gateway to the fabric first",
-            "cli": "checkpoint prune_v3000\nconfigure terminal\ninterface port-channel101\n  switchport trunk allowed vlan remove 3000\ninterface port-channel105\n  switchport trunk allowed vlan remove 3000\nno interface Vlan3000\nno vlan 3000\nend\n",
-            "cli_source": "ACME_APP_prune_20261102_221316_980.md",
-            "confirm": null,
-            "depends_on": [
-                "S-3000-06",
-                "S-3000-07"
-            ],
+            "gate": true,
             "id": "S-3000-09",
-            "notes": [],
-            "phase": "5-teardown",
-            "rollback": "rollback running-config checkpoint prune_v3000",
-            "save": "copy running-config startup-config",
-            "status": "blocked_until_gateway_moved",
-            "switch": "fnts-fntc03-aggpe-mls02",
-            "title": "teardown after the gateway moved (trunks, SVI, VLAN): fnts-fntc03-aggpe-mls02",
+            "notes": [
+                "Gate: nothing after this step runs until it passes. playbooks/core/prune_vlan.yml refuses to prune a source gateway until the new gateway is validated (a migrate_vlan.yml summary with verification passed and no endpoint problems, or -e new_gateway_validated=true once this step is done by hand).",
+                "Gateway MAC changes from 00:00:0c:9f:fb:b8 to 00:1c:73:00:00:99: hosts update their ARP entry for 10.230.0.1 when the fabric gateway ARPs for them (the ping above) or when it ages out."
+            ],
+            "phase": "5-validate",
+            "rollback": null,
+            "status": "ready",
+            "switch": "",
+            "title": "Validate the new gateway and the endpoints",
             "verify": [
-                "Re-run discovery for VLAN 3000: fnts-fntc03-aggpe-mls02 shows the change"
+                "playbooks/core/workflow_verify.yml for VLAN 3000 passes on every fabric leaf",
+                "show ip arp vrf v0000822a | include Vlan3000 on a fabric gateway leaf: the endpoints are there",
+                "Every baseline host answers ping from the fabric (ACME_APP_endpoints_20261106_152034_710.csv)",
+                "Endpoint comparison (playbooks/core/migrate_vlan.yml summary): no endpoint missing after the change"
             ]
         },
         {
             "blocked_reason": "",
-            "cli": "configure session prune_v3000\ninterface Port-Channel1\n   switchport trunk allowed vlan remove 3000\nno vlan 3000\n!\nshow session-config diffs\ncommit timer 00:10:00\n",
-            "cli_source": "ACME_APP_prune_20261102_221316_980.md",
+            "cli": "configure session prune_v3000\ninterface Port-Channel1\n   switchport trunk allowed vlan remove 3000\nno vlan 3000\n!\nshow session-config diffs\ncommit timer 00:20:00\n",
+            "cli_source": "ACME_APP_prune_20261106_152034_710.md",
             "confirm": "configure session prune_v3000 commit",
             "depends_on": [
-                "S-3000-06",
-                "S-3000-07"
+                "S-3000-09"
             ],
             "id": "S-3000-10",
             "notes": [
-                "The change is live but provisional for 00:10:00 after `commit timer`. Run the checks, then keep it with `configure session prune_v3000 commit` before the timer expires, or it rolls back."
+                "The change is live but provisional for 00:20:00 after `commit timer`. Run the checks, then keep it with `configure session prune_v3000 commit` before the timer expires, or it rolls back."
             ],
-            "phase": "5-teardown",
-            "rollback": "Do not commit the session again: it rolls back when the commit timer (00:10:00) expires. To roll back at once: configure session prune_v3000 abort",
+            "phase": "7-teardown",
+            "rollback": "Do not commit the session again: it rolls back when the commit timer (00:20:00) expires. To roll back at once: configure session prune_v3000 abort",
             "save": "",
             "status": "ready",
             "switch": "fntc-aggacc-sw05",
@@ -707,19 +709,18 @@
         },
         {
             "blocked_reason": "",
-            "cli": "configure session prune_v3000\ninterface Port-Channel1\n   switchport trunk allowed vlan remove 3000\nno vlan 3000\n!\nshow session-config diffs\ncommit timer 00:10:00\n",
-            "cli_source": "ACME_APP_prune_20261102_221316_980.md",
+            "cli": "configure session prune_v3000\ninterface Port-Channel1\n   switchport trunk allowed vlan remove 3000\nno vlan 3000\n!\nshow session-config diffs\ncommit timer 00:20:00\n",
+            "cli_source": "ACME_APP_prune_20261106_152034_710.md",
             "confirm": "configure session prune_v3000 commit",
             "depends_on": [
-                "S-3000-06",
-                "S-3000-07"
+                "S-3000-09"
             ],
             "id": "S-3000-11",
             "notes": [
-                "The change is live but provisional for 00:10:00 after `commit timer`. Run the checks, then keep it with `configure session prune_v3000 commit` before the timer expires, or it rolls back."
+                "The change is live but provisional for 00:20:00 after `commit timer`. Run the checks, then keep it with `configure session prune_v3000 commit` before the timer expires, or it rolls back."
             ],
-            "phase": "5-teardown",
-            "rollback": "Do not commit the session again: it rolls back when the commit timer (00:10:00) expires. To roll back at once: configure session prune_v3000 abort",
+            "phase": "7-teardown",
+            "rollback": "Do not commit the session again: it rolls back when the commit timer (00:20:00) expires. To roll back at once: configure session prune_v3000 abort",
             "save": "",
             "status": "ready",
             "switch": "fntc-aggacc-sw06",
@@ -729,23 +730,103 @@
             ]
         },
         {
-            "cli": null,
-            "cli_source": "playbooks/core/workflow_verify.yml",
+            "blocked_reason": "Vlan SVI on fnts-fntc03-aggpe-mls01 is still the active gateway; move the gateway to the fabric first",
+            "cli": "checkpoint prune_v3000_svi\nconfigure terminal\nno interface Vlan3000\nend\n",
+            "cli_source": "ACME_APP_prune_20261106_152034_710.md",
+            "confirm": null,
             "depends_on": [
-                "S-3000-08",
-                "S-3000-09",
                 "S-3000-10",
                 "S-3000-11"
             ],
             "id": "S-3000-12",
             "notes": [],
-            "phase": "6-verify",
+            "phase": "8-source-gateway-teardown",
+            "rollback": "rollback running-config checkpoint prune_v3000_svi",
+            "save": "copy running-config startup-config",
+            "status": "blocked_until_gateway_moved",
+            "switch": "fnts-fntc03-aggpe-mls01",
+            "title": "Remove the legacy gateway SVI: fnts-fntc03-aggpe-mls01",
+            "verify": [
+                "Re-run discovery for VLAN 3000: fnts-fntc03-aggpe-mls01 shows the change"
+            ]
+        },
+        {
+            "blocked_reason": "Vlan SVI on fnts-fntc03-aggpe-mls01 is still the active gateway; move the gateway to the fabric first",
+            "cli": "checkpoint prune_v3000_l2\nconfigure terminal\ninterface port-channel101\n  switchport trunk allowed vlan remove 3000\ninterface port-channel105\n  switchport trunk allowed vlan remove 3000\nno vlan 3000\nend\n",
+            "cli_source": "ACME_APP_prune_20261106_152034_710.md",
+            "confirm": null,
+            "depends_on": [
+                "S-3000-12"
+            ],
+            "id": "S-3000-13",
+            "notes": [],
+            "phase": "8-source-gateway-teardown",
+            "rollback": "rollback running-config checkpoint prune_v3000_l2",
+            "save": "copy running-config startup-config",
+            "status": "blocked_until_gateway_moved",
+            "switch": "fnts-fntc03-aggpe-mls01",
+            "title": "Remove trunks and the VLAN: fnts-fntc03-aggpe-mls01",
+            "verify": [
+                "Re-run discovery for VLAN 3000: fnts-fntc03-aggpe-mls01 shows the change"
+            ]
+        },
+        {
+            "blocked_reason": "Vlan SVI on fnts-fntc03-aggpe-mls02 is still the active gateway; move the gateway to the fabric first",
+            "cli": "checkpoint prune_v3000_svi\nconfigure terminal\nno interface Vlan3000\nend\n",
+            "cli_source": "ACME_APP_prune_20261106_152034_710.md",
+            "confirm": null,
+            "depends_on": [
+                "S-3000-10",
+                "S-3000-11"
+            ],
+            "id": "S-3000-14",
+            "notes": [],
+            "phase": "8-source-gateway-teardown",
+            "rollback": "rollback running-config checkpoint prune_v3000_svi",
+            "save": "copy running-config startup-config",
+            "status": "blocked_until_gateway_moved",
+            "switch": "fnts-fntc03-aggpe-mls02",
+            "title": "Remove the legacy gateway SVI: fnts-fntc03-aggpe-mls02",
+            "verify": [
+                "Re-run discovery for VLAN 3000: fnts-fntc03-aggpe-mls02 shows the change"
+            ]
+        },
+        {
+            "blocked_reason": "Vlan SVI on fnts-fntc03-aggpe-mls02 is still the active gateway; move the gateway to the fabric first",
+            "cli": "checkpoint prune_v3000_l2\nconfigure terminal\ninterface port-channel101\n  switchport trunk allowed vlan remove 3000\ninterface port-channel105\n  switchport trunk allowed vlan remove 3000\nno vlan 3000\nend\n",
+            "cli_source": "ACME_APP_prune_20261106_152034_710.md",
+            "confirm": null,
+            "depends_on": [
+                "S-3000-14"
+            ],
+            "id": "S-3000-15",
+            "notes": [],
+            "phase": "8-source-gateway-teardown",
+            "rollback": "rollback running-config checkpoint prune_v3000_l2",
+            "save": "copy running-config startup-config",
+            "status": "blocked_until_gateway_moved",
+            "switch": "fnts-fntc03-aggpe-mls02",
+            "title": "Remove trunks and the VLAN: fnts-fntc03-aggpe-mls02",
+            "verify": [
+                "Re-run discovery for VLAN 3000: fnts-fntc03-aggpe-mls02 shows the change"
+            ]
+        },
+        {
+            "cli": null,
+            "cli_source": "playbooks/core/workflow_verify.yml",
+            "depends_on": [
+                "S-3000-13",
+                "S-3000-15"
+            ],
+            "id": "S-3000-16",
+            "notes": [],
+            "phase": "9-verify",
             "rollback": null,
             "status": "ready",
             "switch": "",
             "title": "Post-change verification",
             "verify": [
-                "Every baseline host answers ping from the fabric (ACME_APP_endpoints_20261102_221316_980.csv)",
+                "Every baseline host answers ping from the fabric (ACME_APP_endpoints_20261106_152034_710.csv)",
                 "Re-run discovery: VLAN 3000 is VNI-mapped on fntc-aggacc-sw01, fntc-aggacc-sw02 and nothing is left to prune"
             ]
         }
@@ -754,15 +835,15 @@
         "endpoints": 4,
         "findings": {
             "blocker": 0,
-            "decision": 1,
+            "decision": 0,
             "info": 1,
             "risk": 2,
             "sequencing": 2,
             "task": 0
         },
         "high_risks": 1,
-        "steps": 12,
-        "steps_ready": 9
+        "steps": 16,
+        "steps_ready": 12
     },
     "switches": [
         {
@@ -773,7 +854,8 @@
             "reasons": [
                 "endpoint-facing interfaces: Ethernet5",
                 "local MAC learning on endpoint-facing ports: Et5",
-                "attachment point for non-VTEP switch fntc-aggacc-sw03 (Port-Channel3 -> Port-Channel1)"
+                "attachment point for non-VTEP switch fntc-aggacc-sw03 (Port-Channel3 -> Port-Channel1)",
+                "engineer-supplied gateway leaf"
             ],
             "role": "participating",
             "svi": "",
@@ -789,7 +871,8 @@
             "reasons": [
                 "endpoint-facing interfaces: Ethernet5",
                 "local MAC learning on endpoint-facing ports: Et5",
-                "attachment point for non-VTEP switch fntc-aggacc-sw03 (Port-Channel3 -> Port-Channel1)"
+                "attachment point for non-VTEP switch fntc-aggacc-sw03 (Port-Channel3 -> Port-Channel1)",
+                "engineer-supplied gateway leaf"
             ],
             "role": "participating",
             "svi": "",
@@ -903,11 +986,12 @@
         "data_center": "omaha",
         "id": 3000,
         "l2_vni": 11002,
+        "l2_vni_source": "record",
         "l3_vni": 822,
-        "l3_vni_source": "fabric: VRF v0000822a maps to it on fntc-aggacc-sw01, fntc-aggacc-sw02 (show interfaces Vxlan1)",
+        "l3_vni_source": "SSOT record (evpn.l3.vni)",
         "migration_type": "l3",
         "name": "ACME_APP",
-        "status": "needs_decisions",
+        "status": "ready",
         "vrf": "v0000822a"
     }
 }

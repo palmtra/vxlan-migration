@@ -213,19 +213,26 @@ class MopInputTests(unittest.TestCase):
         by_phase = {}
         for step in doc["steps"]:
             by_phase.setdefault(step["phase"], []).append(step)
-        deploy = by_phase["1-deploy"]
+        # The legacy SVIs are shut by hand first; the deploy follows.
+        shut = by_phase["1-gateway-shutdown"]
+        self.assertEqual([s["switch"] for s in shut], ["mls-01", "mls-02"])
+        self.assertTrue(all(s["manual"] for s in shut))
+        self.assertEqual((shut[0]["cli"], shut[0]["rollback"]), ("interface Vlan3000\n  shutdown", "interface Vlan3000\n  no shutdown"))
+        deploy = by_phase["2-deploy"]
         self.assertEqual([s["switch"] for s in deploy], ["leaf-01", "leaf-02"])
         self.assertIsNone(deploy[0]["cli"])
         self.assertIn("vxlan_vlan3000_leaf-01.cfg", deploy[0]["cli_source"])
-        self.assertIn("comes up with ip address virtual 10.230.0.1", deploy[0]["notes"][0])
-        cutover = by_phase["4-gateway-cutover"]
-        self.assertEqual([s["switch"] for s in cutover], ["mls-01", "mls-02"])
-        self.assertEqual((cutover[0]["cli"], cutover[0]["rollback"]), ("interface Vlan3000\n  shutdown", "interface Vlan3000\n  no shutdown"))
-        self.assertIn("00:00:0c:9f:fb:b8 to 00:1c:73:00:00:99", cutover[0]["notes"][0])
-        self.assertEqual(cutover[0]["depends_on"], [deploy[0]["id"], deploy[1]["id"]])
-        teardown = by_phase["5-teardown"]
-        self.assertEqual([s["switch"] for s in teardown], ["mls-01", "leaf-09"])  # retained leaf-01 is not a step
-        eos = teardown[1]
+        self.assertIn("leaf_vxlan_rollback_configlet.j2", deploy[0]["rollback"])
+        self.assertIn("only after the legacy SVI is shut", deploy[0]["notes"][0])
+        self.assertEqual(deploy[0]["depends_on"], [s["id"] for s in shut])
+        validate = by_phase["5-validate"]
+        self.assertEqual(len(validate), 1)
+        self.assertTrue(validate[0]["gate"])
+        self.assertEqual(validate[0]["depends_on"], [d["id"] for d in deploy])
+        self.assertIn("00:00:0c:9f:fb:b8 to 00:1c:73:00:00:99", validate[0]["notes"][1])
+        teardown = by_phase["7-teardown"]
+        self.assertEqual([s["switch"] for s in teardown], ["leaf-09"])  # retained leaf-01 is not a step
+        eos = teardown[0]
         self.assertEqual(eos["confirm"], "configure session prune_v3000 commit")
         self.assertEqual(
             eos["rollback"],
@@ -233,11 +240,15 @@ class MopInputTests(unittest.TestCase):
             "To roll back at once: configure session prune_v3000 abort",
         )
         self.assertIn("keep it with `configure session prune_v3000 commit` before the timer expires", eos["notes"][0])
-        self.assertIsNone(teardown[0]["confirm"])
-        self.assertEqual(teardown[0]["save"], "copy running-config startup-config")
-        self.assertTrue(teardown[0]["cli"].startswith("checkpoint prune_v3000"))
-        self.assertEqual(teardown[0]["rollback"], "rollback running-config checkpoint prune_v3000")
-        self.assertEqual(teardown[0]["depends_on"], [c["id"] for c in cutover])
+        self.assertEqual(eos["depends_on"], [validate[0]["id"]])
+        # The source gateway comes out last, the SVI on its own.
+        source = by_phase["8-source-gateway-teardown"]
+        self.assertEqual([s["switch"] for s in source], ["mls-01"])
+        self.assertIsNone(source[0]["confirm"])
+        self.assertEqual(source[0]["status"], "blocked_until_gateway_moved")
+        self.assertEqual(source[0]["depends_on"], [eos["id"]])
+        verify = by_phase["9-verify"][0]
+        self.assertEqual(verify["depends_on"], [source[-1]["id"]])
 
     def test_endpoints_and_ids(self):
         doc = build_mop_input(_report(), self.RUN, "T")
