@@ -298,6 +298,7 @@ With `netbox_url` and `netbox_token` set, the deploy looks the VLAN up in NetBox
 - NetBox fills what the VLAN record (`vars/vlans/`) leaves empty, so a record without `evpn.l2.vni` can deploy from NetBox.
 - A value both have must agree. A different VNI, or an explicit `l2_rt` that differs, stops the run before any configlet is rendered (`netbox_evpn_conflict: warn` deploys from the record instead).
 - No VXLAN-EVPN L2VPN on the VLAN: the record is used as is. No VNI from either: the deploy stops.
+- Then the IPAM route targets (`/ipam/route-targets/`): a route target `<n>:<vlan id>` with `n` in one of the DC's `vni_ranges` gives the VLAN its VNI; without one, a record without a VNI gets the lowest free number of its range (tenant `0000001` internal, any other tenant external). A CloudVision push stops when that number is not written to NetBox yet. Details and variables: [examples/allocate-vni.md](examples/allocate-vni.md).
 - VLAN IDs repeat across NetBox sites and VLAN groups: scope the lookup per data center with `netbox_vlan_query_by_dc`. Several matches without a scope stop the run.
 
 | Variable | Default | Description |

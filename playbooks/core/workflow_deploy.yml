@@ -133,6 +133,8 @@
             name: netbox_check
           vars:
             target_vlan_id: "{{ hostvars['localhost']['target_vlan_id'] | int }}"
+            # A CloudVision push needs a VNI NetBox holds, not one only picked by this run.
+            netbox_rt_require_reserved: "{{ cvp_apply_configlets | default(false) | bool }}"
           run_once: true
       rescue:
         - name: Notify ServiceNow of failure during discovery/cleanup/NetBox validation (Advanced)

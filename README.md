@@ -183,6 +183,16 @@ ansible-playbook -i inventory/hosts.yml playbooks/export_vlan_to_netbox.yml \
 
 NetBox export details: [docs/examples/export-vlan-to-netbox.md](docs/examples/export-vlan-to-netbox.md)
 
+```bash
+# A VLAN's VNI and route target from NetBox: reuse, or the next free number (report only by default)
+ansible-playbook -i inventory/hosts.yml playbooks/allocate_vni.yml \
+  -e manual_data_center=lisle \
+  -e manual_vlan_id=3052 \
+  --ask-vault-pass
+```
+
+VNI allocation details: [docs/examples/allocate-vni.md](docs/examples/allocate-vni.md)
+
 ## Repository layout
 
 ```

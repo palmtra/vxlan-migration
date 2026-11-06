@@ -40,3 +40,19 @@ netbox_l2vpn_api_apps:
 # A VNI or route target that differs between NetBox and the VLAN record:
 # fail (default) stops the run; warn keeps the record and says so.
 netbox_evpn_conflict: fail
+
+# Route targets in NetBox IPAM (tasks/route_target.yml). A route target
+# <n>:<vlan id> with n in one of the DC's vni_ranges gives the VLAN its VNI. A
+# VLAN without one, and without a VNI in its record, gets the lowest free
+# number of its range: internal for these tenants (FNTS), external for every
+# other tenant.
+netbox_rt_lookup: true
+netbox_internal_tenants:
+  - "0000001"
+# Write the route target when NetBox has none. Needs the approval word too:
+#   -e netbox_reserve_rt=true -e netbox_reserve_approval=approve
+netbox_reserve_rt: false
+netbox_reserve_approval: ""
+# true: stop when the VNI is newly allocated but not written to NetBox
+# (workflow_deploy.yml sets it for a CloudVision push).
+netbox_rt_require_reserved: false

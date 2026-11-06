@@ -11,7 +11,10 @@
 # L3 VNIs do not follow this standard (they use lower numbers) and are skipped
 # when a discovered switch maps them.
 # The end values are each block's start up to just below the next block.
-# NetBox replaces this file as the allocator later.
+# NetBox IPAM route targets are the register: playbooks/allocate_vni.yml and
+# roles/netbox_check pick the next free number of these ranges from them
+# (tenant 0000001 internal, any other tenant external). See
+# docs/examples/allocate-vni.md.
 # -----------------------------------------------------------------------------
 vni_ranges:
   lisle:

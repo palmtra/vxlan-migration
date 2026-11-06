@@ -8,7 +8,8 @@ not in any VLAN record of that DC, not already mapped on a discovered
 switch, and not handed to another VLAN earlier in the same run.
 
 The ranges are hard-coded in ``inventory/group_vars/all/vni_ranges.yml`` for
-now; NetBox becomes the allocator later.
+now. NetBox route targets are the register at deploy time
+(``vlan_lib.netbox_rt``, docs/examples/allocate-vni.md).
 """
 
 VNI_POOLS = ("internal", "external")
