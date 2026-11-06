@@ -29,6 +29,11 @@
       hostvars['localhost']['_vlan_db_target_vlan_ids']) }}
   delegate_facts: true
 
+- name: Warn about VLAN files whose name does not start with their VLAN ID
+  ansible.builtin.debug:
+    msg: "{{ hostvars['localhost']['_vlan_db_load'].warnings }}"
+  when: hostvars['localhost']['_vlan_db_load'].warnings | default([]) | length > 0
+
 - name: Expose VLAN registry from the DC directory
   ansible.builtin.set_fact:
     _vlan_db:

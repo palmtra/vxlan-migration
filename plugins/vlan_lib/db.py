@@ -8,6 +8,7 @@ from vlan_lib.common import (
     coalesce_trimmed,
     sanitize_report_slug,
     vlan_db_file_prefix,
+    vlan_db_record_filename,
 )
 from vlan_lib.placement import flatten_deployment_model
 from vlan_lib.schema import validate_against_schema
@@ -86,7 +87,12 @@ def load_vlan_db_from_directory(vlan_db_dir, data_center, target_vlan_ids=None):
 
     base_dir = os.path.join(str(vlan_db_dir), dc)
     normalized_ids = [str(int(vid)) for vid in (target_vlan_ids or [])]
-    prefixes = [vlan_db_file_prefix(vid) for vid in normalized_ids] if normalized_ids else []
+    # 0100_name.yml is the standard name; 100_name.yml is accepted too.
+    prefixes = []
+    for vid in normalized_ids:
+        for prefix in (vlan_db_file_prefix(vid), "%s_" % vid):
+            if prefix not in prefixes:
+                prefixes.append(prefix)
 
     records = []
     sources = []
@@ -112,6 +118,8 @@ def load_vlan_db_from_directory(vlan_db_dir, data_center, target_vlan_ids=None):
         records.append(record)
         sources.append(path)
 
+    warnings = []
+    skipped = []
     if os.path.isdir(base_dir):
         for filename in sorted(os.listdir(base_dir)):
             if not filename.endswith((".yml", ".yaml")):
@@ -119,8 +127,29 @@ def load_vlan_db_from_directory(vlan_db_dir, data_center, target_vlan_ids=None):
             if _vlan_db_skip_filename(filename):
                 continue
             if prefixes and not any(filename.startswith(prefix) for prefix in prefixes):
+                skipped.append(filename)
                 continue
             _ingest_file(os.path.join(base_dir, filename), filename)
+
+    # A requested VLAN whose file does not start with its ID would look
+    # missing, and discovery would treat it as a probe and propose a VNI over
+    # the record's. Look inside the other files before giving up on it.
+    missing = [vid for vid in normalized_ids if vid not in seen_ids]
+    for filename in skipped if missing else []:
+        path = os.path.join(base_dir, filename)
+        with open(path, encoding="utf-8") as handle:
+            try:
+                document = yaml.safe_load(handle) or {}
+            except yaml.YAMLError:
+                continue
+        record = parse_vlan_record(document, filename, validate=False)
+        if record is None or str(record.get("id")) not in missing:
+            continue
+        _ingest_file(path, filename)
+        warnings.append(
+            "VLAN %s is in %s: rename it %s so the VLAN DB finds it by name."
+            % (record.get("id"), filename, vlan_db_record_filename(record.get("id"), record.get("name") or "vlan"))
+        )
 
     records.sort(key=lambda item: int(item.get("id", 0)))
 
@@ -129,7 +158,53 @@ def load_vlan_db_from_directory(vlan_db_dir, data_center, target_vlan_ids=None):
         "sources": sources,
         "data_center": dc,
         "directory": base_dir,
+        "warnings": warnings,
     }
+
+
+def load_starter_vnis(reports_dir, data_center, vlan_ids=None, skip_ids=None):
+    """VNIs of the starter records an earlier discovery wrote under reports/.
+
+    Discovery writes ``reports/<dc>/<vlan>/<vid>_<name>.yml`` for a VLAN that
+    is not in the VLAN DB. An engineer may set ``evpn.l2.vni`` there before
+    copying the file to ``vars/vlans/<dc>/``. Returns ``{vlan id: {vni,
+    path}}`` for *vlan_ids* (all when empty), skipping *skip_ids* (VLANs the
+    VLAN DB has). The newest file wins when a VLAN has several.
+    """
+    import glob
+    import os
+
+    try:
+        import yaml
+    except ImportError as exc:
+        raise AnsibleFilterError("PyYAML is required to read starter records: %s" % exc) from exc
+
+    dc = str(data_center or "").strip()
+    if not dc or not reports_dir:
+        return {}
+    wanted = {str(int(vid)) for vid in (vlan_ids or [])}
+    skip = {str(int(vid)) for vid in (skip_ids or []) if str(vid).strip().isdigit()}
+    found = {}
+    pattern = os.path.join(str(reports_dir), dc, "*", "[0-9]*_*.yml")
+    for path in sorted(glob.glob(pattern), key=os.path.getmtime):
+        prefix = os.path.basename(path).split("_", 1)[0]
+        if not prefix.isdigit():
+            continue
+        vid = str(int(prefix))
+        if (wanted and vid not in wanted) or vid in skip:
+            continue
+        try:
+            with open(path, encoding="utf-8") as handle:
+                document = yaml.safe_load(handle) or {}
+            record = parse_vlan_record(document, os.path.basename(path), validate=False)
+        except (OSError, yaml.YAMLError, AnsibleFilterError):
+            continue
+        if not isinstance(record, dict) or str(record.get("id")) != vid:
+            continue
+        vni = _coerce_record_int(record.get("vni"))
+        if isinstance(vni, int) and vni > 0:
+            found[vid] = {"vni": vni, "path": os.path.relpath(path, os.path.dirname(os.path.abspath(str(reports_dir))))}
+    return found
 
 
 def load_service_from_directory(service_db_dir, data_center, service_id):

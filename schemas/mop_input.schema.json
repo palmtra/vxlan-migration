@@ -28,11 +28,14 @@
       "properties": {
         "id": { "$ref": "#/$defs/id" },
         "phase": {
-          "enum": ["0-prechecks", "1-deploy", "2-link-prune-mls", "3-link-prune-non-vtep", "4-gateway-cutover", "5-teardown", "6-verify"]
+          "enum": ["0-prechecks", "1-gateway-shutdown", "2-deploy", "3-link-prune-mls", "4-link-prune-non-vtep", "5-validate", "6-routing-withdrawal", "7-teardown", "8-source-gateway-teardown", "9-verify"]
         },
         "title": { "type": "string" },
         "switch": { "type": "string" },
-        "status": { "type": "string", "description": "ready, blocked, needs_decision, or the prune plan status (blocked_until_gateway_moved, blocked_until_vni_live, ...)" },
+        "status": { "type": "string", "description": "ready, blocked, needs_decision, or the prune plan status (blocked_until_gateway_moved, blocked_until_gateway_validated, blocked_until_vni_live, ...)" },
+        "blocked_reason": { "type": "string" },
+        "manual": { "type": "boolean", "description": "true when the engineer runs this step by hand in the window, outside the automation (the legacy SVI shutdown)" },
+        "gate": { "type": "boolean", "description": "true for the validation step: no later step runs until it passes" },
         "cli": { "type": ["string", "null"], "description": "Exact CLI to paste, from a generated plan. null when the CLI lives in the file named by cli_source." },
         "cli_source": { "type": "string" },
         "rollback": { "type": ["string", "null"] },
@@ -63,7 +66,8 @@
   },
   "properties": {
     "schema": { "const": "vxlan-migration/mop-input" },
-    "schema_version": { "type": "string", "pattern": "^1\\.[0-9]+$" },
+    "schema_version": { "type": "string", "pattern": "^2\\.[0-9]+$" },
+    "rules": { "$ref": "#/$defs/strings", "description": "Standing rules the MOP author follows (VNI authority, FI boundary, VRF reuse, one VLAN per trunk line)" },
     "run": {
       "type": "object",
       "properties": {
@@ -84,6 +88,7 @@
         "migration_type": { "enum": ["l2", "l3", ""] },
         "vrf": { "type": "string" },
         "l2_vni": { "type": ["integer", "null"] },
+        "l2_vni_source": { "enum": ["record", "starter", "proposed", ""], "description": "record: the VLAN record in vars/vlans/<dc>/ (authoritative); starter: kept from the starter record an earlier discovery wrote under reports/; proposed: discovery's next free VNI, not to be used until it is in the record" },
         "l3_vni": { "type": ["integer", "null"] },
         "l3_vni_source": { "type": "string", "description": "Where l3_vni comes from: the SSOT record, the VRF-to-VNI map on the gateway leaves, or why it is missing" },
         "status": { "enum": ["ready", "needs_decisions", "blocked"] }
