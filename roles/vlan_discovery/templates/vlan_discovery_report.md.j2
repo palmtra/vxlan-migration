@@ -190,7 +190,7 @@ MAC only, no ARP entry ({{ et.mac_only | length }}):
 {% endif %}
 ## Prune order
 
-Deploy the VNI first. Then, per VLAN: phase 1, re-run discovery, phase 2, move the gateway, phase 3.
+Order per VLAN: shut the legacy SVI by hand (L3), deploy the VNI and the fabric gateway, phase 1, re-run discovery, phase 2, validate, withdraw the legacy BGP `network`, phase 3 on the other switches, then phase 3 on the source gateways (they wait for validation).
 
 {% set prune_rows = report.prune_plans | default([]) | selectattr('placement_role', 'in', ['link_prune', 'prune_eligible']) | list %}
 {% if prune_rows | length > 0 %}

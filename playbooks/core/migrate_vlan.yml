@@ -96,7 +96,8 @@
                  | migrate_readiness(hostvars['localhost']['_target_vlan_record'] | default({}),
                                      migrate_decisions_reviewed | default(false) | bool,
                                      hostvars['localhost']['_target_vlan_record'].vni | default(none)
-                                     if (hostvars['localhost']['_netbox_evpn_sources'].vni | default('')) in ['netbox', 'record and netbox']
+                                     if (hostvars['localhost']['_netbox_evpn_sources'].vni | default('')) in ['netbox', 'record and netbox',
+                                                                                              'netbox route target', 'netbox allocated']
                                      else none) }}
           delegate_to: localhost
           delegate_facts: true

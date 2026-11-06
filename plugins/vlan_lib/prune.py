@@ -147,13 +147,20 @@ def prune_apply_commands(execution):
 
 
 def build_prune_execution(
-    os_family, vlan_ids, actions, commit_timer=None, hostname=""
+    os_family, vlan_ids, actions, commit_timer=None, hostname="", name_suffix=""
 ):
-    """Build copy-paste execution text. Never applied by discovery."""
+    """Build copy-paste execution text. Never applied by discovery.
+
+    *name_suffix* tells two changes on the same switch apart (their EOS
+    session or NX-OS checkpoint names would otherwise be the same).
+    """
     timer = commit_timer or _DEFAULT_COMMIT_TIMER
     family = str(os_family or "eos").lower()
     vids = [int(vid) for vid in (vlan_ids or [])]
     session_name = _sanitize_session_name(vids)
+    if name_suffix:
+        suffix = re.sub(r"[^A-Za-z0-9_-]", "", "_%s" % name_suffix)
+        session_name = session_name[: _EOS_SESSION_NAME_MAX - len(suffix)] + suffix
     config_body = _actions_config_body(actions)
     if family == "eos":
         full_cli = "configure session %s\n" % session_name
@@ -325,33 +332,33 @@ def build_device_prune_plan(
                 )
             )
 
-    # Consolidate trunk removals per interface; keep SVI then VLAN after trunks.
-    trunk_map = {}
+    # Trunk removals first, then SVI, then VLAN. One action per interface and
+    # VLAN: two VLANs on the same trunk are never merged into one
+    # `remove 3039,3040` line, so each VLAN's change stays separate.
+    trunk_pairs = set()
     svi_actions = []
     vlan_actions = []
     for action in actions:
         if action["op"] == "trunk_remove_vlans":
-            iface = action["interface"]
-            trunk_map.setdefault(iface, set()).update(action.get("vlans") or [])
+            for vid in action.get("vlans") or []:
+                trunk_pairs.add((action["interface"], int(vid)))
         elif action["op"] == "no_interface_vlan":
             svi_actions.append(action)
         else:
             vlan_actions.append(action)
 
-    consolidated = []
-    for iface, vlans in sorted(trunk_map.items()):
-        vlan_list = sorted(vlans)
-        consolidated.append(
-            _prune_action(
-                "trunk_remove_vlans",
-                interface=iface,
-                vlans=vlan_list,
-                cli=_trunk_remove_cli(iface, vlan_list, os_family),
-                source="discovery",
-                confidence="high",
-            )
+    trunk_actions = [
+        _prune_action(
+            "trunk_remove_vlans",
+            interface=iface,
+            vlans=[vid],
+            cli=_trunk_remove_cli(iface, [vid], os_family),
+            source="discovery",
+            confidence="high",
         )
-    actions = consolidated + svi_actions + vlan_actions
+        for iface, vid in sorted(trunk_pairs)
+    ]
+    actions = trunk_actions + svi_actions + vlan_actions
 
     default_vrf_in_scope = "default" in svi_vrfs
 

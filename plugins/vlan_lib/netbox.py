@@ -137,13 +137,28 @@ def _target_names(targets):
     return names
 
 
-def netbox_vlan_pick(lookup_json, vlan_id):
+def netbox_vlan_pick(lookup_json, vlan_id, data_center=""):
     """``{vlan, matches, problem}`` from a ``/ipam/vlans/?vid=`` answer.
 
-    VIDs repeat across sites and VLAN groups. More than one match means the
-    query needs a scope (netbox_vlan_query_by_dc); the VLAN is then not used.
+    VIDs repeat across sites and VLAN groups (one group per DC). Several
+    matches are narrowed to the one whose group or site names *data_center*;
+    if that does not leave one, the query needs a scope
+    (netbox_vlan_query_by_dc) and the VLAN is not used.
     """
     results = [r for r in ((lookup_json or {}).get("results") or []) if isinstance(r, Mapping)]
+    if len(results) > 1 and data_center:
+        dc = str(data_center).strip().lower()
+        mine = [
+            r for r in results
+            if any(
+                dc in str((r.get(key) or {}).get(field) or "").lower()
+                for key in ("group", "site")
+                if isinstance(r.get(key), Mapping)
+                for field in ("slug", "name")
+            )
+        ]
+        if len(mine) == 1:
+            results = mine
     matches = [
         "%s (id %s, %s)" % (
             r.get("name") or "?",

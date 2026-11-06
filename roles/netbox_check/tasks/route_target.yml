@@ -1,0 +1,114 @@
+---
+# -----------------------------------------------------------------------------
+# The VLAN's L2 VNI and route target from NetBox IPAM route targets
+# -----------------------------------------------------------------------------
+# A route target <n>:<vlan id> whose n is in one of the DC's vni_ranges is the
+# VLAN's: its VNI is n. Without one, a record without a VNI gets the lowest
+# free number of its range: internal for an FNTS tenant (netbox_internal_tenants),
+# external for any other tenant, whatever the customer. The tenant comes from
+# the NetBox VLAN (its DC's VLAN group), else the record.
+#
+# Writes the route target only with -e netbox_reserve_rt=true
+# -e netbox_reserve_approval=approve.
+#
+# Sets on localhost:
+#   _netbox_rt:            the plugin result (vni, route_target, source, pool, ...)
+#   _target_vlan_record:   vni / l2_rt filled from NetBox when the record has none
+#   _netbox_evpn_sources:  vni / route_target = "netbox route target" or "netbox allocated"
+# -----------------------------------------------------------------------------
+
+- name: Refuse to write a route target without the approval word
+  ansible.builtin.fail:
+    msg: >-
+      Refusing to write a route target to NetBox. Add -e netbox_reserve_approval=approve
+      to -e netbox_reserve_rt=true, or drop netbox_reserve_rt to report only.
+  when:
+    - netbox_reserve_rt | bool
+    - (netbox_reserve_approval | default('')) != 'approve'
+  delegate_to: localhost
+  run_once: true
+
+- name: Read or allocate the route target of VLAN {{ target_vlan_id }}
+  netbox_vni_allocate:
+    url: "{{ netbox_url }}"
+    token: "{{ netbox_token }}"
+    validate_certs: "{{ netbox_validate_certs | bool }}"
+    timeout: "{{ netbox_timeout | int }}"
+    vlan_id: "{{ target_vlan_id | int }}"
+    data_center: "{{ _rt_dc }}"
+    ranges: "{{ vni_ranges | default({}) }}"
+    record: "{{ hostvars['localhost']['_target_vlan_record'] | default({}) }}"
+    vlan_query: "{{ netbox_vlan_query_by_dc[_rt_dc] | default({}) }}"
+    internal_tenants: "{{ netbox_internal_tenants }}"
+    default_pool: "{{ vni_default_customer_type | default('external') }}"
+    # Taken outside NetBox: the other VLANs of this DC's VLAN DB.
+    extra_used: >-
+      {{ hostvars['localhost']['_vlan_db'].vlans | default([])
+         | rejectattr('id', 'equalto', target_vlan_id | int) | selectattr('vni', 'defined') | map(attribute='vni') | select | list }}
+    reserve: "{{ netbox_reserve_rt | bool and (netbox_reserve_approval | default('')) == 'approve' }}"
+    description_marker: "{{ netbox_export_rt_description_marker | default('Created by Ansible VXLAN Automation') }}"
+  vars:
+    _rt_dc: "{{ target_data_center | default(hostvars['localhost']['_vlan_db_data_center'] | default(''), true) }}"
+  register: _netbox_rt
+  delegate_to: localhost
+  delegate_facts: true
+  run_once: true
+
+- name: Stop when the route target cannot be settled
+  ansible.builtin.fail:
+    msg: >-
+      {{ ['NetBox route target for VLAN ' ~ target_vlan_id ~ ':'] + _netbox_rt.problems
+         + ['Fix NetBox or the record (vars/vlans/), or set netbox_evpn_conflict=warn to go on from the record.'] }}
+  when:
+    - _netbox_rt.problems | length > 0
+    - netbox_evpn_conflict != 'warn'
+  delegate_to: localhost
+  run_once: true
+
+- name: Stop a deploy whose route target is allocated but not written to NetBox
+  ansible.builtin.fail:
+    msg: >-
+      VNI {{ _netbox_rt.vni }} ({{ _netbox_rt.route_target }}) is the next free number, but NetBox does not
+      hold it yet, so another run could take it too. Write it first:
+      -e netbox_reserve_rt=true -e netbox_reserve_approval=approve (or playbooks/allocate_vni.yml).
+  when:
+    - netbox_rt_require_reserved | bool
+    - _netbox_rt.problems | length == 0
+    - _netbox_rt.source == 'allocated'
+    - not _netbox_rt.reserved | bool
+  delegate_to: localhost
+  run_once: true
+
+- name: Use the VNI and route target from NetBox
+  ansible.builtin.set_fact:
+    _target_vlan_record: >-
+      {{ hostvars['localhost']['_target_vlan_record'] | default({})
+         | combine({'vni': _netbox_rt.vni}, ({} if (hostvars['localhost']['_target_vlan_record'] | default({})).l2_rt_import | default('')
+                                             else {'l2_rt': _netbox_rt.route_target})) }}
+    _netbox_evpn_sources: >-
+      {{ hostvars['localhost']['_netbox_evpn_sources'] | default({})
+         | combine({'vni': _rt_source, 'route_target': _rt_source}) }}
+  vars:
+    _rt_source: "{{ 'netbox route target' if _netbox_rt.source == 'netbox' else 'netbox allocated' }}"
+  when:
+    - _netbox_rt.problems | length == 0
+    - _netbox_rt.source in ['netbox', 'allocated']
+    - (hostvars['localhost']['_target_vlan_record'] | default({})).id is defined
+  delegate_to: localhost
+  delegate_facts: true
+  run_once: true
+
+- name: Report the route target
+  ansible.builtin.debug:
+    msg: >-
+      {{ ['VLAN ' ~ target_vlan_id ~ ' (' ~ _netbox_rt.data_center ~ '): VNI ' ~ (_netbox_rt.vni | default('none', true))
+          ~ ', route target ' ~ (_netbox_rt.route_target or '-') ~ ' - '
+          ~ {'netbox': 'in NetBox', 'record': 'from the VLAN record', 'allocated': _netbox_rt.reason | default('allocated')}[_netbox_rt.source]
+            | default('not settled'),
+          'Range: ' ~ _netbox_rt.pool ~ ' ' ~ _netbox_rt.range ~ ' (' ~ _netbox_rt.pool_source ~ ')',
+          ('Written to NetBox (id ' ~ _netbox_rt.reserved_id ~ ')') if _netbox_rt.reserved
+          else ('Not in NetBox yet; would write ' ~ (_netbox_rt.would_reserve | to_json)) if _netbox_rt.would_reserve
+          else 'NetBox already holds it']
+         + _netbox_rt.notes + _netbox_rt.problems }}
+  delegate_to: localhost
+  run_once: true

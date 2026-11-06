@@ -97,15 +97,26 @@
     _vlan_discovery_reports: >-
       {{ _effective_vlans_for_reports
          | build_vlan_discovery_reports(ansible_play_hosts, hostvars, ansible_play_hosts_all, _vni_allocation,
-                                         {'keep_idle_endpoint_ports': discovery_keep_idle_endpoint_ports | default(false) | bool})
+                                         {'keep_idle_endpoint_ports': discovery_keep_idle_endpoint_ports | default(false) | bool,
+                                          'gateway_validated': _gateway_validated})
          | map('combine', {'data_center': _report_data_center}) | list }}
   vars:
     _effective_vlans_for_reports: "{{ hostvars['localhost']['_effective_vlans'] | default(_effective_vlans | default([])) }}"
     _report_data_center: "{{ hostvars['localhost']['_vlan_db_data_center'] }}"
+    # Source gateways are pruned only once the new gateway is validated.
+    _gateway_validated: >-
+      {{ discovery_reports_dir | gateway_validated_vlans(_report_data_center,
+         _effective_vlans_for_reports | map(attribute='id') | list, new_gateway_validated | default(false)) }}
     _vni_allocation:
       ranges: "{{ vni_ranges | default({}) }}"
       default_pool: "{{ vni_default_customer_type | default('external') }}"
       records: "{{ hostvars['localhost']['_vlan_db'].vlans | default([]) }}"
+      # A VLAN not in the VLAN DB keeps the VNI of the starter record an
+      # earlier run wrote under reports/ instead of getting a new proposal.
+      starter_vnis: >-
+        {{ discovery_reports_dir | load_starter_vnis(_report_data_center,
+           _effective_vlans_for_reports | map(attribute='id') | list,
+           hostvars['localhost']['_vlan_db'].vlans | default([]) | map(attribute='id') | list) }}
   delegate_to: localhost
   become: false
   run_once: true

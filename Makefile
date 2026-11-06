@@ -10,7 +10,7 @@ help:
 	@echo "make lint     - yamllint + ansible-lint"
 	@echo "make test     - unit tests"
 	@echo "make mock     - run discover_vlan.yml end to end against canned CLI output"
-	@echo "make mock-netbox - run export_vlan_to_netbox.yml against a mock NetBox (route targets)"
+	@echo "make mock-netbox - export_vlan_to_netbox.yml and allocate_vni.yml against a mock NetBox (route targets)"
 	@echo "make mock-omaha - Omaha VLAN 3000: discover, record, generate configs (AVD_REPO_DIR= adds the AVD build)"
 	@echo "make syntax   - ansible-playbook --syntax-check on core playbooks"
 	@echo "make molecule - localhost molecule scenarios (vlan_db, service_db)"
@@ -36,6 +36,7 @@ mock:
 mock-netbox:
 	$(NEED_TESTS)
 	tests/run_netbox_rt_mock.sh
+	tests/run_netbox_allocate_mock.sh
 
 mock-omaha:
 	$(NEED_TESTS)
@@ -43,7 +44,7 @@ mock-omaha:
 
 syntax:
 	@set -e; \
-	for pb in playbooks/core/*.yml playbooks/check_netbox.yml playbooks/export_vlan_to_netbox.yml; do \
+	for pb in playbooks/core/*.yml playbooks/check_netbox.yml playbooks/export_vlan_to_netbox.yml playbooks/allocate_vni.yml; do \
 	  echo "==> $$pb"; \
 	  ansible-playbook -i inventory/hosts.yml "$$pb" --syntax-check; \
 	done

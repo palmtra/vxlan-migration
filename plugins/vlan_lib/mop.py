@@ -13,10 +13,11 @@ Schema: schemas/mop_input.schema.json. Contract and template: docs/MOP_INPUT.md.
 import hashlib
 import os
 
+from vlan_lib.prune import build_prune_execution
 from vlan_lib.reports import build_findings, resolve_l3_vni
 
 MOP_SCHEMA = "vxlan-migration/mop-input"
-MOP_SCHEMA_VERSION = "1.0"
+MOP_SCHEMA_VERSION = "2.0"
 RUN_INDEX_SCHEMA = "vxlan-migration/run-index"
 
 _FINDING_PREFIX = {
@@ -28,9 +29,23 @@ _FINDING_PREFIX = {
     "info": "I",
 }
 _SEVERITY_RANK = {"high": 0, "medium": 1, "low": 2}
-# Change order: deploy the VNI, prune the MLS links (re-run discovery), the
-# non-VTEP side, move the gateway, then tear down the legacy VLAN.
-_PRUNE_PHASE_NAMES = {1: "2-link-prune-mls", 2: "3-link-prune-non-vtep", 3: "5-teardown"}
+# Standing rules for whoever writes the MOP from this input.
+MOP_RULES = (
+    "The VLAN record (vars/vlans/<dc>/<vid>_<name>.yml) is authoritative for the VNI. Use vlan.l2_vni only when "
+    "vlan.l2_vni_source is record; never replace it with a discovery proposal.",
+    "Fabric interconnects (UCS FI) are the host boundary: MACs learned on an FI port are hosts of this VLAN, even "
+    "though the port is a trunk. Nothing is traced beyond the FI.",
+    "The VLAN joins an existing VRF. Never create a VRF, L3 VNI or VRF route target for it; verify and reuse what "
+    "is there.",
+    "Each trunk-removal line names this VLAN only. Never merge it with another VLAN on the same trunk.",
+    "The legacy gateway SVI is shut by hand in the window (manual step). It is removed only after the validation "
+    "step passes and the legacy BGP origination is withdrawn.",
+)
+# Change order (docs/MOP_INPUT.md, Steps): prechecks, the manual legacy SVI
+# shutdown, the fabric deploy, the link prunes that cut the EVPN-legacy loop,
+# validation (a gate), the legacy BGP withdrawal, teardown, then the source
+# gateways (SVI first), and final verification.
+_PRUNE_PHASE_NAMES = {1: "3-link-prune-mls", 2: "4-link-prune-non-vtep", 3: "7-teardown"}
 
 
 def _typed(value):
@@ -248,7 +263,74 @@ def _plan_cli(plan):
     return "\n".join(a.get("cli", "") for a in actions) or None
 
 
+def _source_gateway_hosts(report):
+    """Legacy switches that own the VLAN's SVI today (the source gateways)."""
+    model = report.get("deployment_model") or {}
+    hosts = _unique(
+        [svi.get("hostname") for svi in (report.get("gateway_assessment") or {}).get("svis") or []]
+        + [_hostname(item) for item in (model.get("placement") or {}).get("source_gateway_devices") or []]
+    )
+    return hosts
+
+
+def _split_source_gateway_plan(plan, os_family="", vlan_id=None):
+    """A source gateway's teardown, as two changes: the SVI, then trunks and VLAN.
+
+    Returns ``[(title, actions, execution)]``. The SVI comes out on its own
+    so the destructive gateway removal is a separate, later step.
+    """
+    actions = list(plan.get("actions") or plan.get("blocked_actions") or [])
+    svi = [a for a in actions if a.get("op") == "no_interface_vlan"]
+    rest = [a for a in actions if a.get("op") != "no_interface_vlan"]
+    execution = plan.get("execution") or {}
+    platform = execution.get("platform") or plan.get("os_family") or os_family or "eos"
+    timer = execution.get("commit_timer") or None
+    vlan_ids = plan.get("vlan_ids") or ([vlan_id] if vlan_id is not None else [])
+    parts = []
+    for title, chunk, suffix in (
+        ("Remove the legacy gateway SVI", svi, "svi"),
+        ("Remove trunks and the VLAN", rest, "l2"),
+    ):
+        if chunk:
+            execution = build_prune_execution(platform, vlan_ids, chunk, timer, plan.get("hostname") or "", suffix)
+            parts.append((title, chunk, execution))
+    return parts
+
+
+def _bgp_withdraw_cli(item, asn, os_family):
+    """``no network`` / ``no aggregate-address`` for one legacy BGP origination."""
+    if not asn:
+        return None
+    vrf = item.get("vrf") or "default"
+    statement = "network" if item.get("kind") == "network" else "aggregate-address"
+    if (os_family or "").lower() == "nxos":
+        lines = ["router bgp %s" % asn]
+        indent = "  "
+        if vrf != "default":
+            lines.append("%svrf %s" % (indent, vrf))
+            indent += "  "
+        lines.append("%saddress-family ipv4 unicast" % indent)
+        lines.append("%s  no %s %s" % (indent, statement, item.get("prefix")))
+        return "\n".join(lines)
+    lines = ["router bgp %s" % asn]
+    if vrf != "default":
+        lines.append("   vrf %s" % vrf)
+        lines.append("      no %s %s" % (statement, item.get("prefix")))
+    else:
+        lines.append("   no %s %s" % (statement, item.get("prefix")))
+    return "\n".join(lines)
+
+
 def _steps(report, findings, files):
+    """The change steps in order (docs/MOP_INPUT.md, Steps).
+
+    Prechecks; the manual shutdown of the legacy gateway SVI in the window
+    (L3 with a legacy gateway); the fabric deploy, which brings the gateway
+    up; the link prunes that cut the EVPN-legacy loop; a validation step that
+    gates everything after it; the legacy BGP origination withdrawal; the
+    teardown of the other switches; the source gateways (SVI first, then
+    trunks and VLAN); final verification.
+    """
     vlan_id = report.get("vlan_id")
     model = report.get("deployment_model") or {}
     placement = model.get("placement") or {}
@@ -256,12 +338,26 @@ def _steps(report, findings, files):
     gw = report.get("gateway_assessment") or {}
     gmac = report.get("gateway_mac") or {}
     l3 = report.get("migration_type") == "l3"
-    os_by_host = {d.get("hostname"): (d.get("os_family") or "").lower() for d in report.get("devices") or []}
+    legacy_gateway = l3 and gw.get("location") == "legacy"
+    devices = {d.get("hostname"): d for d in report.get("devices") or [] if d.get("hostname")}
+    os_by_host = {host: (d.get("os_family") or "").lower() for host, d in devices.items()}
+    vrf = gw.get("vrf") or report.get("discovered_vrf") or ""
+    virtual_ip = gw.get("virtual_ip") or (model.get("gateway") or {}).get("virtual_ip", "")
+    source_gateways = _source_gateway_hosts(report)
     steps = []
 
     blockers = [f["id"] for f in findings if f["kind"] == "blocker"]
     decisions = [f["id"] for f in findings if f["kind"] == "decision"]
     tasks = [f["id"] for f in findings if f["kind"] == "task"]
+
+    gateway_hosts = _unique(_hostname(item) for item in placement.get("gateway_leafs") or [])
+    leaves = _unique(
+        [_hostname(item) for item in placement.get("participating_leafs") or []] + gateway_hosts
+    )
+    if l3 and not gateway_hosts:
+        gateway_hosts = list(leaves)
+
+    # 0 - prechecks
     pre = []
     pre.append(
         _step(
@@ -283,6 +379,24 @@ def _steps(report, findings, files):
             verify=["The baseline lists %s host IPs" % (report.get("endpoint_table") or {}).get("summary", {}).get("active_ips", 0)],
         )
     )
+    if l3 and vrf and vrf != "default":
+        vrf_blockers = [f["id"] for f in findings if f["kind"] == "blocker" and f["category"] == "fabric"]
+        pre.append(
+            _step(
+                steps, vlan_id, phase="0-prechecks",
+                title="Verify VRF %s exists on the gateway leaves and reuse it" % vrf,
+                status="blocked" if vrf_blockers else "ready", findings=vrf_blockers,
+                verify=[
+                    "show vrf %s on %s: the VRF exists" % (vrf, ", ".join(gateway_hosts) or "each gateway leaf"),
+                    "show running-config interfaces Vxlan1 | include vrf %s: the VRF has its L3 VNI" % vrf,
+                    "show running-config section router bgp | include vrf %s: the VRF is in BGP with its RD and route targets" % vrf,
+                ],
+                notes=[
+                    "The VLAN joins the existing VRF. The configlet carries no VRF, L3 VNI or VRF route target: "
+                    "do not create them for this VLAN. If the VRF is missing on a gateway leaf, stop."
+                ],
+            )
+        )
     if tasks:
         pre.append(
             _step(
@@ -291,30 +405,50 @@ def _steps(report, findings, files):
             )
         )
 
-    gateway_hosts = _unique(_hostname(item) for item in placement.get("gateway_leafs") or [])
-    leaves = _unique(
-        [_hostname(item) for item in placement.get("participating_leafs") or []] + gateway_hosts
-    )
-    if l3 and not gateway_hosts:
-        gateway_hosts = list(leaves)
+    # 1 - manual shutdown of the legacy gateway, in the window
+    shutdown = []
+    if legacy_gateway:
+        for svi in gw.get("svis") or []:
+            host = svi.get("hostname") or ""
+            indent = "  " if os_by_host.get(host) == "nxos" else "   "
+            shutdown.append(
+                _step(
+                    steps, vlan_id, phase="1-gateway-shutdown",
+                    title="Shut the legacy gateway SVI (manual, in the window)", switch=host,
+                    manual=True,
+                    cli="interface Vlan%s\n%sshutdown" % (vlan_id, indent),
+                    cli_source="mop_input (manual; the SVI is removed later, after validation)",
+                    rollback="interface Vlan%s\n%sno shutdown" % (vlan_id, indent),
+                    verify=["show interface Vlan%s: administratively down" % vlan_id],
+                    notes=[
+                        "The engineer shuts the SVI by hand in the maintenance window; the automation does not. "
+                        "Execute the fabric change control (deploy steps) right after."
+                    ],
+                    depends_on=list(pre),
+                )
+            )
+
+    # 2 - fabric deploy (one CloudVision change control, executed in the window)
     deploy = []
     for host in leaves:
         notes = []
-        if l3 and host in gateway_hosts and gw.get("location") == "legacy":
+        if l3 and host in gateway_hosts and legacy_gateway:
             notes.append(
-                "Vlan%s comes up with ip address virtual %s as soon as this configlet is applied, while the "
-                "legacy gateway still answers. Apply it in the cutover window, or make sure the fabric and the "
-                "legacy L2 are not bridged for this VLAN until the legacy SVI is shut." % (vlan_id, gw.get("virtual_ip") or model.get("gateway", {}).get("virtual_ip", ""))
+                "Vlan%s comes up with ip address virtual %s as soon as this configlet is applied. Execute the "
+                "change control only after the legacy SVI is shut (%s)." % (vlan_id, virtual_ip, ", ".join(shutdown))
             )
         verify = ["show vxlan vlan-to-vni | include %s  (expect VNI %s)" % (vlan_id, vni or "?")]
         if l3 and host in gateway_hosts:
             verify.append("show interfaces Vlan%s  (up, ip address virtual)" % vlan_id)
         deploy.append(
             _step(
-                steps, vlan_id, phase="1-deploy", title="Deploy VLAN %s / VNI %s" % (vlan_id, vni or "?"), switch=host,
-                status="blocked" if blockers else "ready", depends_on=list(pre),
+                steps, vlan_id, phase="2-deploy", title="Deploy VLAN %s / VNI %s" % (vlan_id, vni or "?"), switch=host,
+                status="blocked" if blockers else "ready", depends_on=list(shutdown or pre),
                 cli_source="configlet vxlan_vlan%s_%s.cfg written by playbooks/core/workflow_deploy.yml" % (vlan_id, host),
-                rollback="Roll back the CVP change control (roles/cvp_rollback)",
+                rollback=(
+                    "Remove configlet vxlan_vlan%s_%s from %s in CloudVision (roles/cvp_rollback renders the "
+                    "reversing configlet from leaf_vxlan_rollback_configlet.j2)" % (vlan_id, host, host)
+                ),
                 verify=verify, notes=notes,
             )
         )
@@ -329,79 +463,146 @@ def _steps(report, findings, files):
     for plan in plans:
         by_phase.setdefault(plan.get("phase") or 3, []).append(plan)
 
-    def prune_steps(phase, depends):
+    def prune_step(phase_name, title, plan, cli, execution, depends):
+        rollback = execution.get("rollback") or None
+        confirm = None
+        notes = []
+        if execution.get("platform") == "eos" and execution.get("commit_timer_cmd"):
+            timer = execution.get("commit_timer") or ""
+            confirm = execution.get("confirm") or None
+            rollback = (
+                "Do not commit the session again: it rolls back when the commit timer (%s) expires. "
+                "To roll back at once: %s" % (timer, execution.get("abort") or "")
+            ).strip()
+            notes.append(
+                "The change is live but provisional for %s after `commit timer`. Run the checks, then keep it "
+                "with `%s` before the timer expires, or it rolls back." % (timer, confirm or "")
+            )
+        return _step(
+            steps, vlan_id, phase=phase_name, title=title,
+            switch=plan.get("hostname") or "",
+            status="ready" if plan.get("actions") else (plan.get("status") or "blocked"),
+            blocked_reason=plan.get("blocked_reason") or "",
+            cli=cli, cli_source=files["prune_markdown"],
+            rollback=rollback,
+            confirm=confirm,
+            save=execution.get("save") or "",
+            notes=notes,
+            verify=["Re-run discovery for VLAN %s: %s shows the change" % (vlan_id, plan.get("hostname"))],
+            depends_on=list(depends),
+        )
+
+    def prune_steps(phase, depends, keep=None):
         ids = []
         for plan in by_phase.get(phase, []):
-            execution = plan.get("execution") or {}
-            rollback = execution.get("rollback") or None
-            confirm = None
-            notes = []
-            if execution.get("platform") == "eos" and execution.get("commit_timer_cmd"):
-                timer = execution.get("commit_timer") or ""
-                confirm = execution.get("confirm") or None
-                rollback = (
-                    "Do not commit the session again: it rolls back when the commit timer (%s) expires. "
-                    "To roll back at once: %s" % (timer, execution.get("abort") or "")
-                ).strip()
-                notes.append(
-                    "The change is live but provisional for %s after `commit timer`. Run the checks, then keep it "
-                    "with `%s` before the timer expires, or it rolls back." % (timer, confirm or "")
-                )
+            if keep is not None and not keep(plan):
+                continue
             ids.append(
-                _step(
-                    steps, vlan_id, phase=_PRUNE_PHASE_NAMES.get(phase, "5-teardown"),
-                    title="%s: %s" % (plan.get("phase_label") or "prune", plan.get("hostname")),
-                    switch=plan.get("hostname") or "",
-                    status="ready" if plan.get("actions") else (plan.get("status") or "blocked"),
-                    blocked_reason=plan.get("blocked_reason") or "",
-                    cli=_plan_cli(plan), cli_source=files["prune_markdown"],
-                    rollback=rollback,
-                    confirm=confirm,
-                    save=execution.get("save") or "",
-                    notes=notes,
-                    verify=["Re-run discovery for VLAN %s: %s shows the change" % (vlan_id, plan.get("hostname"))],
-                    depends_on=list(depends),
+                prune_step(
+                    _PRUNE_PHASE_NAMES.get(phase, "7-teardown"),
+                    "%s: %s" % (plan.get("phase_label") or "prune", plan.get("hostname")),
+                    plan, _plan_cli(plan), plan.get("execution") or {}, depends,
                 )
             )
         return ids
 
+    # 3, 4 - link prunes right after the deploy: they cut the EVPN-legacy loop.
     phase1 = prune_steps(1, deploy or pre)
     phase2 = prune_steps(2, phase1 or deploy or pre)
-    cutover = []
-    if l3 and gw.get("location") == "legacy":
-        for svi in gw.get("svis") or []:
-            host = svi.get("hostname") or ""
-            indent = "  " if os_by_host.get(host) == "nxos" else "   "
-            verify = [
-                "Ping every baseline endpoint from a fabric gateway leaf (playbooks/core/workflow_verify.yml)",
-                "show ip arp vrf %s | include Vlan%s on a fabric gateway leaf: the endpoints are there"
-                % (svi.get("vrf") or "default", vlan_id),
-            ]
-            notes = []
-            if gmac.get("changes"):
-                notes.append(
-                    "Gateway MAC changes from %s to %s: hosts update their ARP entry for %s when the fabric "
-                    "gateway ARPs for them (the ping above) or when it ages out."
-                    % (", ".join(gmac.get("legacy_macs") or []), gmac.get("fabric_mac"), gw.get("virtual_ip") or "")
-                )
-            cutover.append(
-                _step(
-                    steps, vlan_id, phase="4-gateway-cutover", title="Shut the legacy gateway SVI", switch=host,
-                    cli="interface Vlan%s\n%sshutdown" % (vlan_id, indent),
-                    cli_source="mop_input (shut only; the SVI is removed in the teardown phase)",
-                    rollback="interface Vlan%s\n%sno shutdown" % (vlan_id, indent),
-                    verify=verify, notes=notes, depends_on=list(phase2 or phase1 or deploy or pre),
-                )
+
+    # 5 - validation gates everything after it
+    validate_verify = [
+        "playbooks/core/workflow_verify.yml for VLAN %s passes on every fabric leaf" % vlan_id,
+        "Every baseline host answers ping from the fabric (%s)" % files["endpoint_baseline"],
+        "Endpoint comparison (playbooks/core/migrate_vlan.yml summary): no endpoint missing after the change",
+    ]
+    validate_notes = [
+        "Gate: nothing after this step runs until it passes. playbooks/core/prune_vlan.yml refuses to prune a "
+        "source gateway until the new gateway is validated (a migrate_vlan.yml summary with verification passed "
+        "and no endpoint problems, or -e new_gateway_validated=true once this step is done by hand)."
+    ]
+    if l3:
+        validate_verify.insert(
+            1,
+            "show ip arp vrf %s | include Vlan%s on a fabric gateway leaf: the endpoints are there"
+            % (vrf or "default", vlan_id),
+        )
+    if gmac.get("changes"):
+        validate_notes.append(
+            "Gateway MAC changes from %s to %s: hosts update their ARP entry for %s when the fabric "
+            "gateway ARPs for them (the ping above) or when it ages out."
+            % (", ".join(gmac.get("legacy_macs") or []), gmac.get("fabric_mac"), virtual_ip)
+        )
+    validate = [
+        _step(
+            steps, vlan_id, phase="5-validate", title="Validate the new gateway and the endpoints",
+            gate=True,
+            cli_source="playbooks/core/workflow_verify.yml; endpoint comparison in playbooks/core/migrate_vlan.yml",
+            verify=validate_verify, notes=validate_notes,
+            depends_on=list(phase2 or phase1 or deploy or pre),
+        )
+    ]
+
+    # 6 - withdraw the legacy BGP origination of the VLAN prefix
+    withdraw = []
+    routing = report.get("routing_detail") or {}
+    border = _unique(row.get("hostname") for row in routing.get("bgp_fabric") or [])
+    for item in routing.get("bgp_networks") or []:
+        host = item.get("hostname") or ""
+        if item.get("kind") not in ("network", "aggregate") or not host or host in leaves:
+            continue
+        device = devices.get(host) or {}
+        os_family = os_by_host.get(host, "")
+        cli = _bgp_withdraw_cli(item, device.get("bgp_as") or "", os_family)
+        rollback = None
+        if cli:
+            rollback = cli.replace("no network ", "network ").replace("no aggregate-address ", "aggregate-address ")
+        statement = "network" if item.get("kind") == "network" else "aggregate-address"
+        withdraw.append(
+            _step(
+                steps, vlan_id, phase="6-routing-withdrawal",
+                title="Withdraw the legacy BGP %s %s" % (statement, item.get("prefix")), switch=host,
+                cli=cli,
+                cli_source="mop_input (from routing.bgp_networks)" if cli else "engineer (BGP ASN not discovered on %s)" % host,
+                rollback=rollback,
+                verify=[
+                    "Before the change: show ip bgp vrf %s %s on %s: a path originated by the fabric is present, "
+                    "not only the one from %s. Stop if it is not."
+                    % (item.get("vrf") or "default", item.get("prefix"), ", ".join(border) or "the border leaves", host),
+                    "After the change: the same command shows the fabric path as best and no path from %s" % host,
+                ],
+                notes=["Keeps the subnet reachable: the fabric must originate it before the legacy %s goes." % statement],
+                depends_on=list(validate),
             )
-    teardown = prune_steps(3, cutover or phase2 or phase1 or deploy or pre)
+        )
+
+    # 7 - teardown of the other prune-eligible switches; 8 - the source gateways
+    teardown = prune_steps(3, withdraw or validate, keep=lambda plan: plan.get("hostname") not in source_gateways)
+    source_teardown = []  # the last step of each source gateway
+    depends = list(teardown or withdraw or validate)
+    for plan in by_phase.get(3, []):
+        if plan.get("hostname") not in source_gateways:
+            continue
+        previous = depends
+        split = _split_source_gateway_plan(plan, os_by_host.get(plan.get("hostname"), ""), vlan_id)
+        for title, _actions, execution in split:
+            previous = [
+                prune_step(
+                    "8-source-gateway-teardown", "%s: %s" % (title, plan.get("hostname")),
+                    plan, execution.get("full_cli") or None, execution, previous,
+                )
+            ]
+        if previous is not depends:
+            source_teardown.extend(previous)
+
     _step(
-        steps, vlan_id, phase="6-verify", title="Post-change verification",
+        steps, vlan_id, phase="9-verify", title="Post-change verification",
         cli_source="playbooks/core/workflow_verify.yml",
         verify=[
             "Every baseline host answers ping from the fabric (%s)" % files["endpoint_baseline"],
             "Re-run discovery: VLAN %s is VNI-mapped on %s and nothing is left to prune" % (vlan_id, ", ".join(leaves) or "the fabric leaves"),
         ],
-        depends_on=list(teardown or cutover or phase2 or phase1 or deploy or pre),
+        depends_on=list(source_teardown or teardown or withdraw or validate),
     )
     return steps
 
@@ -443,6 +644,7 @@ def build_mop_input(report, run=None, timestamp=""):
             "Input for writing the MOP for this VLAN. Facts come from read-only discovery. Use only the CLI in "
             "steps[].cli and the configlet files named in steps[].cli_source; cite IDs; do not invent commands."
         ),
+        "rules": list(MOP_RULES),
         "run": run,
         "vlan": {
             "id": report.get("vlan_id"),
@@ -451,6 +653,7 @@ def build_mop_input(report, run=None, timestamp=""):
             "migration_type": report.get("migration_type") or "",
             "vrf": (report.get("gateway_assessment") or {}).get("vrf") or report.get("discovered_vrf") or "",
             "l2_vni": (evpn.get("l2") or {}).get("vni"),
+            "l2_vni_source": (evpn.get("l2") or {}).get("vni_source") or "",
             "l3_vni": l3_vni["vni"],
             "l3_vni_source": l3_vni["source"],
             "status": status,
@@ -643,3 +846,44 @@ def prune_readiness(reports):
         "ready": [row["hostname"] for row in rows if row["status"] == "ready"],
         "blocked": [row["hostname"] for row in rows if row["status"] != "ready"],
     }
+
+
+def gateway_validated_vlans(reports_dir, data_center, vlan_ids, override=None):
+    """VLAN IDs whose new gateway is validated, which releases the source gateways' prune.
+
+    *override* (``-e new_gateway_validated``): true validates every VLAN in
+    *vlan_ids*, a list (or ``3039,3040``) names the VLANs, and false or empty
+    reads the record:
+    the newest ``reports/<dc>/_runs/migrate_vlan<id>_<ts>.json`` of each VLAN
+    must have outcome ``deployed_and_verified`` and an endpoint comparison
+    with no problems.
+    """
+    import glob
+    import json
+
+    ids = [str(int(vid)) for vid in vlan_ids or [] if str(vid).strip().isdigit()]
+    if isinstance(override, str) and override.replace(",", "").replace(" ", "").isdigit():
+        override = [item for item in override.split(",") if item.strip()]  # -e new_gateway_validated=3039,3040
+    if isinstance(override, (list, tuple, set)):
+        return sorted({int(vid) for vid in override if str(vid).strip().isdigit()})
+    if str(override).strip().lower() in ("true", "yes", "1"):
+        return sorted(int(vid) for vid in ids)
+    validated = []
+    for vid in ids:
+        pattern = os.path.join(str(reports_dir or ""), str(data_center or ""), "_runs", "migrate_vlan%s_*.json" % vid)
+        paths = sorted(glob.glob(pattern))
+        if not paths:
+            continue
+        try:
+            with open(paths[-1], encoding="utf-8") as handle:
+                summary = json.load(handle)
+        except (OSError, ValueError):
+            continue
+        endpoints = summary.get("endpoints") or {}
+        if (
+            summary.get("outcome") == "deployed_and_verified"
+            and endpoints.get("compared")
+            and int(endpoints.get("problems") or 0) == 0
+        ):
+            validated.append(int(vid))
+    return validated
