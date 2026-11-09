@@ -145,6 +145,52 @@ fi
 diff -r "$OUT/deploy/reports/cvp_configlets/omaha/vlan3000" "$RR/vlan3000" >/dev/null \
   || { echo "FAIL: the rerun's VLAN 3000 configlets differ from the first run" >&2; fail=1; }
 
+
+# 3o. Rollback covers every switch the deploy changed. A centralized_anycast
+#     gateway on the border pair, which is not in target_switches (Omaha VLAN
+#     3014's shape): the deploy configures the SVI there, so the rollback must
+#     render a configlet for both border leaves and remove the SVI and network.
+mkdir -p "$OUT/vlans_central/omaha"
+python3 - "$OUT/vlans/omaha/3000_acme_app.yml" "$OUT/vlans_central/omaha/3000_acme_app.yml" <<'PY'
+import sys, yaml
+doc = yaml.safe_load(open(sys.argv[1], encoding="utf-8"))
+doc["gateway"]["mode"] = "centralized_anycast"
+doc["placement"]["gateway_leafs"] = ["oma01-blf01", "oma01-blf02"]
+yaml.safe_dump(doc, open(sys.argv[2], "w", encoding="utf-8"), sort_keys=False)
+PY
+ansible-playbook -i "$MOCK_INV" playbooks/core/workflow_deploy.yml \
+  -e manual_vlan_id=3000 -e manual_data_center=omaha -e manual_target_vrf=v0000822a \
+  -e cvp_apply_configlets=false -e deploy_discovery=false \
+  -e vlan_db_dir="$OUT/vlans_central" -e artifacts_dir="$OUT/deploy_central" \
+  --limit dc_omaha > "$OUT/deploy_central.log" 2>&1 \
+  || { cat "$OUT/deploy_central.log"; echo "FAIL: centralized-gateway deploy failed" >&2; exit 1; }
+ansible-playbook -i "$MOCK_INV" tests/playbooks/cvp_rollback_render.yml \
+  -e manual_vlan_id=3000 -e manual_data_center=omaha \
+  -e vlan_db_dir="$OUT/vlans_central" -e artifacts_dir="$OUT/rollback_central" \
+  --limit dc_omaha > "$OUT/rollback_central.log" 2>&1 \
+  || { cat "$OUT/rollback_central.log"; echo "FAIL: centralized-gateway rollback render failed" >&2; exit 1; }
+CENTRAL_CFG="$OUT/deploy_central/reports/cvp_configlets/omaha/vlan3000/configs"
+CENTRAL_RB="$OUT/rollback_central/reports/cvp_configlets/omaha/vlan3000/rollback"
+DEPLOYED="$(cd "$CENTRAL_CFG" && ls)"
+ROLLED_BACK="$(cd "$CENTRAL_RB" 2>/dev/null && ls)"
+if [ "$DEPLOYED" != "$ROLLED_BACK" ]; then
+  echo "FAIL: rollback configlets ($(echo $ROLLED_BACK)) differ from the deploy's ($(echo $DEPLOYED))" >&2; fail=1
+fi
+for gw in oma01-blf01 oma01-blf02; do
+  expect "$CENTRAL_CFG/vxlan_vlan3000_$gw.cfg" " ip address virtual 10.230.0.1/24"
+  RB="$CENTRAL_RB/vxlan_vlan3000_$gw.cfg"
+  [ -f "$RB" ] || { echo "FAIL: no rollback configlet for gateway leaf $gw" >&2; fail=1; continue; }
+  expect "$RB" "no interface Vlan3000"
+  expect "$RB" " no vxlan vlan 3000 vni 11002"
+  expect "$RB" " no vlan 3000"
+  expect "$RB" "  no network 10.230.0.0/24"
+done
+RB_LEAF="$CENTRAL_RB/vxlan_vlan3000_fntc-aggacc-sw01.cfg"
+expect "$RB_LEAF" " no vxlan vlan 3000 vni 11002"
+if grep -q "interface Vlan3000\|network 10.230.0.0/24" "$RB_LEAF"; then
+  echo "FAIL: rollback touches an SVI on a non-gateway leaf (centralized)" >&2; fail=1
+fi
+
 CFG="$OUT/deploy/reports/cvp_configlets/omaha/vlan3000/configs/vxlan_vlan3000_fntc-aggacc-sw01.cfg"
 expect "$CFG" " ip address virtual 10.230.0.1/24"
 expect "$CFG" " vxlan vlan 3000 vni 11002"

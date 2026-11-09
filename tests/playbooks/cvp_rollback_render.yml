@@ -1,0 +1,34 @@
+---
+# Render the CVP rollback configlets for one VLAN, without verification or
+# CloudVision (cvp_apply_configlets=false): the VLAN DB, then roles/cvp_rollback,
+# exactly as workflow_verify.yml's rescue runs it. Used by
+# tests/run_omaha_vlan3000_mock.sh to compare the rollback with the deploy.
+#
+#   ansible-playbook -i tests/mock_cli/omaha/inventory/hosts.yml tests/playbooks/cvp_rollback_render.yml \
+#     -e manual_vlan_id=3000 -e manual_data_center=omaha -e vlan_db_dir=... -e artifacts_dir=... --limit dc_omaha
+
+- name: Render the CVP rollback configlets
+  hosts: eos_devices
+  gather_facts: false
+
+  pre_tasks:
+    - name: Load the VLAN DB on the control node
+      run_once: true
+      delegate_to: localhost
+      delegate_facts: true
+      block:
+        - name: Load per-DC VLAN database
+          ansible.builtin.include_role:
+            name: vlan_db
+          vars:
+            target_data_center: "{{ manual_data_center }}"
+            target_vlan_ids:
+              - "{{ manual_vlan_id | int }}"
+
+  tasks:
+    - name: Render the rollback configlets (cvp_apply_configlets must stay false)
+      ansible.builtin.include_role:
+        name: cvp_rollback
+      vars:
+        target_vlan_id: "{{ hostvars['localhost']['target_vlan_id'] | int }}"
+        cvp_apply_configlets: false
