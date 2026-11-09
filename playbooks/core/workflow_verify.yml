@@ -51,14 +51,18 @@
             target_vlan_ids:
               - "{{ hostvars['localhost']['target_vlan_id'] | default(resume_vlan_id) | int }}"
 
-        # Same VNI / route targets as the deploy: a VNI NetBox supplied is not in
-        # the record on disk.
-        - name: Read the VNI and route targets from NetBox
-          ansible.builtin.include_role:
-            name: netbox_check
-          vars:
-            target_vlan_id: "{{ hostvars['localhost']['target_vlan_id'] | default(resume_vlan_id) | int }}"
-            target_data_center: "{{ hostvars['localhost']['_vlan_db_data_center'] | default(manual_data_center | default('')) }}"
+    # Same VNI / route targets as the deploy: a VNI NetBox supplied is not in
+    # the record on disk. Outside the delegate_facts block above, as in
+    # workflow_deploy.yml: netbox_check keeps its facts on the host it runs on
+    # (and writes the merged record to localhost itself), so delegated facts
+    # would leave its own `when:` checks undefined.
+    - name: Read the VNI and route targets from NetBox
+      ansible.builtin.include_role:
+        name: netbox_check
+      vars:
+        target_vlan_id: "{{ hostvars['localhost']['target_vlan_id'] | int }}"
+        target_data_center: "{{ hostvars['localhost']['_vlan_db_data_center'] | default(manual_data_center | default('')) }}"
+      run_once: true
 
     - name: Limit verification to target_switches from the VLAN DB
       ansible.builtin.meta: end_host
@@ -95,6 +99,9 @@
             - name: Roll back the VXLAN migration configlets via CVP Change Control
               ansible.builtin.include_role:
                 name: cvp_rollback
+              vars:
+                target_vlan_id: "{{ hostvars['localhost']['target_vlan_id'] | int }}"
+                target_data_center: "{{ hostvars['localhost']['target_data_center'] | default('') }}"
 
             - name: Re-run the full verification checklist against the restored state
               ansible.builtin.include_role:
