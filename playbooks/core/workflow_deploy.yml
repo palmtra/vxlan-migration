@@ -133,6 +133,8 @@
             name: netbox_check
           vars:
             target_vlan_id: "{{ hostvars['localhost']['target_vlan_id'] | int }}"
+            # Scopes the VLAN lookup to this DC's VLAN group (netbox_vlan_query_by_dc).
+            target_data_center: "{{ hostvars['localhost']['_vlan_db_data_center'] | default(manual_data_center | default('')) }}"
             # A CloudVision push needs a VNI NetBox holds, not one only picked by this run.
             netbox_rt_require_reserved: "{{ cvp_apply_configlets | default(false) | bool }}"
           run_once: true

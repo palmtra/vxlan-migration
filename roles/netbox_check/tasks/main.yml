@@ -20,6 +20,19 @@
   become: false
   run_once: true
 
+# VIDs repeat across data centers: the lookup is scoped to this DC's VLAN
+# group (netbox_vlan_query_by_dc) and several matches are narrowed by it. A
+# caller that does not pass target_data_center gets the VLAN DB's, as in
+# route_target.yml, so no run reads another DC's VLAN.
+- name: Determine the data center that scopes the NetBox VLAN lookup
+  ansible.builtin.set_fact:
+    _netbox_data_center: >-
+      {{ target_data_center | default(hostvars['localhost']['_vlan_db_data_center'] | default(''), true)
+      | string | trim | lower }}
+  delegate_to: localhost
+  become: false
+  run_once: true
+
 - name: Skip NetBox lookup when not configured
   ansible.builtin.set_fact:
     _netbox_sync_status: not_configured
@@ -33,7 +46,7 @@
   ansible.builtin.uri:
     url: >-
       {{ netbox_url }}/api/ipam/vlans/?vid={{ target_vlan_id | int }}{% for key, value in
-      (netbox_vlan_query_by_dc[target_data_center | default('')] | default({})).items() %}&{{ key }}={{ value | urlencode }}{% endfor %}
+      (netbox_vlan_query_by_dc[_netbox_data_center] | default({})).items() %}&{{ key }}={{ value | urlencode }}{% endfor %}
     method: GET
     headers:
       Authorization: "Token {{ netbox_token }}"
@@ -75,8 +88,8 @@
 
 - name: Record NetBox VLAN object when found (one match only)
   ansible.builtin.set_fact:
-    _netbox_vlan_pick: "{{ _netbox_vlan_lookup.json | netbox_vlan_pick(target_vlan_id, target_data_center | default('')) }}"
-    _netbox_vlan: "{{ (_netbox_vlan_lookup.json | netbox_vlan_pick(target_vlan_id, target_data_center | default(''))).vlan }}"
+    _netbox_vlan_pick: "{{ _netbox_vlan_lookup.json | netbox_vlan_pick(target_vlan_id, _netbox_data_center) }}"
+    _netbox_vlan: "{{ (_netbox_vlan_lookup.json | netbox_vlan_pick(target_vlan_id, _netbox_data_center)).vlan }}"
   delegate_to: localhost
   become: false
   run_once: true
