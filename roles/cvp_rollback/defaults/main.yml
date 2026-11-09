@@ -19,7 +19,17 @@
 
 # CloudVision connection: see roles/cvp_change_control (CVAAS inventory host).
 
-cvp_configlet_build_dir: "{{ reports_dir | default(project_root ~ '/reports') }}/cvp_configlets"
+# Rollback configlets go next to the forward ones, in their own directory, so
+# a rollback never overwrites the deploy's files. Each run replaces it:
+#   reports/cvp_configlets/<dc>/vlan<id>/rollback/vxlan_vlan<id>_<leaf>.cfg
+# The CloudVision configlet names stay the same as the deploy's.
+cvp_configlet_root: "{{ reports_dir | default(project_root ~ '/reports') }}/cvp_configlets"
+cvp_configlet_data_center: >-
+  {{ (target_data_center | default('', true)
+      or (hostvars['localhost']['_target_vlan_record'] | default({})).data_center | default('', true)
+      or 'unknown_dc') | string | trim | lower }}
+cvp_configlet_vlan_dir: "{{ cvp_configlet_root }}/{{ cvp_configlet_data_center }}/vlan{{ target_vlan_id }}"
+cvp_rollback_build_dir: "{{ cvp_configlet_vlan_dir }}/rollback"
 
 # When true, push the rollback configlets to CVP and create a rollback
 # change control. When false, rollback configlets are only rendered to

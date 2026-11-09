@@ -8,20 +8,6 @@
 # to render CLI snippets, and optionally pushes them to CVP.
 # -----------------------------------------------------------------------------
 
-- name: Ensure AVD output directories exist
-  ansible.builtin.file:
-    path: "{{ item }}"
-    state: directory
-    mode: '0755'
-  delegate_to: localhost
-  become: false
-  run_once: true
-  loop:
-    - "{{ avd_output_dir }}"
-    - "{{ avd_output_dir }}/structured_configs"
-    - "{{ avd_output_dir }}/configs"
-    - "{{ avd_tmp_dir }}"
-
 - name: Look up target VLAN in the local VLAN DB
   ansible.builtin.set_fact:
     _avd_vlan: "{{ hostvars['localhost']['_target_vlan_record'] | default({}) }}"
@@ -75,6 +61,34 @@
   delegate_to: localhost
   become: false
   run_once: true
+
+# After the checks above, so a run that stops on one leaves the last output.
+# Only a directory scoped to this VLAN is cleared: an avd_output_dir overridden
+# to a shared path is written to, never emptied.
+- name: Clear this VLAN's previous AVD output (each run replaces it)
+  ansible.builtin.file:
+    path: "{{ avd_output_dir }}"
+    state: absent
+  when:
+    - target_vlan_id | string is match('^[0-9]+$')
+    - avd_output_dir is search('/vlan' ~ target_vlan_id ~ '(/|$)')
+  delegate_to: localhost
+  become: false
+  run_once: true
+
+- name: Ensure AVD output directories exist
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: '0755'
+  delegate_to: localhost
+  become: false
+  run_once: true
+  loop:
+    - "{{ avd_output_dir }}"
+    - "{{ avd_output_dir }}/structured_configs"
+    - "{{ avd_output_dir }}/configs"
+    - "{{ avd_tmp_dir }}"
 
 - name: Write per-device AVD structured config files
   ansible.builtin.template:

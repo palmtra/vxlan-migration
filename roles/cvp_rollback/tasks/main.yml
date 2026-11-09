@@ -10,16 +10,6 @@
 # to disk for review, exactly like a forward deploy would.
 # -----------------------------------------------------------------------------
 
-- name: Ensure configlet build directory exists
-  ansible.builtin.file:
-    path: "{{ cvp_configlet_build_dir }}"
-    state: directory
-    mode: '0755'
-  delegate_to: localhost
-  become: false
-  run_once: true
-  check_mode: false
-
 - name: Compute VLAN being rolled back from the local VLAN DB
   ansible.builtin.set_fact:
     _vlan_to_migrate: "{{ hostvars['localhost']['_target_vlan_record'] | default({}) }}"
@@ -55,10 +45,34 @@
   become: false
   run_once: true
 
+# Only a directory scoped to this VLAN is cleared: a cvp_rollback_build_dir
+# overridden to a shared path is written to, never emptied.
+- name: Clear this VLAN's previous rollback configlets (each run replaces them)
+  ansible.builtin.file:
+    path: "{{ cvp_rollback_build_dir }}"
+    state: absent
+  when:
+    - target_vlan_id | string is match('^[0-9]+$')
+    - cvp_rollback_build_dir is search('/vlan' ~ target_vlan_id ~ '(/|$)')
+  delegate_to: localhost
+  become: false
+  run_once: true
+  check_mode: false
+
+- name: Ensure rollback configlet directory exists
+  ansible.builtin.file:
+    path: "{{ cvp_rollback_build_dir }}"
+    state: directory
+    mode: '0755'
+  delegate_to: localhost
+  become: false
+  run_once: true
+  check_mode: false
+
 - name: Render leaf VXLAN rollback configlet per target device
   ansible.builtin.template:
     src: leaf_vxlan_rollback_configlet.j2
-    dest: "{{ cvp_configlet_build_dir }}/vxlan_vlan{{ target_vlan_id }}_{{ item }}.cfg"
+    dest: "{{ cvp_rollback_build_dir }}/vxlan_vlan{{ target_vlan_id }}_{{ item }}.cfg"
     mode: '0644'
   loop: "{{ _cvp_target_devices }}"
   delegate_to: localhost
@@ -74,7 +88,7 @@
 - name: Render border-leaf import rollback configlet
   ansible.builtin.template:
     src: borderleaf_import_rollback_configlet.j2
-    dest: "{{ cvp_configlet_build_dir }}/vxlan_vlan{{ target_vlan_id }}_borderleaf_import.cfg"
+    dest: "{{ cvp_rollback_build_dir }}/vxlan_vlan{{ target_vlan_id }}_borderleaf_import.cfg"
     mode: '0644'
   delegate_to: localhost
   become: false
@@ -89,7 +103,7 @@
   ansible.builtin.set_fact:
     _cvp_leaf_configlets: "{{ _cvp_leaf_configlets | default({}) | combine({
       ('vxlan_vlan' + target_vlan_id | string + '_' + item): lookup('ansible.builtin.file',
-      cvp_configlet_build_dir + '/vxlan_vlan' + target_vlan_id | string + '_' + item + '.cfg')
+      cvp_rollback_build_dir + '/vxlan_vlan' + target_vlan_id | string + '_' + item + '.cfg')
     }) }}"
   loop: "{{ _cvp_target_devices }}"
   delegate_to: localhost
@@ -100,7 +114,7 @@
 - name: Load generated border-leaf rollback configlet
   ansible.builtin.set_fact:
     _cvp_borderleaf_configlet: "{{ lookup('ansible.builtin.file',
-      cvp_configlet_build_dir + '/vxlan_vlan' + target_vlan_id | string + '_borderleaf_import.cfg') }}"
+      cvp_rollback_build_dir + '/vxlan_vlan' + target_vlan_id | string + '_borderleaf_import.cfg') }}"
   delegate_to: localhost
   become: false
   run_once: true
@@ -133,7 +147,7 @@
   ansible.builtin.debug:
     msg:
       - "Generated rollback configlets for: {{ _cvp_target_devices }}"
-      - "Configlet directory: {{ cvp_configlet_build_dir }}"
+      - "Configlet directory: {{ cvp_rollback_build_dir }}"
       - "Applied to CVP: {{ cvp_apply_configlets | bool }}"
   delegate_to: localhost
   become: false

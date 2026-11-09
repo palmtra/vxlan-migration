@@ -94,7 +94,7 @@ The summary's `outcome` and the first line printed at the end:
 | `deployed_and_verified` | Change control completed and every target leaf passed verification |
 | `verification_failed` | Change control completed; at least one leaf failed (`verification.failed_switches`) |
 | `waiting_for_change_control` | Change control created, not executed before the wait ended (`created`, `timed_out`) |
-| `configlets_generated` | Run with `-e migrate_push_to_cvp=false`: configlets under `reports/cvp_configlets/`, nothing pushed |
+| `configlets_generated` | Run with `-e migrate_push_to_cvp=false`: configlets under `reports/cvp_configlets/<dc>/vlan<id>/`, nothing pushed |
 | `no_change` | CloudVision created no task: the configlets were already on the switches |
 
 The summary also holds the readiness result, the MOP input paths, the NetBox source of the VNI and route targets, the change control record, the endpoint comparison counts, and the prune readiness per switch.

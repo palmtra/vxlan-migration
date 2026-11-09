@@ -42,7 +42,7 @@ The deploy re-runs discovery by default, to read the switches as they are right 
      -e cvp_apply_configlets=false -e deploy_discovery=false --limit dc_omaha
    ```
 
-   The configlets land in `reports/cvp_configlets/`. Edit the record and run step 3 again as often as needed; it takes seconds. The NetBox VNI / route-target lookup still runs when NetBox is configured.
+   The configlets land in `reports/cvp_configlets/<dc>/vlan<id>/configs/`. Edit the record and run step 3 again as often as needed; it takes seconds. Each run replaces that VLAN's files, so a leaf removed from the record disappears too; other VLANs' files are never touched. The NetBox VNI / route-target lookup still runs when NetBox is configured.
 
 4. Push when the config is right: the same command with `-e cvp_apply_configlets=true` (with or without `deploy_discovery=false`).
 
@@ -88,11 +88,11 @@ ansible-playbook -i inventory/hosts.yml playbooks/core/workflow_deploy.yml \
   --limit dc_lisle
 ```
 
-**Output directory:** `reports/cvp_configlets/`
+**Output directory:** `reports/cvp_configlets/lisle/vlan100/configs/` (`<dc>/vlan<id>/configs/`). Each run replaces it.
 
 | File | Description |
 |---|---|
-| `vxlan_vlan100_<hostname>.cfg` | Per-leaf VXLAN configlet |
+| `vxlan_vlan100_<hostname>.cfg` | Per-leaf VXLAN configlet (the file name is the CloudVision configlet name) |
 | `vxlan_vlan100_borderleaf_import.cfg` | Border-leaf VRF import (when `cvp_build_borderleaf_config=true`) |
 
 ### Arista AVD configlets
@@ -107,12 +107,28 @@ ansible-playbook -i inventory/hosts.yml playbooks/core/workflow_deploy.yml \
   --limit dc_lisle
 ```
 
-**Output directories:**
+**Output directories** (under `reports/cvp_configlets/lisle/vlan100/`, replaced on each run):
 
 | Path | Description |
 |---|---|
-| `cvp_configlets/avd/structured_configs/<hostname>.yml` | AVD structured input per device |
-| `cvp_configlets/avd/configs/<hostname>.cfg` | Rendered EOS CLI |
+| `avd/structured_configs/<hostname>.yml` | AVD structured input per device |
+| `avd/configs/<hostname>.cfg` | Rendered EOS CLI |
+
+### Layout
+
+One directory per data center and VLAN, so two VLANs on the same leaf never overwrite each other. Nothing is versioned: a run replaces only its own subdirectory, and only after its checks pass (a run that stops early keeps the previous files).
+
+```text
+reports/cvp_configlets/
+  omaha/
+    vlan3014/
+      configs/vxlan_vlan3014_<leaf>.cfg        # Jinja
+      avd/structured_configs/<leaf>.yml        # AVD
+      avd/configs/<leaf>.cfg                   # AVD
+      rollback/vxlan_vlan3014_<leaf>.cfg       # roles/cvp_rollback
+    vlan3052/
+      ...
+```
 
 ---
 
@@ -194,8 +210,12 @@ ansible-playbook -i inventory/hosts.yml playbooks/core/workflow_verify.yml \
 | `cvp_apply_configlets` | `false` | Master switch for CVP API calls |
 | `use_avd` | `false` | `true` → AVD path; `false` → Jinja templates |
 | `cvp_build_borderleaf_config` | `false` | Jinja border-leaf VRF import. Off unless the VRF itself must be created |
-| `cvp_configlet_build_dir` | `reports/cvp_configlets` | Jinja output directory |
-| `avd_output_dir` | `cvp_configlets/avd` | AVD output directory |
+| `cvp_configlet_root` | `reports/cvp_configlets` | Root of the per-DC / per-VLAN tree |
+| `cvp_configlet_build_dir` | `<root>/<dc>/vlan<id>/configs` | Jinja output directory |
+| `avd_output_dir` | `<root>/<dc>/vlan<id>/avd` | AVD output directory |
+| `cvp_rollback_build_dir` | `<root>/<dc>/vlan<id>/rollback` | Rollback configlets |
+
+A directory is emptied before a run only when its path ends in `vlan<id>` or a subdirectory of it; one overridden to a shared path is written to, never emptied.
 | `cvp_change_control_state` | `set` | Never auto-execute without explicit override |
 
 See [USAGE_GUIDE.md](../USAGE_GUIDE.md) for the full variable reference.

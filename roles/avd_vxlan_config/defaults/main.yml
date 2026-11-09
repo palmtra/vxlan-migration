@@ -12,10 +12,18 @@ target_vlan_id: ""
 target_data_center: ""
 target_vrf: ""
 
-# Directory where AVD-generated configlets are stored.
-# Prefer reports_dir (set in group_vars) so core/ and advanced/ playbooks share one path.
-avd_configlet_build_dir: "{{ reports_dir | default(playbook_dir ~ '/../../reports') }}/cvp_configlets"
-avd_output_dir: "{{ avd_configlet_build_dir }}/avd"
+# AVD output: one directory per data center and VLAN, so a run never touches
+# another VLAN's files. Each run replaces this VLAN's avd/ (no versions kept):
+#   reports/cvp_configlets/<dc>/vlan<id>/avd/structured_configs/<leaf>.yml
+#   reports/cvp_configlets/<dc>/vlan<id>/avd/configs/<leaf>.cfg
+# Same layout as roles/cvp_deploy (Jinja configlets go to .../configs/).
+cvp_configlet_root: "{{ reports_dir | default(project_root ~ '/reports') }}/cvp_configlets"
+cvp_configlet_data_center: >-
+  {{ (target_data_center | default('', true)
+      or (hostvars['localhost']['_target_vlan_record'] | default({})).data_center | default('', true)
+      or 'unknown_dc') | string | trim | lower }}
+cvp_configlet_vlan_dir: "{{ cvp_configlet_root }}/{{ cvp_configlet_data_center }}/vlan{{ target_vlan_id }}"
+avd_output_dir: "{{ cvp_configlet_vlan_dir }}/avd"
 # Shared temp dir for arista.avd.validate_inputs + eos_cli_config_gen (AVD 6; 5.x has no validate_inputs).
 avd_tmp_dir: "{{ avd_output_dir }}/tmp_eos_cli_config_gen"
 avd_keep_tmp_files: false
