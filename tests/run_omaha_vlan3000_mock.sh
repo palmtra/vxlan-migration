@@ -63,22 +63,30 @@ problems = []
 def check(ok, text):
     if not ok:
         problems.append(text)
+# VLAN 3000 is not in the VLAN DB yet: a blocker, and the VNI is only a proposal.
 check(mop["vlan"] == {"id": 3000, "name": "ACME_APP", "data_center": "omaha", "migration_type": "l3",
-                      "vrf": "v0000822a", "l2_vni": 11002, "l3_vni": 822, "status": "needs_decisions",
+                      "vrf": "v0000822a", "l2_vni": 11002, "l2_vni_source": "proposed", "l3_vni": 822, "status": "blocked",
                       "l3_vni_source": "fabric: VRF v0000822a maps to it on fntc-aggacc-sw01, fntc-aggacc-sw02 (show interfaces Vxlan1)"},
       "vlan: %s" % mop["vlan"])
+check(mop["findings"][0]["text"].startswith("VLAN 3000 is not in the VLAN DB (vars/vlans/omaha/). Copy the starter record "
+                                            "discovery wrote (reports/omaha/ACME_APP/3000_ACME_APP.yml)"), "not-in-DB blocker first")
 eos = [s for s in mop["steps"] if s["switch"] == "fntc-aggacc-sw05"][0]
 check(eos["confirm"] == "configure session prune_v3000 commit" and "configure session prune_v3000 abort" in eos["rollback"], "EOS teardown confirm/rollback")
 phases = [(s["phase"], s["switch"]) for s in mop["steps"]]
 check(phases == [
-    ("0-prechecks", ""), ("0-prechecks", ""), ("0-prechecks", ""),
-    ("1-deploy", "fntc-aggacc-sw01"), ("1-deploy", "fntc-aggacc-sw02"),
-    ("4-gateway-cutover", "fnts-fntc03-aggpe-mls01"), ("4-gateway-cutover", "fnts-fntc03-aggpe-mls02"),
-    ("5-teardown", "fnts-fntc03-aggpe-mls01"), ("5-teardown", "fnts-fntc03-aggpe-mls02"),
-    ("5-teardown", "fntc-aggacc-sw05"), ("5-teardown", "fntc-aggacc-sw06"), ("6-verify", ""),
+    ("0-prechecks", ""), ("0-prechecks", ""), ("0-prechecks", ""), ("0-prechecks", ""),
+    ("1-gateway-shutdown", "fnts-fntc03-aggpe-mls01"), ("1-gateway-shutdown", "fnts-fntc03-aggpe-mls02"),
+    ("2-deploy", "fntc-aggacc-sw01"), ("2-deploy", "fntc-aggacc-sw02"),
+    ("5-validate", ""),
+    ("7-teardown", "fntc-aggacc-sw05"), ("7-teardown", "fntc-aggacc-sw06"),
+    ("8-source-gateway-teardown", "fnts-fntc03-aggpe-mls01"), ("8-source-gateway-teardown", "fnts-fntc03-aggpe-mls01"),
+    ("8-source-gateway-teardown", "fnts-fntc03-aggpe-mls02"), ("8-source-gateway-teardown", "fnts-fntc03-aggpe-mls02"),
+    ("9-verify", ""),
 ], "steps: %s" % phases)
-cut = [s for s in mop["steps"] if s["phase"] == "4-gateway-cutover"][0]
-check(cut["cli"] == "interface Vlan3000\n  shutdown" and cut["rollback"] == "interface Vlan3000\n  no shutdown", "cutover CLI")
+cut = [s for s in mop["steps"] if s["phase"] == "1-gateway-shutdown"][0]
+check(cut["manual"] is True and cut["cli"] == "interface Vlan3000\n  shutdown" and cut["rollback"] == "interface Vlan3000\n  no shutdown", "shutdown CLI")
+svi = [s for s in mop["steps"] if s["phase"] == "8-source-gateway-teardown"][0]
+check(svi["cli"] == "checkpoint prune_v3000_svi\nconfigure terminal\nno interface Vlan3000\nend\n", "source gateway SVI step: %r" % svi["cli"])
 check(mop["gateway"]["mac_change"]["changes"] is True, "gateway MAC change")
 check([f["id"] for f in mop["findings"] if f["kind"] == "risk" and f["severity"] == "high"] == ["R-01"], "high risks")
 check(mop["coverage"]["complete"] is True, "coverage")

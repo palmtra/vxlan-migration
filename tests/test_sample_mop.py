@@ -10,7 +10,7 @@ import unittest
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _REPO = os.path.join(_HERE, "..")
 _SAMPLE = os.path.join(_HERE, "mock_cli", "omaha", "sample_mop")
-_INPUT = os.path.join(_SAMPLE, "ACME_APP_mop_input_20261102_221316_980.json")
+_INPUT = os.path.join(_SAMPLE, "ACME_APP_mop_input_20261106_152034_710.json")
 _MOP = os.path.join(_SAMPLE, "MOP_VLAN3000_ACME_APP.md")
 
 _CITED_ID_RE = re.compile(r"\[((?:[BDRTQI]|S|EP|A|SW)-[A-Za-z0-9._-]+)\]")
@@ -76,10 +76,12 @@ class SampleMopTests(unittest.TestCase):
             self.assertIn(block, known, "code block not from steps[].cli / rollback:\n%s" % block)
 
     def test_status_and_gaps_are_stated(self):
-        self.assertEqual(self.doc["vlan"]["status"], "needs_decisions")
+        self.assertEqual(self.doc["vlan"]["status"], "ready")
         self.assertIn("Not approved for execution", self.mop)
         self.assertEqual(self.doc["vlan"]["l3_vni"], 822)
         self.assertIn("| L3 VNI | 822 ", self.mop)
+        self.assertEqual(self.doc["vlan"]["l2_vni_source"], "record")
+        self.assertIn("`l2_vni_source: record`", self.mop)
         for step in self.doc["steps"]:
             if not step["cli"]:
                 continue
@@ -90,6 +92,12 @@ class SampleMopTests(unittest.TestCase):
                 self.assertIn("`%s`" % step["confirm"], section, step["id"])
             if step.get("save"):
                 self.assertIn("`%s`" % step["save"], section, step["id"])
+            if step.get("manual"):
+                self.assertIn("**Manual**", section, step["id"])
+        for step in self.doc["steps"]:
+            if step.get("gate"):
+                section = self.mop.split("#### [%s]" % step["id"], 1)[1].split("####", 1)[0]
+                self.assertIn("**Gate**", section, step["id"])
 
 
 if __name__ == "__main__":

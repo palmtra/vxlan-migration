@@ -1,0 +1,256 @@
+{
+ "_page_size": 4,
+ "ipam/vlans": [
+  {
+   "id": 501,
+   "vid": 3052,
+   "name": "APP_3052",
+   "group": {
+    "id": 1,
+    "slug": "omaha-datacenter",
+    "name": "omaha-datacenter"
+   },
+   "tenant": {
+    "id": 1,
+    "name": "0000001"
+   }
+  },
+  {
+   "id": 502,
+   "vid": 3052,
+   "name": "CUST_3052",
+   "group": {
+    "id": 2,
+    "slug": "lisle-datacenter",
+    "name": "lisle-datacenter"
+   },
+   "tenant": {
+    "id": 3,
+    "name": "0000910"
+   }
+  },
+  {
+   "id": 503,
+   "vid": 3060,
+   "name": "FNTS_NEW",
+   "group": {
+    "id": 1,
+    "slug": "omaha-datacenter",
+    "name": "omaha-datacenter"
+   },
+   "tenant": {
+    "id": 1,
+    "name": "0000001"
+   }
+  },
+  {
+   "id": 504,
+   "vid": 3061,
+   "name": "CUST_NEW",
+   "group": {
+    "id": 1,
+    "slug": "omaha-datacenter",
+    "name": "omaha-datacenter"
+   },
+   "tenant": {
+    "id": 2,
+    "name": "0000874"
+   }
+  },
+  {
+   "id": 505,
+   "vid": 3063,
+   "name": "NO_TENANT",
+   "group": {
+    "id": 1,
+    "slug": "omaha-datacenter",
+    "name": "omaha-datacenter"
+   },
+   "tenant": null
+  }
+ ],
+ "ipam/route-targets": [
+  {
+   "id": 101,
+   "name": "10000:2000",
+   "description": "",
+   "tenant": {
+    "id": 1,
+    "name": "0000001"
+   }
+  },
+  {
+   "id": 102,
+   "name": "10001:2001",
+   "description": "",
+   "tenant": {
+    "id": 1,
+    "name": "0000001"
+   }
+  },
+  {
+   "id": 103,
+   "name": "10002:2002",
+   "description": "",
+   "tenant": {
+    "id": 1,
+    "name": "0000001"
+   }
+  },
+  {
+   "id": 104,
+   "name": "10003:2003",
+   "description": "",
+   "tenant": {
+    "id": 1,
+    "name": "0000001"
+   }
+  },
+  {
+   "id": 105,
+   "name": "10004:2004",
+   "description": "",
+   "tenant": {
+    "id": 1,
+    "name": "0000001"
+   }
+  },
+  {
+   "id": 106,
+   "name": "10005:2005",
+   "description": "",
+   "tenant": {
+    "id": 1,
+    "name": "0000001"
+   }
+  },
+  {
+   "id": 107,
+   "name": "10006:2006",
+   "description": "",
+   "tenant": {
+    "id": 1,
+    "name": "0000001"
+   }
+  },
+  {
+   "id": 108,
+   "name": "10007:2007",
+   "description": "",
+   "tenant": {
+    "id": 1,
+    "name": "0000001"
+   }
+  },
+  {
+   "id": 109,
+   "name": "10008:2008",
+   "description": "",
+   "tenant": {
+    "id": 1,
+    "name": "0000001"
+   }
+  },
+  {
+   "id": 110,
+   "name": "10009:2009",
+   "description": "",
+   "tenant": {
+    "id": 1,
+    "name": "0000001"
+   }
+  },
+  {
+   "id": 111,
+   "name": "10010:3052",
+   "description": "",
+   "tenant": {
+    "id": 1,
+    "name": "0000001"
+   }
+  },
+  {
+   "id": 112,
+   "name": "10011:2011",
+   "description": "",
+   "tenant": {
+    "id": 1,
+    "name": "0000001"
+   }
+  },
+  {
+   "id": 113,
+   "name": "10013:2013",
+   "description": "",
+   "tenant": {
+    "id": 1,
+    "name": "0000001"
+   }
+  },
+  {
+   "id": 114,
+   "name": "100:5",
+   "description": ""
+  },
+  {
+   "id": 115,
+   "name": "11000:2100",
+   "description": "",
+   "tenant": {
+    "id": 2,
+    "name": "0000874"
+   }
+  },
+  {
+   "id": 116,
+   "name": "11001:2101",
+   "description": "",
+   "tenant": {
+    "id": 2,
+    "name": "0000874"
+   }
+  },
+  {
+   "id": 117,
+   "name": "11002:2102",
+   "description": "",
+   "tenant": {
+    "id": 2,
+    "name": "0000874"
+   }
+  },
+  {
+   "id": 118,
+   "name": "22027:3052",
+   "description": "",
+   "tenant": {
+    "id": 2,
+    "name": "0000910"
+   }
+  }
+ ],
+ "vpn/l2vpns": [
+  {
+   "id": 7,
+   "identifier": 10012,
+   "name": "OLD",
+   "type": {
+    "value": "vxlan-evpn"
+   }
+  }
+ ],
+ "tenancy/tenants": [
+  {
+   "id": 1,
+   "name": "0000001"
+  },
+  {
+   "id": 2,
+   "name": "0000874"
+  },
+  {
+   "id": 3,
+   "name": "0000910"
+  }
+ ]
+}

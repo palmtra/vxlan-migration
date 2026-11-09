@@ -4,8 +4,12 @@
     server.py <port> <seed.json> <writes.jsonl>
 
 Serves ``/api/<app>/<model>/`` from the seed: GET filters by exact match on
-every query parameter, GET ``.../<id>/`` returns one object, POST adds an
-object, PATCH ``.../<id>/`` merges into one. Apps listed in the seed's
+every query parameter, a related object (``site=``, ``group=``) by its
+slug (``<field>__isw`` / ``__iew``: starts / ends with,
+``__gte`` / ``__lte``: numeric bounds, a nested object matches on its name;
+``limit`` / ``offset`` page the results, ``next`` links the next page,
+``_page_size`` in the seed caps a page), GET ``.../<id>/`` returns one
+object, POST adds an object, PATCH ``.../<id>/`` merges into one. Apps listed in the seed's
 ``_missing_apps`` answer 404, like NetBox 3.x for ``/api/vpn/``. Every POST and PATCH is appended to the writes file as one JSON line
 (method, path, body). Requests without ``Authorization: Token test`` get 403.
 """
@@ -16,6 +20,29 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlsplit
 
 TOKEN = "Token test"
+
+
+def _value(obj, field):
+    value = obj.get(field)
+    if isinstance(value, dict):
+        value = value.get("name")
+    return "" if value is None else str(value)
+
+
+def _matches(obj, field, wanted):
+    for suffix, test in (
+        ("__isw", lambda have: have.lower().startswith(wanted.lower())),
+        ("__iew", lambda have: have.lower().endswith(wanted.lower())),
+        ("__gte", lambda have: have.lstrip("-").isdigit() and int(have) >= int(wanted)),
+        ("__lte", lambda have: have.lstrip("-").isdigit() and int(have) <= int(wanted)),
+    ):
+        if field.endswith(suffix):
+            return test(_value(obj, field[: -len(suffix)]))
+    value = obj.get(field)
+    # Like NetBox: a related object (site=, group=) is filtered by its slug.
+    if isinstance(value, dict):
+        return str(value.get("slug")) == wanted
+    return str(value) == wanted
 
 
 def main():
@@ -73,18 +100,17 @@ def main():
                 self._reply(404, {"detail": "Not found."})
                 return
             query = parse_qs(urlsplit(self.path).query)
-
-            # Like NetBox: a related object (site=, group=) is filtered by its slug.
-            def _matches(value, wanted):
-                if isinstance(value, dict):
-                    return str(value.get("slug")) == wanted
-                return str(value) == wanted
-
-            results = [
-                obj for obj in store.get(key, [])
-                if all(_matches(obj.get(field), values[0]) for field, values in query.items())
-            ]
-            self._reply(200, {"count": len(results), "results": results})
+            limit = int(query.pop("limit", ["0"])[0] or 0)
+            offset = int(query.pop("offset", ["0"])[0] or 0)
+            results = [obj for obj in store.get(key, []) if all(_matches(obj, f, v[0]) for f, v in query.items())]
+            size = min(limit or len(results), store.get("_page_size") or len(results)) or 1
+            page = results[offset:offset + size]
+            nxt = None
+            if offset + size < len(results):
+                rest = "&".join("%s=%s" % (f, v[0]) for f, v in query.items())
+                nxt = "http://netbox.example.invalid%s?%s&limit=%d&offset=%d" % (
+                    urlsplit(self.path).path, rest, size, offset + size)
+            self._reply(200, {"count": len(results), "next": nxt, "results": page})
 
         def do_POST(self):
             if not self._authorized():
