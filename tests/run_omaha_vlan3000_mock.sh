@@ -191,6 +191,31 @@ if grep -q "interface Vlan3000\|network 10.230.0.0/24" "$RB_LEAF"; then
   echo "FAIL: rollback touches an SVI on a non-gateway leaf (centralized)" >&2; fail=1
 fi
 
+# 3p. Resume verification on its own (workflow_verify.yml -e resume_vlan_id),
+#     as after a CloudVision approval. The mock CLI still shows the switches
+#     before the change, so verification fails and the auto-rollback renders
+#     (cvp_apply_configlets=false) the same configlets as 3o; the run fails.
+mkdir -p "$OUT/verify_resume/reports"
+cp -r "$OUT/deploy_central/reports/workflow_state" "$OUT/verify_resume/reports/"
+vr_rc=0
+ansible-playbook -i "$MOCK_INV" playbooks/core/workflow_verify.yml \
+  -e resume_vlan_id=3000 -e manual_data_center=omaha \
+  -e auto_rollback_on_verification_failure=true -e cvp_apply_configlets=false \
+  -e vlan_db_dir="$OUT/vlans_central" -e artifacts_dir="$OUT/verify_resume" \
+  --limit dc_omaha > "$OUT/verify_resume.log" 2>&1 || vr_rc=$?
+if [ "$vr_rc" -eq 0 ]; then echo "FAIL: a failed verification did not fail the resumed run" >&2; fail=1; fi
+if grep -q "is undefined" "$OUT/verify_resume.log"; then
+  grep -m1 -B2 "is undefined" "$OUT/verify_resume.log" >&2
+  echo "FAIL: resumed verification hit an undefined variable" >&2; fail=1
+fi
+expect "$OUT/verify_resume.log" "Post-change verification failed on oma01-blf01."
+expect "$OUT/verify_resume.log" "TASK [cvp_rollback : Report generated rollback configlets]"
+expect "$OUT/verify_resume.log" "Rollback re-verification failed on"
+RESUMED="$(cd "$OUT/verify_resume/reports/cvp_configlets/omaha/vlan3000/rollback" 2>/dev/null && ls)"
+if [ "$DEPLOYED" != "$RESUMED" ]; then
+  echo "FAIL: auto-rollback configlets ($(echo $RESUMED)) differ from the deploy's ($(echo $DEPLOYED))" >&2; fail=1
+fi
+
 CFG="$OUT/deploy/reports/cvp_configlets/omaha/vlan3000/configs/vxlan_vlan3000_fntc-aggacc-sw01.cfg"
 expect "$CFG" " ip address virtual 10.230.0.1/24"
 expect "$CFG" " vxlan vlan 3000 vni 11002"
