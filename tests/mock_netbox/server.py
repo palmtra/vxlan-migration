@@ -73,9 +73,16 @@ def main():
                 self._reply(404, {"detail": "Not found."})
                 return
             query = parse_qs(urlsplit(self.path).query)
+
+            # Like NetBox: a related object (site=, group=) is filtered by its slug.
+            def _matches(value, wanted):
+                if isinstance(value, dict):
+                    return str(value.get("slug")) == wanted
+                return str(value) == wanted
+
             results = [
                 obj for obj in store.get(key, [])
-                if all(str(obj.get(field)) == values[0] for field, values in query.items())
+                if all(_matches(obj.get(field), values[0]) for field, values in query.items())
             ]
             self._reply(200, {"count": len(results), "results": results})
 

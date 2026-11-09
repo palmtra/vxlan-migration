@@ -9,7 +9,11 @@
         "slug": "oma01",
         "name": "Omaha"
       },
-      "group": null
+      "group": {
+        "id": 7,
+        "slug": "omaha-datacenter",
+        "name": "omaha-datacenter"
+      }
     }
   ],
   "vpn/l2vpn-terminations": [

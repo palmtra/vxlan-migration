@@ -177,7 +177,7 @@ ANSIBLE_COLLECTIONS_SCAN_SYS_PATH=false \
   -e target_data_center=lisle \
   -e vlan_db_dir="$ROOT/tests/mock_cli/vlans" \
   -e reports_dir="$REC/reports" > "$REC/avd.log" 2>&1 || { cat "$REC/avd.log"; echo "FAIL: deploy_to_cvp_avd failed" >&2; exit 1; }
-CFG="$REC/reports/cvp_configlets/avd/configs/eos-leaf-01.cfg"
+CFG="$REC/reports/cvp_configlets/lisle/vlan300/avd/configs/eos-leaf-01.cfg"
 expect "$CFG" "interface Vlan300"
 expect "$CFG" "ip address virtual 10.30.0.1/24"
 expect "$CFG" "vxlan vlan 300 vni 20000"
