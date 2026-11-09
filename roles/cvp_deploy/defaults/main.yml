@@ -11,8 +11,18 @@
 # inventory host over httpapi. Set it in inventory/group_vars/CVAAS/ (token
 # from Ansible Vault or AAP credentials). See roles/cvp_change_control.
 
-# Generated configlet storage directory.
-cvp_configlet_build_dir: "{{ reports_dir | default(project_root ~ '/reports') }}/cvp_configlets"
+# Generated configlets: one directory per data center and VLAN, so a run never
+# touches another VLAN's files. Each run replaces this VLAN's configs/ (no
+# versions are kept):
+#   reports/cvp_configlets/<dc>/vlan<id>/configs/vxlan_vlan<id>_<leaf>.cfg
+# The same layout is defined in roles/avd_vxlan_config and roles/cvp_rollback.
+cvp_configlet_root: "{{ reports_dir | default(project_root ~ '/reports') }}/cvp_configlets"
+cvp_configlet_data_center: >-
+  {{ (target_data_center | default('', true)
+      or (hostvars['localhost']['_target_vlan_record'] | default({})).data_center | default('', true)
+      or 'unknown_dc') | string | trim | lower }}
+cvp_configlet_vlan_dir: "{{ cvp_configlet_root }}/{{ cvp_configlet_data_center }}/vlan{{ target_vlan_id }}"
+cvp_configlet_build_dir: "{{ cvp_configlet_vlan_dir }}/configs"
 
 # When true, push generated configlets to CloudVision, create a change control
 # and wait for it. When false, configlets are only rendered to files for review.
