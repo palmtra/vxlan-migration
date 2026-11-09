@@ -85,7 +85,7 @@ Open features and planned work. Completed items are kept for context.
 - [x] VNI range end values confirmed
 - [x] Routing discovery matches the VLAN prefix or a more-specific only (no covering /16, no next hop outside the subnet)
 - [x] Border-leaf BGP view of each legacy subnet (same AS as the MLS): advertised over iBGP from the MLS, by a fabric leaf, or not at all
-- [ ] NetBox as the VNI allocator: next free per DC and customer_type
+- [x] NetBox as the VNI allocator: IPAM route targets, next free number per DC range, tenant 0000001 internal (`playbooks/allocate_vni.yml`)
 - [ ] One config generator for production: Jinja (`roles/cvp_deploy`) or AVD (`roles/avd_vxlan_config`). Both deploy through `cv_configlet_v3`; retire the one not chosen
 - [ ] Sample outputs from the N7K and an EOS leaf (B9) for parser fixtures
 - [ ] Teams / email notification on change control (J4)

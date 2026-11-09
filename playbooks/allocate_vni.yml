@@ -1,0 +1,57 @@
+---
+# -----------------------------------------------------------------------------
+# allocate_vni.yml - a VLAN's L2 VNI and route target from NetBox
+# -----------------------------------------------------------------------------
+# Reads NetBox IPAM route targets (/ipam/route-targets/). A route target
+# <n>:<vlan id> whose n is in one of the DC's vni_ranges is the VLAN's VNI.
+# Without one, the VLAN gets the lowest free number of its range: internal
+# for tenant 0000001 (FNTS), external for every other tenant. The tenant comes
+# from the NetBox VLAN in the DC's VLAN group, else the VLAN record. The VLAN
+# does not need to be in vars/vlans/ yet.
+#
+# Report only (default):
+#   ansible-playbook -i inventory/hosts.yml playbooks/allocate_vni.yml \
+#     -e manual_data_center=omaha -e manual_vlan_id=3052 --ask-vault-pass
+#
+# Write the route target to NetBox (both extra vars are required):
+#   ansible-playbook -i inventory/hosts.yml playbooks/allocate_vni.yml \
+#     -e manual_data_center=omaha -e manual_vlan_id=3052 \
+#     -e netbox_reserve_rt=true -e netbox_reserve_approval=approve --ask-vault-pass
+#
+# Then set evpn.l2.vni in vars/vlans/<dc>/<vid>_<name>.yml to the VNI shown.
+# -----------------------------------------------------------------------------
+
+- name: VNI and route target from NetBox
+  hosts: localhost
+  gather_facts: false
+
+  vars:
+    target_data_center: "{{ manual_data_center | default('') | trim | lower }}"
+    target_vlan_id: "{{ manual_vlan_id | default('') }}"
+
+  tasks:
+    - name: Check the input
+      ansible.builtin.fail:
+        msg: "Pass -e manual_data_center=<lisle|omaha> and -e manual_vlan_id=<id>."
+      when: target_data_center | length == 0 or (target_vlan_id | string) is not match('^[0-9]+$')
+
+    - name: Check NetBox is configured
+      ansible.builtin.fail:
+        msg: "Set netbox_url and netbox_token (inventory/group_vars/all/vault.yml)."
+      when: (netbox_url | default('', true) | length == 0) or (netbox_token | default('', true) | length == 0)
+
+    # The whole DC database: its VNIs count as taken. The VLAN's own record,
+    # when there is one, supplies the tenant fallback and a VNI to check.
+    - name: Load the DC's VLAN DB
+      ansible.builtin.set_fact:
+        _vlan_db: "{{ vlan_db_dir | load_vlan_db_from_directory(target_data_center) }}"
+        _vlan_db_data_center: "{{ target_data_center }}"
+
+    - name: Pick the VLAN's record
+      ansible.builtin.set_fact:
+        _target_vlan_record: "{{ _vlan_db.vlans | selectattr('id', 'equalto', target_vlan_id | int) | first | default({}) }}"
+
+    - name: Read or allocate the route target
+      ansible.builtin.include_role:
+        name: netbox_check
+        tasks_from: route_target.yml

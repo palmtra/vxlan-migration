@@ -32,12 +32,12 @@ Nothing is pruned. Pruning stays a separate step that needs approval (see [Prune
 
 No VLAN record yet? Run the command anyway. Discovery writes a starter record (`<vid>_<slug>.yml`) next to its report, and the readiness check stops with `VLAN <id> is not in the VLAN DB`. Review the starter record, decide what it leaves open (gateway mode and leaves), copy it to `vars/vlans/<dc>/`, and run again.
 
-VLAN IDs repeat across NetBox sites. Scope the lookup per data center in group vars:
+VLAN IDs repeat across NetBox VLAN groups. `inventory/group_vars/all/main.yml` scopes the lookup to each data center's group:
 
 ```yaml
 netbox_vlan_query_by_dc:
-  omaha: {group: omaha-vlans}
-  lisle: {site: lis01}
+  omaha: {group: omaha-datacenter}
+  lisle: {group: lisle-datacenter}
 ```
 
 ## What the run does

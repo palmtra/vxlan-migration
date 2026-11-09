@@ -142,12 +142,13 @@ Collects VLAN, MAC, SVI, ARP, trunks, LLDP/CDP neighbors, spanning tree, and (on
 | `discovery_include_static_macs` | `true` | Read static MAC entries too (`show mac address-table vlan N`); the switch's own MACs are left out |
 | `discovery_collect_ipv6` | `true` | Read IPv6 neighbors on SVIs with IPv6; global addresses join the endpoint row of their MAC |
 | `migration_tier` (inventory group/host var) | `eos_devices`: `fabric`; `nxos_devices`: `legacy`; `ios_devices`: `access` | `fabric`: Arista leaf (a VTEP when Vxlan1 exists, otherwise a non-VTEP switch). `legacy`: the MLS / core being retired. `access`: a non-VTEP L2 switch that stays and must attach through a VTEP. Set `access` per host for any switch in the discovery list that is not a VTEP |
-| `vni_ranges` / `vni_default_customer_type` | Lisle 20000 / 22000, Omaha 10000 / 11000 / `external` | Per-DC VNI ranges for `internal` and `external` customers (`inventory/group_vars/all/vni_ranges.yml`). A VLAN record without `vni` gets the next free VNI in its DC and `customer_type`, skipping VNIs in the DC's VLAN DB and VNIs (L2 and L3) already mapped on discovered switches. Proposed, never written: confirm it into the SSOT |
+| `vni_ranges` / `vni_default_customer_type` | Lisle 20000 / 22000, Omaha 10000 / 11000 / `external` | Per-DC VNI ranges for `internal` and `external` customers (`inventory/group_vars/all/vni_ranges.yml`). A VLAN record without `vni` gets the next free VNI in its DC and `customer_type`, skipping VNIs in the DC's VLAN DB and VNIs (L2 and L3) already mapped on discovered switches. Proposed, never written: confirm it into the SSOT. A VNI in the record is never replaced. A VLAN not in the VLAN DB keeps the VNI of the starter record an earlier discovery wrote under `reports/<dc>/<vlan>/<vid>_<name>.yml`, and is a blocker until the record is in `vars/vlans/<dc>/` |
 | `vtep_source_interface` | `Loopback1` | Expected VTEP source on fabric leaves (AVD default). Also the source for underlay pings in verify |
 | `discovery_write_prune_plan` | `true` | Write the separate prune report (trunk/SVI/VLAN + EOS session text; never applies deletes) |
 | `prune_commit_timer` | `00:20:00` | EOS `commit timer` value printed in the prune report and used when prune apply is approved |
 | `prune_apply` | `false` | `playbooks/core/prune_vlan.yml` only. `true` sends CLI to prune-eligible switches |
 | `prune_approval` | empty | Must be `approve` together with `prune_apply=true`. See [examples/prune-vlan.md](examples/prune-vlan.md) |
+| `new_gateway_validated` | `false` | Releases a source gateway's teardown (`blocked_until_gateway_validated`) after the new gateway was validated by hand: `true` for every VLAN of the run, or a list (`3039,3040`). Without it, the newest `reports/<dc>/_runs/migrate_vlan<id>_<ts>.json` with outcome `deployed_and_verified` and no endpoint problems releases it |
 | `discovery_write_device_prune_plans` | `true` | Write `reports/<dc>/_prune_plans/*.json` |
 | `discovery_enable_ios` | `false` | Parked IOS discovery; set `true` to run `gather_ios*` (see [OS_SUPPORT.md](OS_SUPPORT.md)) |
 | `discovery_write_markdown` | `true` | Write `.md` report |
@@ -297,12 +298,13 @@ With `netbox_url` and `netbox_token` set, the deploy looks the VLAN up in NetBox
 - NetBox fills what the VLAN record (`vars/vlans/`) leaves empty, so a record without `evpn.l2.vni` can deploy from NetBox.
 - A value both have must agree. A different VNI, or an explicit `l2_rt` that differs, stops the run before any configlet is rendered (`netbox_evpn_conflict: warn` deploys from the record instead).
 - No VXLAN-EVPN L2VPN on the VLAN: the record is used as is. No VNI from either: the deploy stops.
+- Then the IPAM route targets (`/ipam/route-targets/`): a route target `<n>:<vlan id>` with `n` in one of the DC's `vni_ranges` gives the VLAN its VNI; without one, a record without a VNI gets the lowest free number of its range (tenant `0000001` internal, any other tenant external). A CloudVision push stops when that number is not written to NetBox yet. Details and variables: [examples/allocate-vni.md](examples/allocate-vni.md).
 - VLAN IDs repeat across NetBox sites and VLAN groups: scope the lookup per data center with `netbox_vlan_query_by_dc`. Several matches without a scope stop the run.
 
 | Variable | Default | Description |
 |---|---|---|
 | `netbox_evpn_lookup` | `true` | Read VNI / route targets from the VLAN's VXLAN-EVPN L2VPN |
-| `netbox_vlan_query_by_dc` | `{}` | NetBox VLAN filters per data center, e.g. `{omaha: {group: omaha-vlans}, lisle: {site: lis01}}` |
+| `netbox_vlan_query_by_dc` | `{omaha: {group: omaha-datacenter}, lisle: {group: lisle-datacenter}}` (inventory) | NetBox VLAN filters per data center: each DC's VLAN group slug |
 | `netbox_l2vpn_api_apps` | `[vpn, ipam]` | Where L2VPNs live: `/api/vpn/` (NetBox 4.x), then `/api/ipam/` (3.x) |
 | `netbox_evpn_conflict` | `fail` | `fail` stops on a VNI / route-target conflict; `warn` deploys from the record |
 | `netbox_ssot_required` | `false` | `true` → fail if VLAN missing in NetBox |

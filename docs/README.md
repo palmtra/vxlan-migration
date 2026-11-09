@@ -40,6 +40,7 @@ Short, runnable task guides in [examples/](examples/):
 | [examples/prune-vlan.md](examples/prune-vlan.md) | Prune eligible switches (dry-run default, explicit approval to apply) |
 | [examples/generate-config-without-cvp-push.md](examples/generate-config-without-cvp-push.md) | Generate CVP configlets locally without push |
 | [examples/export-vlan-to-netbox.md](examples/export-vlan-to-netbox.md) | Export local VLAN DB to NetBox |
+| [examples/allocate-vni.md](examples/allocate-vni.md) | Get a VLAN's VNI and route target from NetBox (next free number per DC and tenant) |
 
 Full examples index: [examples/README.md](examples/README.md)
 

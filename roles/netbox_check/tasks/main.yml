@@ -75,8 +75,8 @@
 
 - name: Record NetBox VLAN object when found (one match only)
   ansible.builtin.set_fact:
-    _netbox_vlan_pick: "{{ _netbox_vlan_lookup.json | netbox_vlan_pick(target_vlan_id) }}"
-    _netbox_vlan: "{{ (_netbox_vlan_lookup.json | netbox_vlan_pick(target_vlan_id)).vlan }}"
+    _netbox_vlan_pick: "{{ _netbox_vlan_lookup.json | netbox_vlan_pick(target_vlan_id, target_data_center | default('')) }}"
+    _netbox_vlan: "{{ (_netbox_vlan_lookup.json | netbox_vlan_pick(target_vlan_id, target_data_center | default(''))).vlan }}"
   delegate_to: localhost
   become: false
   run_once: true
@@ -158,3 +158,10 @@
     - netbox_evpn_lookup | bool
     - _netbox_configured
     - _netbox_sync_status | default('') in ['found', 'ambiguous']
+
+- name: Read or allocate the VNI and route target from NetBox IPAM route targets
+  ansible.builtin.include_tasks: route_target.yml
+  when:
+    - netbox_rt_lookup | bool
+    - _netbox_configured
+    - _netbox_sync_status | default('') in ['found', 'missing', 'ambiguous']

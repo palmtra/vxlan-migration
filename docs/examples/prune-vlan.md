@@ -24,9 +24,16 @@ Every plan carries a **phase**. Per VLAN:
 |---|---|---|
 | 1 | MLS side of each link to a non-VTEP switch. Pruning on the MLS isolates the legacy L2 and removes the loop; the interconnect keeps the MLS gateway in reach | VLAN VNI-mapped on the non-VTEP switch's VTEPs, gateway reachable from the fabric |
 | 2 | Non-VTEP side of the same links (secondary cleanup; AVD for CVaaS-managed EOS, CLI optional) | Same as phase 1 |
-| 3 | Teardown: trunks, SVI, and VLAN on prune-eligible switches | The SVI on that switch is no longer the active gateway (moved to the fabric) |
+| 3 | Teardown: trunks, SVI, and VLAN on prune-eligible switches | Not a source gateway: after the deploy. A source gateway (owns the VLAN's SVI): after the new gateway is validated |
 
-Cutover order: deploy the VNI → phase 1 → re-run discovery → phase 2 → move the gateway → phase 3. A switch whose SVI is still the active gateway gets `blocked_until_gateway_moved`: its teardown CLI is kept, never sent.
+Cutover order: shut the legacy SVI by hand in the window → deploy the VNI and the fabric gateway → phase 1 → re-run discovery → phase 2 → validate the new gateway and the endpoints → withdraw the legacy BGP `network` → phase 3 on the other switches → phase 3 on the source gateways. A source gateway's teardown CLI is kept, never sent, while it is:
+
+| Status | Release |
+|---|---|
+| `blocked_until_gateway_moved` | The SVI is still up: shut it (the manual cutover step) and re-run |
+| `blocked_until_gateway_validated` | The SVI is shut, but the new gateway is not validated yet. Released when the newest `reports/<dc>/_runs/migrate_vlan<id>_<ts>.json` has outcome `deployed_and_verified` with no endpoint problems, or with `-e new_gateway_validated=true` after validating by hand |
+
+Discovery of several VLANs in one run (`-e target_vlan_ids=3039,3040`) keeps one `switchport trunk allowed vlan remove <vlan>` line per VLAN: two VLANs on the same trunk are never merged into one line, and each VLAN's plan carries only its own lines.
 
 ## Dry-run (default)
 
@@ -66,6 +73,7 @@ ansible-playbook -i inventory/hosts.yml playbooks/core/prune_vlan.yml \
 |---|---|---|
 | `prune_apply` | `false` | `true` sends the CLI |
 | `prune_approval` | empty | Must be the exact word `approve` when `prune_apply` is true |
+| `new_gateway_validated` | `false` | `true` (or a list such as `3039,3040`) releases source-gateway teardowns once the new gateway has been validated by hand. Without it, a `migrate_vlan.yml` summary with verification passed and no endpoint problems releases them |
 | `prune_commit_timer` | `00:20:00` | EOS rollback timer written into the session |
 
 Discovery and the prune report stay read-only. This playbook is the only apply path.

@@ -24,9 +24,11 @@ netbox_warn_on_missing_record: true
 # VLAN IDs repeat across NetBox sites and VLAN groups. Scope the lookup per
 # data center with NetBox VLAN filters, e.g.
 #   netbox_vlan_query_by_dc:
-#     omaha: {group: omaha-vlans}
-#     lisle: {site: lis01}
-# Several matches without a scope stop the VNI / route-target lookup.
+#     omaha: {group: omaha-datacenter}
+#     lisle: {group: lisle-datacenter}
+# (set in inventory/group_vars/all/main.yml). Without a scope, several
+# matches are narrowed to the one whose group or site names the data center;
+# if that does not leave one, the VNI / route-target lookup stops.
 netbox_vlan_query_by_dc: {}
 
 # Read the VNI and route targets from the VXLAN-EVPN L2VPN terminated on the
@@ -40,3 +42,19 @@ netbox_l2vpn_api_apps:
 # A VNI or route target that differs between NetBox and the VLAN record:
 # fail (default) stops the run; warn keeps the record and says so.
 netbox_evpn_conflict: fail
+
+# Route targets in NetBox IPAM (tasks/route_target.yml). A route target
+# <n>:<vlan id> with n in one of the DC's vni_ranges gives the VLAN its VNI. A
+# VLAN without one, and without a VNI in its record, gets the lowest free
+# number of its range: internal for these tenants (FNTS), external for every
+# other tenant.
+netbox_rt_lookup: true
+netbox_internal_tenants:
+  - "0000001"
+# Write the route target when NetBox has none. Needs the approval word too:
+#   -e netbox_reserve_rt=true -e netbox_reserve_approval=approve
+netbox_reserve_rt: false
+netbox_reserve_approval: ""
+# true: stop when the VNI is newly allocated but not written to NetBox
+# (workflow_deploy.yml sets it for a CloudVision push).
+netbox_rt_require_reserved: false

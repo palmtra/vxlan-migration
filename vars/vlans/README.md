@@ -25,7 +25,8 @@ Only real VLAN records belong here. Sample and test records live on the `test` b
 
 Rules:
 
-- **vid**: zero-padded to at least 4 digits
+- **vid**: zero-padded to at least 4 digits. An unpadded name (`100_legacy_web.yml`) is read too
+- A requested VLAN whose file does not start with its ID (`vlan3040.yml`) is still found, with a warning to rename it. Without the record, discovery treats the VLAN as a probe and proposes a VNI
 - **slug**: lowercase snake_case derived from `name`
 - Files starting with `_` are ignored
 

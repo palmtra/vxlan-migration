@@ -5,7 +5,7 @@ import re
 
 from ansible.errors import AnsibleFilterError
 
-from vlan_lib.common import _str_equal, sanitize_report_slug
+from vlan_lib.common import _str_equal, sanitize_report_slug, vlan_db_record_filename
 from vlan_lib.endpoints import ipv6_is_link_local
 from vlan_lib.parsers import _normalize_interface_name, network_prefix, normalize_mac_address
 from vlan_lib.placement import (
@@ -693,28 +693,51 @@ def active_svi(device):
     )
 
 
-def gate_teardown_plans(prune_plans, devices):
-    """Block a full prune on a switch whose SVI is still the active gateway.
+def gate_teardown_plans(prune_plans, devices, gateway_validated=False):
+    """Block a full prune on a source gateway until the new gateway is validated.
 
     Removing the SVI before the gateway moves to the fabric drops the
-    gateway for every endpoint. The plan keeps its CLI under
-    ``blocked_actions`` until a re-run finds the SVI shut or gone.
+    gateway for every endpoint. A plan whose SVI is still up waits for the
+    gateway move (``blocked_until_gateway_moved``). Once the SVI is shut, a
+    source gateway still waits until the new gateway is validated
+    (``blocked_until_gateway_validated``): *gateway_validated* is true after a
+    migrate_vlan.yml run verified the change with no endpoint problems, or
+    when the engineer says so (``-e new_gateway_validated=true``). The CLI
+    stays under ``blocked_actions`` meanwhile.
     """
     by_host = {d.get("hostname"): d for d in devices or []}
     for plan in prune_plans:
         plan.setdefault("phase", PRUNE_PHASES["teardown"])
-        if plan.get("placement_role") != "prune_eligible":
+        if plan.get("placement_role") != "prune_eligible" or not plan.get("actions"):
             continue
-        if not active_svi(by_host.get(plan.get("hostname"))) or not plan.get("actions"):
+        device = by_host.get(plan.get("hostname"))
+        if active_svi(device):
+            status = "blocked_until_gateway_moved"
+            reason = (
+                "Vlan SVI on %s is still the active gateway; move the gateway to the fabric first"
+                % plan.get("hostname")
+            )
+        elif (plan.get("source_gateway") or (device or {}).get("svi_present")) and not gateway_validated:
+            status = "blocked_until_gateway_validated"
+            reason = (
+                "%s is a source gateway: its prune waits until the new gateway is validated (a "
+                "migrate_vlan.yml run with verification passed and no endpoint problems, or "
+                "-e new_gateway_validated=true after the MOP's validation step)" % plan.get("hostname")
+            )
+        else:
             continue
         plan["blocked_actions"] = list(plan.get("actions") or [])
         plan["actions"] = []
-        plan["status"] = "blocked_until_gateway_moved"
-        plan["blocked_reason"] = (
-            "Vlan SVI on %s is still the active gateway; move the gateway to the fabric first"
-            % plan.get("hostname")
-        )
+        plan["status"] = status
+        plan["blocked_reason"] = reason
     return prune_plans
+
+
+def _vlan_in(value, vlan_id):
+    """``gateway_validated``: true/false for every VLAN, or a list of VLAN IDs."""
+    if isinstance(value, (list, tuple, set)):
+        return str(vlan_id) in {str(item) for item in value}
+    return str(value).strip().lower() in ("true", "yes", "1")
 
 
 def build_link_prune_plans(vlan_id, devices, link_prunes, roles_by_host, extra_block=""):
@@ -1088,6 +1111,22 @@ def build_findings(report):
             else:
                 add("risk", "gateway", "medium", text)
 
+    if report.get("in_vlan_db") is False:
+        data_center = (
+            report.get("data_center")
+            or ((report.get("deployment_model") or {}).get("site") or {}).get("data_center")
+            or "<dc>"
+        )
+        starter_path = (report.get("vni_allocation") or {}).get("path") or "reports/%s/%s/%s" % (
+            data_center,
+            report.get("vlan_slug") or "<vlan>",
+            vlan_db_record_filename(report.get("vlan_id") or 0, report.get("vlan_name") or "vlan"),
+        )
+        add("blocker", "scope", "high",
+            "VLAN %s is not in the VLAN DB (vars/vlans/%s/). Copy the starter record discovery wrote (%s) "
+            "there and set evpn.l2.vni: the VLAN record is authoritative, and nothing in this report replaces it."
+            % (report.get("vlan_id"), data_center, starter_path),
+        )
     for host in report.get("not_discovered") or []:
         add("blocker", "coverage", "high", 
             "Fix reachability to %s and re-run discovery: it was not discovered (unreachable or failed), "
@@ -1254,7 +1293,17 @@ def build_findings(report):
             "(aged out, or behind a switch that was not discovered)." % summary["not_in_mac_table"]
         )
     allocation = report.get("vni_allocation") or {}
-    if allocation.get("vni"):
+    if allocation.get("vni") and allocation.get("source") == "starter":
+        for vlan_id in allocation.get("used_by_records") or []:
+            add("blocker", "vni", "high",
+                "VNI %s from the starter record is already the VNI of VLAN %s in the VLAN DB. Pick another "
+                "VNI in the starter record." % (allocation["vni"], vlan_id),
+            )
+        add("decision", "vni", "medium",
+            "VNI %s %s. Confirm it in evpn.l2.vni of the VLAN record." % (allocation["vni"], allocation.get("reason")),
+            topic="proposed", vni=_finding_vni(allocation.get("vni")),
+        )
+    elif allocation.get("vni"):
         add("decision", "vni", "medium", 
             "VNI %s proposed (%s). Confirm it in evpn.l2.vni of the SSOT record."
             % (allocation["vni"], allocation.get("reason")),
@@ -1284,12 +1333,19 @@ def build_vlan_discovery_reports(
     that dropped out of the play (unreachable or failed). Hosts that were
     skipped on purpose set ``_discovery_skipped`` and are not listed.
 
-    *vni_allocation* (``{ranges, records, default_pool}``) proposes a VNI for
-    a VLAN without one: the next free VNI in its DC and pool.
+    *vni_allocation* (``{ranges, records, default_pool, starter_vnis}``)
+    proposes a VNI for a VLAN without one: the next free VNI in its DC and
+    pool. A VNI the record holds is never replaced. ``starter_vnis``
+    (``{vlan id: {vni, path}}``, see ``load_starter_vnis``) keeps the VNI of
+    the starter record an earlier run wrote for a VLAN that is not in the
+    VLAN DB. ``records`` is the VLAN DB: a VLAN missing from it is a blocker.
 
-    *placement_options* (``{keep_idle_endpoint_ports}``): true keeps a switch
-    whose endpoint-facing ports carry no MACs on the VLAN; the default prunes
-    it with a warning naming those ports.
+    *placement_options* (``{keep_idle_endpoint_ports, gateway_validated}``):
+    ``keep_idle_endpoint_ports`` true keeps a switch whose endpoint-facing
+    ports carry no MACs on the VLAN; the default prunes it with a warning
+    naming those ports. ``gateway_validated`` (bool, or the VLAN IDs whose
+    new gateway is validated, see ``gateway_validated_vlans``) releases the
+    source gateways' prune.
     """
     vni_allocation = vni_allocation if isinstance(vni_allocation, dict) else {}
     placement_options = placement_options if isinstance(placement_options, dict) else {}
@@ -1297,6 +1353,13 @@ def build_vlan_discovery_reports(
     vni_ranges = vni_allocation.get("ranges") or {}
     range_problems = vni_range_problems(vni_ranges)
     taken_vnis = used_vnis(list(vni_allocation.get("records") or []) + list(vlans))
+    db_ids = {
+        str(item.get("id"))
+        for item in vni_allocation.get("records") or []
+        if isinstance(item, dict) and item.get("id") is not None
+    }
+    starter_vnis = vni_allocation.get("starter_vnis") if isinstance(vni_allocation.get("starter_vnis"), dict) else {}
+    starter_vnis = {str(key): value for key, value in starter_vnis.items() if isinstance(value, dict)}
     if not isinstance(vlans, list):
         raise AnsibleFilterError(
             "build_vlan_discovery_reports expects a list, got %s" % type(vlans)
@@ -1519,10 +1582,18 @@ def build_vlan_discovery_reports(
                     elif op == "trunk_remove_vlans" and int(vlan_id) in (
                         action.get("vlans") or []
                     ):
+                        # Rebuild the CLI for this VLAN alone: the device plan
+                        # covers every VLAN of the run, and its line may name
+                        # another VLAN on the same trunk.
                         vlan_actions.append(
                             dict(
                                 action,
                                 vlans=[int(vlan_id)],
+                                cli=_trunk_remove_cli(
+                                    action.get("interface"),
+                                    [int(vlan_id)],
+                                    str(device.get("os_family") or device_plan.get("os_family") or "eos").lower(),
+                                ),
                             )
                         )
                 l3_review = list(device_plan.get("l3_review") or [])
@@ -1608,7 +1679,9 @@ def build_vlan_discovery_reports(
             {host: item.get("role") for host, item in by_placement.items()},
             gateway_reachable_from_fabric(placement["gateway"], placement["l2"]["interconnects"]),
         )
-        gate_teardown_plans(prune_plans, devices)
+        gate_teardown_plans(
+            prune_plans, devices, _vlan_in(placement_options.get("gateway_validated", False), vlan_id)
+        )
         prune_plans = sorted(
             link_prune_plans + prune_plans, key=lambda plan: plan.get("phase") or 9
         )
@@ -1659,9 +1732,33 @@ def build_vlan_discovery_reports(
         l3_discovery = build_l3_discovery(vlan_id, devices)
         gateway = placement["gateway"]
         endpoint_table = build_endpoint_table(devices, gateway)
+        # A VNI the record holds is never replaced. A VLAN that is not in the
+        # VLAN DB keeps the VNI of the starter record an earlier discovery
+        # wrote under reports/ (the engineer may have set it there); only a
+        # VLAN with neither gets a proposal.
+        # None when the caller did not pass the VLAN DB (no way to tell).
+        in_vlan_db = (str(vlan_id) in db_ids) if "records" in vni_allocation else None
+        starter = starter_vnis.get(str(vlan_id)) or {}
+        vni_source = "record" if vlan.get("vni") not in (None, "", 0) else ""
+        proposed = {}
+        if not vni_source and starter.get("vni"):
+            vlan = dict(vlan, vni=int(starter["vni"]))
+            vni_source = "starter"
+            proposed = {
+                "vni": int(starter["vni"]),
+                "source": "starter",
+                "path": starter.get("path") or "",
+                "reason": "kept from the starter record %s" % (starter.get("path") or "under reports/"),
+                "used_by_records": sorted(
+                    int(item.get("id"))
+                    for item in vni_allocation.get("records") or []
+                    if isinstance(item, dict)
+                    and str(item.get("id")) != str(vlan_id)
+                    and str(item.get("vni") or "") == str(starter["vni"])
+                ),
+            }
         already_mapped, vni_conflicts = _vni_findings(vlan, devices)
         taken_vnis |= used_vnis(None, devices)
-        proposed = {}
         if vlan.get("vni") in (None, "", 0) and vni_allocation:
             proposed = allocate_vni(
                 vlan.get("data_center") or "",
@@ -1671,6 +1768,8 @@ def build_vlan_discovery_reports(
             )
             if proposed.get("vni"):
                 taken_vnis.add(proposed["vni"])
+                proposed["source"] = "proposed"
+                vni_source = "proposed"
         for device in devices:
             device["migration_tier"] = device_tier(device)
 
@@ -1741,10 +1840,15 @@ def build_vlan_discovery_reports(
             "not_discovered": list(not_discovered),
             "switches_scanned": [device["hostname"] for device in devices],
         }
+        l2_evpn = report["deployment_model"].setdefault("evpn", {}).setdefault("l2", {})
         if proposed.get("vni"):
-            l2_evpn = report["deployment_model"].setdefault("evpn", {}).setdefault("l2", {})
             l2_evpn["vni"] = proposed["vni"]
-            l2_evpn["vni_proposed"] = "%s pool %s" % (proposed.get("pool"), proposed.get("range"))
+            if proposed.get("source") == "proposed":
+                l2_evpn["vni_proposed"] = "%s pool %s" % (proposed.get("pool"), proposed.get("range"))
+        if vni_source:
+            l2_evpn["vni_source"] = vni_source
+        report["vni_source"] = vni_source
+        report["in_vlan_db"] = in_vlan_db
         report["fabric_readiness"] = fabric_readiness(report)
         report["gateway_mac"] = build_gateway_mac_change(report)
         report["action_items"] = build_action_items(report)
