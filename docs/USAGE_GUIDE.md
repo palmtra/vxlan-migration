@@ -271,7 +271,7 @@ See `vars/vlans/README.md`.
 | Variable | Default | Description |
 |---|---|---|
 | `use_avd` | `false` | `true` → `roles/avd_vxlan_config` (Arista AVD); `false` → legacy Jinja |
-| `cvp_apply_configlets` | `false` | `true` → push to CVP; `false` → render files only under `reports/cvp_configlets/` |
+| `cvp_apply_configlets` | `false` | `true` → push to CVP; `false` → render files only under `reports/cvp_configlets/<dc>/vlan<id>/` |
 
 Detailed generate-only walkthrough: [examples/generate-config-without-cvp-push.md](examples/generate-config-without-cvp-push.md).
 | `cvp_change_control_state` | `set` | `set` = pending, approved and executed by a person in CloudVision. `approve_and_execute` also needs `cvp_change_control_auto_execute_allowed=true` |

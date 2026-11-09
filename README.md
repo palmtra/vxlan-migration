@@ -122,7 +122,7 @@ ansible-playbook -i inventory/hosts.yml playbooks/core/workflow_deploy.yml \
   --ask-vault-pass
 ```
 
-Output: `reports/cvp_configlets/` (Jinja) or `reports/cvp_configlets/avd/` (AVD structured + configs).
+Output: one directory per data center and VLAN, `reports/cvp_configlets/<dc>/vlan<id>/`: `configs/` (Jinja) or `avd/structured_configs/` and `avd/configs/` (AVD). Each run replaces that VLAN's files and leaves other VLANs alone.
 
 More generate-only options: [docs/examples/generate-config-without-cvp-push.md](docs/examples/generate-config-without-cvp-push.md)
 
