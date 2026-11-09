@@ -1,8 +1,10 @@
 {# Rollback of the Arista leaf VXLAN migration configlet #}
 {# Applied to: {{ _device_hostname }} #}
+{# Reverses roles/cvp_deploy/templates/leaf_vxlan_configlet.j2: same gateway test #}
+{# (vlan_gateway_hosts), so every leaf that got the SVI and the VRF network loses them. #}
 {% set _vni = _vlan_to_migrate.vni | default(_vlan_to_migrate.l3_vni, true) %}
 {% set _vrf = (_vlan_to_migrate.vrf | default('default') | string) %}
-{% set _is_gateway = (_device_hostname in (_vlan_to_migrate.gateway_leafs | default([]))) and ((_vlan_to_migrate.service_type | default('')) == 'l3') %}
+{% set _is_gateway = _device_hostname in (_vlan_to_migrate | vlan_gateway_hosts) %}
 {% set _prefixes = _vlan_to_migrate.prefixes | default([]) %}
 !
 {% if _is_gateway %}
@@ -22,12 +24,12 @@ no vlan {{ target_vlan_id }}
 {% set _bgp = _vlan_to_migrate | bgp_vlan_evpn(_device_hostname, _device_bgp_asn | default('', true), _device_loopback_ip | default('', true)) %}
 {% if _bgp and (_bgp.missing | default([]) | length == 0) %}
 router bgp {{ _bgp.asn }}
+ no vlan {{ target_vlan_id }}
 {% if _is_gateway and (_prefixes | length > 0) and (_vrf not in ['', 'default']) %}
  vrf {{ _vrf }}
 {% for _prefix in _prefixes %}
   no network {{ _prefix }}
 {% endfor %}
 {% endif %}
- no vlan {{ target_vlan_id }}
 !
 {% endif %}
