@@ -171,9 +171,12 @@ ansible-playbook -i "$MOCK_INV" tests/playbooks/cvp_rollback_render.yml \
   || { cat "$OUT/rollback_central.log"; echo "FAIL: centralized-gateway rollback render failed" >&2; exit 1; }
 CENTRAL_CFG="$OUT/deploy_central/reports/cvp_configlets/omaha/vlan3000/configs"
 CENTRAL_RB="$OUT/rollback_central/reports/cvp_configlets/omaha/vlan3000/rollback"
-DEPLOYED="$(cd "$CENTRAL_CFG" && ls)"
-ROLLED_BACK="$(cd "$CENTRAL_RB" 2>/dev/null && ls)"
-if [ "$DEPLOYED" != "$ROLLED_BACK" ]; then
+# ls || true: a missing directory is reported below, not an exit under set -e.
+DEPLOYED="$(ls "$CENTRAL_CFG" 2>/dev/null || true)"
+ROLLED_BACK="$(ls "$CENTRAL_RB" 2>/dev/null || true)"
+if [ -z "$DEPLOYED" ]; then
+  echo "FAIL: the centralized-gateway deploy rendered no configlets in $CENTRAL_CFG" >&2; fail=1
+elif [ "$DEPLOYED" != "$ROLLED_BACK" ]; then
   echo "FAIL: rollback configlets ($(echo $ROLLED_BACK)) differ from the deploy's ($(echo $DEPLOYED))" >&2; fail=1
 fi
 for gw in oma01-blf01 oma01-blf02; do
@@ -211,8 +214,8 @@ fi
 expect "$OUT/verify_resume.log" "Post-change verification failed on oma01-blf01."
 expect "$OUT/verify_resume.log" "TASK [cvp_rollback : Report generated rollback configlets]"
 expect "$OUT/verify_resume.log" "Rollback re-verification failed on"
-RESUMED="$(cd "$OUT/verify_resume/reports/cvp_configlets/omaha/vlan3000/rollback" 2>/dev/null && ls)"
-if [ "$DEPLOYED" != "$RESUMED" ]; then
+RESUMED="$(ls "$OUT/verify_resume/reports/cvp_configlets/omaha/vlan3000/rollback" 2>/dev/null || true)"
+if [ -z "$DEPLOYED" ] || [ "$DEPLOYED" != "$RESUMED" ]; then
   echo "FAIL: auto-rollback configlets ($(echo $RESUMED)) differ from the deploy's ($(echo $DEPLOYED))" >&2; fail=1
 fi
 
