@@ -37,9 +37,11 @@
   become: false
   run_once: true
 
+# Same device set as roles/cvp_deploy (target_switches plus gateway_leafs), so
+# a centralized_anycast gateway pair outside target_switches is rolled back too.
 - name: Determine CVP rollback target devices from the local VLAN DB
   ansible.builtin.set_fact:
-    _cvp_target_devices: "{{ _vlan_to_migrate.target_switches | default([]) }}"
+    _cvp_target_devices: "{{ _vlan_to_migrate | vlan_config_hosts }}"
   delegate_to: localhost
   become: false
   run_once: true
@@ -48,7 +50,7 @@
 - name: Fail if no CVP target switches were declared for rollback
   ansible.builtin.fail:
     msg: >-
-      VLAN {{ target_vlan_id }} has no target_switches in the local VLAN DB.
+      VLAN {{ target_vlan_id }} has no target_switches or gateway_leafs in the local VLAN DB.
       Nothing to roll back.
   when: _cvp_target_devices | length == 0
   delegate_to: localhost
