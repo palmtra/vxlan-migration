@@ -95,8 +95,8 @@ class NetboxRouteTargetTests(unittest.TestCase):
 
 class VlanPickTests(unittest.TestCase):
     VLANS = {"results": [
-        {"id": 501, "vid": 3052, "name": "A", "group": {"slug": "omaha-vlans", "name": "Omaha VLANs"}},
-        {"id": 502, "vid": 3052, "name": "B", "group": {"slug": "lisle-vlans", "name": "Lisle VLANs"}},
+        {"id": 501, "vid": 3052, "name": "A", "group": {"slug": "omaha-datacenter", "name": "omaha-datacenter"}},
+        {"id": 502, "vid": 3052, "name": "B", "group": {"slug": "lisle-datacenter", "name": "lisle-datacenter"}},
     ]}
 
     def test_the_dc_group_picks_one_of_two(self):

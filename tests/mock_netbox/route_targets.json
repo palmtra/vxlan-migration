@@ -7,8 +7,8 @@
    "name": "APP_3052",
    "group": {
     "id": 1,
-    "slug": "omaha-vlans",
-    "name": "Omaha VLANs"
+    "slug": "omaha-datacenter",
+    "name": "omaha-datacenter"
    },
    "tenant": {
     "id": 1,
@@ -21,8 +21,8 @@
    "name": "CUST_3052",
    "group": {
     "id": 2,
-    "slug": "lisle-vlans",
-    "name": "Lisle VLANs"
+    "slug": "lisle-datacenter",
+    "name": "lisle-datacenter"
    },
    "tenant": {
     "id": 3,
@@ -35,8 +35,8 @@
    "name": "FNTS_NEW",
    "group": {
     "id": 1,
-    "slug": "omaha-vlans",
-    "name": "Omaha VLANs"
+    "slug": "omaha-datacenter",
+    "name": "omaha-datacenter"
    },
    "tenant": {
     "id": 1,
@@ -49,8 +49,8 @@
    "name": "CUST_NEW",
    "group": {
     "id": 1,
-    "slug": "omaha-vlans",
-    "name": "Omaha VLANs"
+    "slug": "omaha-datacenter",
+    "name": "omaha-datacenter"
    },
    "tenant": {
     "id": 2,
@@ -63,8 +63,8 @@
    "name": "NO_TENANT",
    "group": {
     "id": 1,
-    "slug": "omaha-vlans",
-    "name": "Omaha VLANs"
+    "slug": "omaha-datacenter",
+    "name": "omaha-datacenter"
    },
    "tenant": null
   }

@@ -131,7 +131,29 @@ fi
 diff -r "$OUT/deploy/reports/cvp_configlets" "$OUT/deploy_nodisc/reports/cvp_configlets" >/dev/null \
   || { echo "FAIL: configlets differ without discovery" >&2; fail=1; }
 
-CFG="$OUT/deploy/reports/cvp_configlets/vxlan_vlan3000_fntc-aggacc-sw01.cfg"
+# 3r. Configlets live in reports/cvp_configlets/<dc>/vlan<id>/. A rerun replaces
+#     this VLAN's files (a leaf no longer in the record disappears) and never
+#     touches another VLAN's directory.
+RR="$OUT/deploy_rerun/reports/cvp_configlets/omaha"
+mkdir -p "$RR/vlan3000/configs" "$RR/vlan3001/configs"
+echo stale > "$RR/vlan3000/configs/vxlan_vlan3000_removed-leaf.cfg"
+echo other > "$RR/vlan3001/configs/vxlan_vlan3001_fntc-aggacc-sw01.cfg"
+ansible-playbook -i "$MOCK_INV" playbooks/core/workflow_deploy.yml \
+  -e manual_vlan_id=3000 -e manual_data_center=omaha -e manual_target_vrf=v0000822a \
+  -e cvp_apply_configlets=false -e vlan_db_dir="$OUT/vlans" -e artifacts_dir="$OUT/deploy_rerun" \
+  -e deploy_discovery=false -e mock_unreachable=true \
+  --limit dc_omaha > "$OUT/deploy_rerun.log" 2>&1 \
+  || { cat "$OUT/deploy_rerun.log"; echo "FAIL: rerun of the generate-only deploy failed" >&2; exit 1; }
+if [ -e "$RR/vlan3000/configs/vxlan_vlan3000_removed-leaf.cfg" ]; then
+  echo "FAIL: a rerun kept a configlet for a leaf that is no longer in the record" >&2; fail=1
+fi
+if [ "$(cat "$RR/vlan3001/configs/vxlan_vlan3001_fntc-aggacc-sw01.cfg" 2>/dev/null)" != "other" ]; then
+  echo "FAIL: deploying VLAN 3000 changed VLAN 3001's configlets" >&2; fail=1
+fi
+diff -r "$OUT/deploy/reports/cvp_configlets/omaha/vlan3000" "$RR/vlan3000" >/dev/null \
+  || { echo "FAIL: the rerun's VLAN 3000 configlets differ from the first run" >&2; fail=1; }
+
+CFG="$OUT/deploy/reports/cvp_configlets/omaha/vlan3000/configs/vxlan_vlan3000_fntc-aggacc-sw01.cfg"
 expect "$CFG" " ip address virtual 10.230.0.1/24"
 expect "$CFG" " vxlan vlan 3000 vni 11002"
 expect "$CFG" "router bgp 4200000102"
@@ -242,17 +264,17 @@ netbox_deploy() {
 netbox_deploy nb_v4 omaha_evpn_v4.json
 if [ "$nb_rc" -ne 0 ]; then cat "$OUT/nb_v4.log"; echo "FAIL: deploy with NetBox L2VPN failed" >&2; fail=1; fi
 expect "$OUT/nb_v4.log" "NetBox L2VPN ACME_APP: VNI 11002, import 11002:3000, export 11002:3000"
-expect "$OUT/nb_v4/reports/cvp_configlets/vxlan_vlan3000_fntc-aggacc-sw01.cfg" "  route-target both 11002:3000"
+expect "$OUT/nb_v4/reports/cvp_configlets/omaha/vlan3000/configs/vxlan_vlan3000_fntc-aggacc-sw01.cfg" "  route-target both 11002:3000"
 netbox_deploy nb_v3 omaha_evpn_v3_split_rt.json
 if [ "$nb_rc" -ne 0 ]; then cat "$OUT/nb_v3.log"; echo "FAIL: deploy with NetBox 3.x L2VPN failed" >&2; fail=1; fi
-NB3_CFG="$OUT/nb_v3/reports/cvp_configlets/vxlan_vlan3000_fntc-aggacc-sw01.cfg"
+NB3_CFG="$OUT/nb_v3/reports/cvp_configlets/omaha/vlan3000/configs/vxlan_vlan3000_fntc-aggacc-sw01.cfg"
 expect "$NB3_CFG" "  route-target import 65000:3000"
 expect "$NB3_CFG" "  route-target export 65000:3001"
 if grep -qF "route-target both" "$NB3_CFG"; then echo "FAIL: split NetBox route targets rendered as both" >&2; fail=1; fi
 netbox_deploy nb_conflict omaha_evpn_conflict.json
 if [ "$nb_rc" -eq 0 ]; then echo "FAIL: a VNI conflict with NetBox did not stop the deploy" >&2; fail=1; fi
 expect "$OUT/nb_conflict.log" "VNI conflict for VLAN 3000: the record says 11002, NetBox L2VPN ACME_APP"
-if ls "$OUT"/nb_conflict/reports/cvp_configlets/*.cfg >/dev/null 2>&1; then
+if [ -n "$(find "$OUT/nb_conflict/reports/cvp_configlets" -name '*.cfg' 2>/dev/null)" ]; then
   echo "FAIL: configlets were rendered despite the NetBox conflict" >&2; fail=1
 fi
 
@@ -337,7 +359,7 @@ if grep -q "TASK \[vlan_discovery" "$OUT/migrate_novni.log"; then echo "FAIL: di
 migrate_run migrate_decision -e vlan_db_dir="$OUT/vlans_novni" -e migrate_preflight=false
 if [ "$mig_rc" -eq 0 ]; then echo "FAIL: migrate deployed with an open decision" >&2; fail=1; fi
 expect "$OUT/migrate_decision.log" "decision(s) are open"
-if ls "$OUT"/migrate_decision/reports/cvp_configlets/*.cfg >/dev/null 2>&1; then
+if [ -n "$(find "$OUT/migrate_decision/reports/cvp_configlets" -name '*.cfg' 2>/dev/null)" ]; then
   echo "FAIL: configlets rendered past a closed gate" >&2; fail=1
 fi
 

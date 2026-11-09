@@ -4,7 +4,8 @@
     server.py <port> <seed.json> <writes.jsonl>
 
 Serves ``/api/<app>/<model>/`` from the seed: GET filters by exact match on
-every query parameter (``<field>__isw`` / ``__iew``: starts / ends with,
+every query parameter, a related object (``site=``, ``group=``) by its
+slug (``<field>__isw`` / ``__iew``: starts / ends with,
 ``__gte`` / ``__lte``: numeric bounds, a nested object matches on its name;
 ``limit`` / ``offset`` page the results, ``next`` links the next page,
 ``_page_size`` in the seed caps a page), GET ``.../<id>/`` returns one
@@ -37,7 +38,11 @@ def _matches(obj, field, wanted):
     ):
         if field.endswith(suffix):
             return test(_value(obj, field[: -len(suffix)]))
-    return str(obj.get(field)) == wanted
+    value = obj.get(field)
+    # Like NetBox: a related object (site=, group=) is filtered by its slug.
+    if isinstance(value, dict):
+        return str(value.get("slug")) == wanted
+    return str(value) == wanted
 
 
 def main():
