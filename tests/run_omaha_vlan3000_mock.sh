@@ -338,6 +338,12 @@ netbox_deploy() {
 netbox_deploy nb_v4 omaha_evpn_v4.json
 if [ "$nb_rc" -ne 0 ]; then cat "$OUT/nb_v4.log"; echo "FAIL: deploy with NetBox L2VPN failed" >&2; fail=1; fi
 expect "$OUT/nb_v4.log" "NetBox L2VPN ACME_APP: VNI 11002, import 11002:3000, export 11002:3000"
+# The v4 seed also holds VID 3000 in lisle-datacenter: the deploy's lookup is
+# scoped to omaha's VLAN group (netbox_vlan_query_by_dc), so it finds one VLAN.
+expect "$OUT/nb_v4.log" "NetBox sync status: found"
+if grep -q "NetBox has 2 VLANs with VID 3000" "$OUT/nb_v4.log"; then
+  echo "FAIL: the deploy's NetBox VLAN lookup is not scoped to the data center" >&2; fail=1
+fi
 expect "$OUT/nb_v4/reports/cvp_configlets/omaha/vlan3000/configs/vxlan_vlan3000_fntc-aggacc-sw01.cfg" "  route-target both 11002:3000"
 netbox_deploy nb_v3 omaha_evpn_v3_split_rt.json
 if [ "$nb_rc" -ne 0 ]; then cat "$OUT/nb_v3.log"; echo "FAIL: deploy with NetBox 3.x L2VPN failed" >&2; fail=1; fi

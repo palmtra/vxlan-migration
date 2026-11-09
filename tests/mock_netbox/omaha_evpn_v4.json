@@ -14,6 +14,22 @@
         "slug": "omaha-datacenter",
         "name": "omaha-datacenter"
       }
+    },
+    {
+      "id": 301,
+      "vid": 3000,
+      "name": "LISLE_APP",
+      "site": {
+        "id": 2,
+        "slug": "lis01",
+        "name": "Lisle"
+      },
+      "group": {
+        "id": 21,
+        "slug": "lisle-datacenter",
+        "name": "lisle-datacenter"
+      },
+      "description": "Same VID in another DC: the lookup must not pick it"
     }
   ],
   "vpn/l2vpn-terminations": [
