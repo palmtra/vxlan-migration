@@ -15,7 +15,7 @@ Within a range, numbers are handed out in order, whatever the customer. A VLAN I
 2. **The VLAN record has a VNI** (`evpn.l2.vni` in `vars/vlans/<dc>/`): that VNI is used. The run stops if NetBox gives that number to another VLAN.
 3. **Neither**: the VLAN gets the **lowest free number** of its range. Taken numbers are route targets in the range, VXLAN-EVPN L2VPN identifiers, and the VNIs of the other records in the data center's VLAN DB. Gaps are filled first.
 
-The range comes from the tenant. The run reads the tenant from the NetBox VLAN in the data center's VLAN group. When a VID is in several groups, it picks the one whose group or site names the data center, or the one `netbox_vlan_query_by_dc` scopes. Without a tenant in NetBox, it uses the record's `ownership.tenant`, then its `customer_type`, then `vni_default_customer_type` (external).
+The range comes from the tenant. The run reads the tenant from the NetBox VLAN in the data center's VLAN group (`omaha-datacenter`, `lisle-datacenter`: `netbox_vlan_query_by_dc` in `inventory/group_vars/all/main.yml`). Without that scope, a VID in several groups is narrowed to the one whose group or site names the data center. Without a tenant in NetBox, it uses the record's `ownership.tenant`, then its `customer_type`, then `vni_default_customer_type` (external).
 
 ## Prerequisites
 
@@ -63,4 +63,4 @@ Then set `evpn.l2.vni` in `vars/vlans/<dc>/<vid>_<name>.yml` to the VNI shown.
 | `netbox_internal_tenants` | `["0000001"]` | Tenants that use the internal range |
 | `netbox_reserve_rt` / `netbox_reserve_approval` | `false` / empty | Write the route target; needs `approve` |
 | `netbox_rt_require_reserved` | `false` (`true` in a CloudVision push) | Stop when the VNI is allocated but not written |
-| `netbox_vlan_query_by_dc` | `{}` | NetBox VLAN filters per data center, e.g. `{omaha: {group: omaha-vlans}}` |
+| `netbox_vlan_query_by_dc` | `{omaha: {group: omaha-datacenter}, lisle: {group: lisle-datacenter}}` (inventory) | NetBox VLAN filters per data center: each DC's VLAN group slug |

@@ -24,9 +24,11 @@ netbox_warn_on_missing_record: true
 # VLAN IDs repeat across NetBox sites and VLAN groups. Scope the lookup per
 # data center with NetBox VLAN filters, e.g.
 #   netbox_vlan_query_by_dc:
-#     omaha: {group: omaha-vlans}
-#     lisle: {site: lis01}
-# Several matches without a scope stop the VNI / route-target lookup.
+#     omaha: {group: omaha-datacenter}
+#     lisle: {group: lisle-datacenter}
+# (set in inventory/group_vars/all/main.yml). Without a scope, several
+# matches are narrowed to the one whose group or site names the data center;
+# if that does not leave one, the VNI / route-target lookup stops.
 netbox_vlan_query_by_dc: {}
 
 # Read the VNI and route targets from the VXLAN-EVPN L2VPN terminated on the

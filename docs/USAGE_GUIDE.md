@@ -304,7 +304,7 @@ With `netbox_url` and `netbox_token` set, the deploy looks the VLAN up in NetBox
 | Variable | Default | Description |
 |---|---|---|
 | `netbox_evpn_lookup` | `true` | Read VNI / route targets from the VLAN's VXLAN-EVPN L2VPN |
-| `netbox_vlan_query_by_dc` | `{}` | NetBox VLAN filters per data center, e.g. `{omaha: {group: omaha-vlans}, lisle: {site: lis01}}` |
+| `netbox_vlan_query_by_dc` | `{omaha: {group: omaha-datacenter}, lisle: {group: lisle-datacenter}}` (inventory) | NetBox VLAN filters per data center: each DC's VLAN group slug |
 | `netbox_l2vpn_api_apps` | `[vpn, ipam]` | Where L2VPNs live: `/api/vpn/` (NetBox 4.x), then `/api/ipam/` (3.x) |
 | `netbox_evpn_conflict` | `fail` | `fail` stops on a VNI / route-target conflict; `warn` deploys from the record |
 | `netbox_ssot_required` | `false` | `true` → fail if VLAN missing in NetBox |
