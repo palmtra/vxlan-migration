@@ -75,6 +75,12 @@ netbox_token: ""
 # NetBox uses a self-signed certificate, so it is not verified. Set true
 # once the control node trusts the CA that signs NetBox's certificate.
 netbox_validate_certs: false
+# VLAN IDs repeat across data centers in NetBox (VID 3052 exists in the
+# brownfield, lisle-datacenter and omaha-datacenter groups). Scope the VLAN
+# lookup to each DC's VLAN group (slug), or the VNI / route-target read stops.
+netbox_vlan_query_by_dc:
+  omaha: {group: omaha-datacenter}
+  lisle: {group: lisle-datacenter}
 
 # CloudVision (CVaaS / CVP) endpoint and credentials: inventory/group_vars/CVAAS/.
 # The token is vault_cvp_token in Vault / AAP credentials.
