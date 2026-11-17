@@ -67,9 +67,12 @@
 - name: Fail when a target switch is not provisioned in CloudVision
   ansible.builtin.fail:
     msg: >-
-      These switches are not in CloudVision, or not in a container, so their configlets cannot be
-      applied: {{ _cvp_containers.missing | join(', ') }}. CloudVision hostnames must match the
-      inventory hostnames (or their FQDN's first label).
+      Configlets cannot be applied to: {{ _cvp_containers.missing | join(', ') }}.
+      {% if _cvp_containers.unassigned | default([]) | length > 0 %}In CloudVision but not in a
+      container (Undefined / Unassigned): {{ _cvp_containers.unassigned | join(', ') }}. Move them
+      into their DC container in Network Provisioning and reconcile first (docs/examples/cvp-container-onboarding.md).
+      {% endif %}Any other switch is not in CloudVision under that name: CloudVision hostnames must
+      match the inventory hostnames (or their FQDN's first label).
   when: _cvp_containers.missing | length > 0
   run_once: true
 
