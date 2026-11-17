@@ -232,6 +232,8 @@
           target_vrf: "{{ hostvars['localhost']['target_vrf'] | default('default') }}"
           target_ticket_sys_id: "{{ target_ticket_sys_id | default('') }}"
           target_switches: {{ hostvars['localhost']['_workflow_cvp_target_switches'] | default([]) | to_json }}
+          cvp_change_control_id: "{{ (hostvars['localhost']['_cvp_deploy'] | default({})).change_control_id | default('') }}"
+          cvp_deploy_method: "{{ cvp_deploy_method | default('configlets') }}"
           persisted_at: "{{ lookup('pipe', 'date -u +%Y-%m-%dT%H:%M:%SZ') }}"
       vars:
         workflow_state_dir: "{{ reports_dir | default(playbook_dir ~ '/../../reports') }}/workflow_state"
