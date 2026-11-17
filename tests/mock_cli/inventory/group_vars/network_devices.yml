@@ -4,6 +4,10 @@ ansible_connection: local
 ansible_python_interpreter: "{{ ansible_playbook_python }}"
 network_facts_module: ansible.builtin.debug
 mock_cli_root: "{{ inventory_dir }}/.."
+# The Jinja configlet checks below read configs/vxlan_vlan<id>_<leaf>.cfg:
+# keep the deprecated Jinja generator here until it is retired (AVD is the
+# repo default; tests/test_avd_studios.py covers the AVD path).
+use_avd: false
 vni_ranges:
   lisle:
     internal: {start: 10000, end: 19999}
