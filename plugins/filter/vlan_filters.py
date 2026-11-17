@@ -24,6 +24,7 @@ from vlan_lib.placement import (  # noqa: E402
     vlan_config_hosts,
     vlan_gateway_hosts,
 )
+from vlan_lib.avd_render import avd_eos_config  # noqa: E402
 from vlan_lib.avd_services import (  # noqa: E402
     avd_leaf_pairs,
     avd_service_entries,
@@ -54,6 +55,8 @@ from vlan_lib import (  # noqa: E402,F401
     cvp_change_control_state,
     cvp_device_assignments,
     cvp_device_containers,
+    cv_studio_leaf_vlans,
+    cv_studio_structured_config,
     cvp_task_ids,
     build_mop_input,
     build_run_index,
@@ -117,11 +120,11 @@ from vlan_lib import (  # noqa: E402,F401
     svi_prefixes,
     endpoint_reachability,
     parse_endpoint_baseline,
+    build_verification_report,
+    verification_report_markdown,
     parse_l2_interface_config,
     interface_config_entries_from_cli_results,
     ports_needing_interface_config,
-    build_verification_report,
-    verification_report_markdown,
     resolve_data_center,
     resolve_run_data_center,
     resolve_trunk_allowed_vlans,
@@ -143,6 +146,7 @@ from vlan_lib import (  # noqa: E402,F401
 class FilterModule(object):
     def filters(self):
         return {
+            "avd_eos_config": avd_eos_config,
             "avd_leaf_pairs": avd_leaf_pairs,
             "avd_service_entries": avd_service_entries,
             "avd_services_file_text": avd_services_file_text,
@@ -222,12 +226,12 @@ class FilterModule(object):
             "svi_prefixes": svi_prefixes,
             "endpoint_reachability": endpoint_reachability,
             "parse_endpoint_baseline": parse_endpoint_baseline,
+            "build_verification_report": build_verification_report,
+            "verification_report_markdown": verification_report_markdown,
             "gateway_validated_vlans": gateway_validated_vlans,
             "migrate_readiness": migrate_readiness,
             "prune_readiness": prune_readiness,
             "compare_endpoints": compare_endpoints,
-            "build_verification_report": build_verification_report,
-            "verification_report_markdown": verification_report_markdown,
             "endpoint_comparison_csv": endpoint_comparison_csv,
             "strip_endpoint_tables": strip_endpoint_tables,
             "preflight_report": preflight_report,
@@ -238,6 +242,8 @@ class FilterModule(object):
             "cvp_change_control_state": cvp_change_control_state,
             "cvp_device_assignments": cvp_device_assignments,
             "cvp_device_containers": cvp_device_containers,
+            "cv_studio_leaf_vlans": cv_studio_leaf_vlans,
+            "cv_studio_structured_config": cv_studio_structured_config,
             "cvp_task_ids": cvp_task_ids,
             "build_mop_input": build_mop_input,
             "build_run_index": build_run_index,

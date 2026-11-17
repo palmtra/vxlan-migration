@@ -82,7 +82,7 @@ Integrations in scope:
 
 12. Generate target EOS configuration using **Arista AVD**
     (`roles/avd_vxlan_config` → `arista.avd.eos_cli_config_gen`), or the legacy Jinja
-    path (`roles/cvp_deploy`) if `use_avd=false`.
+    path (`roles/cvp_deploy`, deprecated) if `use_avd=false`.
 13. Push the generated configlets to CVP via the `arista.cvp` collection.
 14. Create a CVP **Change Control** in `set` (pending) state — never
     auto-execute unless `cvp_change_control_auto_execute_allowed=true` is explicitly set.

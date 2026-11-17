@@ -17,6 +17,16 @@ cvp_inventory_group: CVAAS
 # Nothing is sent to CloudVision unless this is true.
 cvp_apply_configlets: false
 
+# How the config reaches CloudVision (both are kept until one is retired):
+#   configlets  Network Provisioning: one configlet per VLAN per leaf
+#               (vxlan_vlan<id>_<leaf>), switches must be in a container.
+#   studios     Static Configuration Studio via arista.avd.cv_deploy: one
+#               configlet per leaf holding every VLAN deployed on it. Needs
+#               the switches onboarded and cvp_studios_onboarded: true.
+cvp_deploy_method: configlets
+cvp_studios_onboarded: false
+cvp_studio_configlet_name_template: "VXLAN-MIGRATION_${hostname}"
+
 # Change control. 'set' creates it and leaves approval and execution to a
 # person in CloudVision. 'approve_and_execute' also needs
 # cvp_change_control_auto_execute_allowed=true for the run.

@@ -12,6 +12,10 @@ in CloudVision but not in a container (Undefined / Unassigned): move it in Netwo
 This is a one-time CloudVision change, done by a person. The playbooks never
 move a switch between containers.
 
+This page is for `cvp_deploy_method: configlets` (the default). With
+`cvp_deploy_method: studios` no container is needed; see
+[cvp-studios-onboarding.md](cvp-studios-onboarding.md) instead.
+
 ## Before you start
 
 1. **Check who owns the switch's config.** If the switch is managed by

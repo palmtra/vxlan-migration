@@ -270,7 +270,9 @@ See `vars/vlans/README.md`.
 
 | Variable | Default | Description |
 |---|---|---|
-| `use_avd` | `false` | `true` → `roles/avd_vxlan_config` (Arista AVD); `false` → legacy Jinja |
+| `use_avd` | `true` | `true` → `roles/avd_vxlan_config` (Arista AVD); `false` → legacy Jinja (deprecated) |
+| `cvp_deploy_method` | `configlets` | `configlets` → Network Provisioning, one configlet per VLAN per leaf; `studios` → Static Configuration Studio via `arista.avd.cv_deploy`, one configlet per leaf with every `deployed: true` VLAN (needs `use_avd`) |
+| `cvp_studios_onboarded` | `false` | Must be `true` before a Studios push: every target switch onboarded and reconciled ([examples/cvp-studios-onboarding.md](examples/cvp-studios-onboarding.md)) |
 | `cvp_apply_configlets` | `false` | `true` → push to CVP; `false` → render files only under `reports/cvp_configlets/<dc>/vlan<id>/` |
 
 Detailed generate-only walkthrough: [examples/generate-config-without-cvp-push.md](examples/generate-config-without-cvp-push.md).
@@ -334,7 +336,6 @@ ansible-playbook -i inventory/hosts.yml playbooks/core/workflow_deploy.yml \
   -e manual_data_center=lisle \
   -e manual_target_vrf=default \
   -e cvp_apply_configlets=true \
-  -e use_avd=true \
   --limit dc_lisle
 ```
 

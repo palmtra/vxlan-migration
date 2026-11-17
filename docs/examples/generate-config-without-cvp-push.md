@@ -77,13 +77,14 @@ target_switches:
 
 Runs intake, optional discovery, NetBox drift check, then config generation. Skips CVP push.
 
-### Legacy Jinja configlets
+### Legacy Jinja configlets (deprecated)
 
 ```bash
 ansible-playbook -i inventory/hosts.yml playbooks/core/workflow_deploy.yml \
   -e manual_vlan_id=100 \
   -e manual_data_center=lisle \
   -e manual_target_vrf=default \
+  -e use_avd=false \
   -e cvp_apply_configlets=false \
   --limit dc_lisle
 ```
@@ -95,14 +96,13 @@ ansible-playbook -i inventory/hosts.yml playbooks/core/workflow_deploy.yml \
 | `vxlan_vlan100_<hostname>.cfg` | Per-leaf VXLAN configlet (the file name is the CloudVision configlet name) |
 | `vxlan_vlan100_borderleaf_import.cfg` | Border-leaf VRF import (when `cvp_build_borderleaf_config=true`) |
 
-### Arista AVD configlets
+### Arista AVD configlets (default)
 
 ```bash
 ansible-playbook -i inventory/hosts.yml playbooks/core/workflow_deploy.yml \
   -e manual_vlan_id=100 \
   -e manual_data_center=lisle \
   -e manual_target_vrf=default \
-  -e use_avd=true \
   -e cvp_apply_configlets=false \
   --limit dc_lisle
 ```
@@ -124,7 +124,8 @@ reports/cvp_configlets/
     vlan3014/
       configs/vxlan_vlan3014_<leaf>.cfg        # Jinja
       avd/structured_configs/<leaf>.yml        # AVD
-      avd/configs/<leaf>.cfg                   # AVD
+      avd/configs/<leaf>.cfg                   # AVD (configlet vxlan_vlan3014_<leaf>)
+      avd_studio/configs/<leaf>.cfg            # AVD, cvp_deploy_method=studios
       rollback/vxlan_vlan3014_<leaf>.cfg       # roles/cvp_rollback
     vlan3052/
       ...
@@ -184,7 +185,6 @@ ansible-playbook -i inventory/hosts.yml playbooks/core/workflow_deploy.yml \
   -e manual_vlan_id=100 \
   -e manual_data_center=lisle \
   -e manual_target_vrf=default \
-  -e use_avd=true \
   -e cvp_apply_configlets=true \
   --limit dc_lisle
 ```
@@ -208,7 +208,8 @@ ansible-playbook -i inventory/hosts.yml playbooks/core/workflow_verify.yml \
 | Variable | Default | Notes |
 |---|---|---|
 | `cvp_apply_configlets` | `false` | Master switch for CVP API calls |
-| `use_avd` | `false` | `true` → AVD path; `false` → Jinja templates |
+| `use_avd` | `true` | `true` → AVD path; `false` → Jinja templates (deprecated) |
+| `cvp_deploy_method` | `configlets` | `studios` renders one config per leaf under `avd_studio/` (every `deployed: true` VLAN on it) |
 | `cvp_build_borderleaf_config` | `false` | Jinja border-leaf VRF import. Off unless the VRF itself must be created |
 | `cvp_configlet_root` | `reports/cvp_configlets` | Root of the per-DC / per-VLAN tree |
 | `cvp_configlet_build_dir` | `<root>/<dc>/vlan<id>/configs` | Jinja output directory |

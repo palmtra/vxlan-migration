@@ -1,0 +1,70 @@
+---
+# Static Configuration Studio, through arista.avd.cv_deploy.
+#
+# cv_deploy keeps ONE configlet per switch (cvp_studio_configlet_name_template)
+# and overwrites it on each run, so roles/avd_vxlan_config renders every VLAN
+# deployed on the leaf into it (cv_studio_leaf_vlans), not only this run's.
+# The workspace is built and submitted; submitting creates the change control,
+# left pending approval unless auto-execute is explicitly allowed.
+#
+# Inputs: cvp_studio_structured_dir/<leaf>.yml and cvp_studio_config_dir/<leaf>.cfg
+# for every switch in cvp_push_assignments.
+
+- name: Studios - refuse until the switches are onboarded to Static Configuration Studio
+  ansible.builtin.fail:
+    msg: >-
+      cvp_deploy_method=studios needs every target switch in the Inventory & Topology Studio and
+      its running config reconciled into Static Configuration Studio, or the change control would
+      remove that config. Once that is done (docs/examples/cvp-studios-onboarding.md), set
+      cvp_studios_onboarded=true in inventory/group_vars/CVAAS/.
+  when: not cvp_studios_onboarded | bool
+  run_once: true
+
+- name: Studios - deploy the leaf configs through a workspace (arista.avd.cv_deploy)
+  ansible.builtin.include_role:
+    name: arista.avd.cv_deploy
+  vars:
+    cv_server: "{{ hostvars[_cvp_host].ansible_host }}"
+    cv_token: "{{ hostvars[_cvp_host].ansible_password }}"
+    cv_devices: "{{ cvp_push_assignments.keys() | list | sort }}"
+    structured_dir: "{{ cvp_studio_structured_dir }}"
+    eos_config_dir: "{{ cvp_studio_config_dir }}"
+    cv_deploy_tmp_dir: "{{ cvp_studio_structured_dir }}/../tmp_cv_deploy"
+    cv_configlet_name_template: "{{ cvp_studio_configlet_name_template }}"
+    cv_workspace_name: "{{ cvp_change_control_name }} ({{ _cvp_record_ts }})"
+    cv_workspace_description: "{{ cvp_change_control_notes | trim }}"
+    cv_submit_workspace: true
+    cv_change_control_name: "{{ cvp_change_control_name }}"
+    cv_change_control_description: "{{ cvp_change_control_notes | trim }}"
+    cv_change_control_requested_state: >-
+      {{ 'completed' if (cvp_change_control_state != 'set' and cvp_change_control_auto_execute_allowed | bool)
+         else 'pending approval' }}
+    cv_skip_missing_devices: false
+    cv_strict_tags: false
+    cv_register_detailed_results: true
+
+- name: Studios - read the workspace and change control
+  ansible.builtin.set_fact:
+    _cvp_task_ids: []
+    _cvp_cc_state: {}
+    _cvp_workspace_id: "{{ cv_deploy_results.workspace.id | default('', true) }}"
+    _cvp_cc_id: >-
+      {{ cv_deploy_results.change_control.id | default('', true)
+         or cv_deploy_results.workspace.change_control_id | default('', true) }}
+  run_once: true
+  delegate_to: localhost
+
+- name: Studios - fail when the workspace did not go through
+  ansible.builtin.fail:
+    msg: >-
+      cv_deploy failed (workspace {{ _cvp_workspace_id or 'not created' }},
+      state {{ cv_deploy_results.workspace.state | default('unknown') }}):
+      {{ cv_deploy_results.errors | default([]) | join('; ') }}
+  when: cv_deploy_results.failed | default(false) | bool
+  run_once: true
+
+- name: Studios - wait for the change control to run
+  ansible.builtin.include_tasks: wait.yml
+  when:
+    - _cvp_cc_id | length > 0
+    - cvp_change_control_wait | bool

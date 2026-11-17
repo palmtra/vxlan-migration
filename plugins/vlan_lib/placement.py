@@ -1783,6 +1783,10 @@ def flatten_deployment_model(document):
         "tenant": ownership.get("tenant") or "",
         "owner": ownership.get("owner") or "",
     }
+    # deployed: the change control ran (top level, or under migration:).
+    deployed = document.get("deployed", migration.get("deployed"))
+    if deployed is not None:
+        record["deployed"] = deployed is True
     gateway = document.get("gateway") if isinstance(document.get("gateway"), dict) else {}
     if gateway.get("mode"):
         record["gateway_mode"] = gateway["mode"]

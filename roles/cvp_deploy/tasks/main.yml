@@ -5,7 +5,27 @@
 # Generates CVP configlets for Arista leaf / border-leaf switches where the
 # target VLAN was discovered, then optionally applies them via CVP and creates
 # a change control.
+#
+# DEPRECATED: AVD (roles/avd_vxlan_config, use_avd: true) is the production
+# generator. This role runs only with use_avd=false and will be removed; its
+# configlet names (vxlan_vlan<id>_<leaf>) match the AVD role's, and
+# roles/cvp_rollback reverses either.
 # -----------------------------------------------------------------------------
+
+- name: Refuse the Studios deploy with the Jinja generator
+  ansible.builtin.fail:
+    msg: >-
+      cvp_deploy_method=studios needs use_avd=true: Static Configuration Studio takes one AVD
+      configlet per leaf with every VLAN deployed on it, which only roles/avd_vxlan_config builds.
+  when: cvp_deploy_method | default('configlets') == 'studios'
+  run_once: true
+
+- name: Warn that the Jinja generator is deprecated
+  ansible.builtin.debug:
+    msg: >-
+      use_avd=false: rendering with the deprecated Jinja templates (roles/cvp_deploy).
+      AVD (use_avd=true, the default) is the production generator.
+  run_once: true
 
 - name: Compute VLAN to migrate for CVP
   ansible.builtin.set_fact:

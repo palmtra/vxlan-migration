@@ -86,7 +86,11 @@ Open features and planned work. Completed items are kept for context.
 - [x] Routing discovery matches the VLAN prefix or a more-specific only (no covering /16, no next hop outside the subnet)
 - [x] Border-leaf BGP view of each legacy subnet (same AS as the MLS): advertised over iBGP from the MLS, by a fabric leaf, or not at all
 - [x] NetBox as the VNI allocator: IPAM route targets, next free number per DC range, tenant 0000001 internal (`playbooks/allocate_vni.yml`)
-- [ ] One config generator for production: Jinja (`roles/cvp_deploy`) or AVD (`roles/avd_vxlan_config`). Both deploy through `cv_configlet_v3`; retire the one not chosen
+- [x] One config generator for production: AVD (`roles/avd_vxlan_config`, `use_avd: true` by default). Same configlet names as Jinja (`vxlan_vlan<id>_<leaf>`), so `roles/cvp_rollback` reverses either
+- [ ] Retire the Jinja generator (`roles/cvp_deploy`, `playbooks/deploy_to_cvp.yml`); the mock tests on the `test` branch pin `use_avd: false` until then
+- [x] Two CloudVision deploy methods (`cvp_deploy_method`): `configlets` (Network Provisioning) and `studios` (Static Configuration Studio via `arista.avd.cv_deploy`, one configlet per leaf rebuilt from every `deployed: true` record)
+- [ ] Pick one deploy method and retire the other (likely Studios); onboard the fabric to Static Configuration Studio first
+- [ ] Set `deployed: true` automatically after a verified change control (today: by hand, committed with the record)
 - [ ] Sample outputs from the N7K and an EOS leaf (B9) for parser fixtures
 - [ ] Teams / email notification on change control (J4)
 
@@ -133,8 +137,8 @@ Discovery never deletes. Prune apply is `playbooks/core/prune_vlan.yml`: dry-run
 
 ### Verification
 
-- [ ] Verification report per VLAN (mirror discovery report layout)
-- [ ] Pass/fail artifact written to `reports/<dc>/<vlan_name>/`
+- [x] Verification report per VLAN (mirror discovery report layout)
+- [x] Pass/fail artifact written to `reports/<dc>/<vlan_name>/` (`<vlan>_verification_<ts>.md` / `.json`)
 - [ ] Partial-failure policy across multiple `target_switches`
 
 ### Operations

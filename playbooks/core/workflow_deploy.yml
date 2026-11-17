@@ -181,7 +181,7 @@
             target_vlan_id: "{{ hostvars['localhost']['target_vlan_id'] | int }}"
             target_data_center: "{{ hostvars['localhost']['target_data_center'] | default('') }}"
             target_vrf: "{{ hostvars['localhost']['target_vrf'] | default('') }}"
-          when: not use_avd | default(false) | bool
+          when: not use_avd | default(true) | bool
 
         - name: Step 5b - AVD-based configlet generation
           ansible.builtin.include_role:
@@ -190,7 +190,7 @@
             target_vlan_id: "{{ hostvars['localhost']['target_vlan_id'] | int }}"
             target_data_center: "{{ hostvars['localhost']['target_data_center'] | default('') }}"
             target_vrf: "{{ hostvars['localhost']['target_vrf'] | default('') }}"
-          when: use_avd | default(false) | bool
+          when: use_avd | default(true) | bool
       rescue:
         - name: Notify ServiceNow of failure during CVP configlet deployment (Advanced)
           ansible.builtin.include_role:

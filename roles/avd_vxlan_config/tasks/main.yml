@@ -2,7 +2,7 @@
 # -----------------------------------------------------------------------------
 # avd_vxlan_config
 # -----------------------------------------------------------------------------
-# Generates per-device EOS configlets for a VLAN-to-VXLAN migration using the
+# Generates per-device EOS config for a VLAN-to-VXLAN migration using the
 # Arista AVD eos_cli_config_gen role.  This role is intended to run in a play
 # targeted at eos_devices; it writes per-device structured configs, invokes AVD
 # to render CLI snippets, and optionally pushes them to CVP.
@@ -62,136 +62,10 @@
   become: false
   run_once: true
 
-# After the checks above, so a run that stops on one leaves the last output.
-# Only a directory scoped to this VLAN is cleared: an avd_output_dir overridden
-# to a shared path is written to, never emptied.
-- name: Clear this VLAN's previous AVD output (each run replaces it)
-  ansible.builtin.file:
-    path: "{{ avd_output_dir }}"
-    state: absent
-  when:
-    - target_vlan_id | string is match('^[0-9]+$')
-    - avd_output_dir is search('/vlan' ~ target_vlan_id ~ '(/|$)')
-  delegate_to: localhost
-  become: false
-  run_once: true
+- name: Render one configlet per VLAN per leaf (Network Provisioning)
+  ansible.builtin.include_tasks: configlets.yml
+  when: cvp_deploy_method | default('configlets') != 'studios'
 
-- name: Ensure AVD output directories exist
-  ansible.builtin.file:
-    path: "{{ item }}"
-    state: directory
-    mode: '0755'
-  delegate_to: localhost
-  become: false
-  run_once: true
-  loop:
-    - "{{ avd_output_dir }}"
-    - "{{ avd_output_dir }}/structured_configs"
-    - "{{ avd_output_dir }}/configs"
-    - "{{ avd_tmp_dir }}"
-
-- name: Write per-device AVD structured config files
-  ansible.builtin.template:
-    src: avd_structured_config.yml.j2
-    dest: "{{ avd_output_dir }}/structured_configs/{{ item }}.yml"
-    mode: '0644'
-  delegate_to: localhost
-  become: false
-  run_once: true
-  loop: "{{ ansible_play_hosts }}"
-  vars:
-    _target_device: "{{ item }}"
-    _is_borderleaf: "{{ item is match(avd_borderleaf_regex) }}"
-
-# AVD 6: validate_inputs writes validated JSON under tmp_dir; eos_cli_config_gen
-# reads that JSON. Older args (structured_config_filename, read_structured_config_from_file)
-# are no longer accepted and tmp_dir is required.
-- name: Validate AVD structured configs (eos_config schema)
-  arista.avd.validate_inputs:
-    tmp_dir: "{{ avd_tmp_dir }}"
-    schema_name: eos_config
-    input_dir: "{{ avd_output_dir }}/structured_configs"
-    input_suffix: yml
-    read_from_input_dir: true
-    device_list: "{{ ansible_play_hosts }}"
-    fail_on_validation_errors: true
-  delegate_to: localhost
-  become: false
-  run_once: true
-  check_mode: false
-
-- name: Render EOS configuration with AVD eos_cli_config_gen
-  arista.avd.eos_cli_config_gen:
-    tmp_dir: "{{ avd_tmp_dir }}"
-    config_filename: "{{ avd_output_dir }}/configs/{{ inventory_hostname }}.cfg"
-    generate_device_config: true
-    generate_device_doc: false
-  delegate_to: localhost
-  become: false
-
-- name: Stat generated AVD config files
-  ansible.builtin.stat:
-    path: "{{ avd_output_dir }}/configs/{{ item }}.cfg"
-  register: _avd_config_stat
-  delegate_to: localhost
-  become: false
-  run_once: true
-  loop: "{{ ansible_play_hosts }}"
-
-- name: Fail when AVD generated empty config files
-  ansible.builtin.fail:
-    msg: >-
-      AVD produced an empty config for {{ item.item }}.
-      Structured input: {{ avd_output_dir }}/structured_configs/{{ item.item }}.yml
-      Output path: {{ avd_output_dir }}/configs/{{ item.item }}.cfg
-  loop: "{{ _avd_config_stat.results }}"
-  when: not item.stat.exists or (item.stat.size | default(0)) == 0
-  delegate_to: localhost
-  become: false
-  run_once: true
-
-- name: Clean up AVD temporary directory
-  ansible.builtin.file:
-    path: "{{ avd_tmp_dir }}"
-    state: absent
-  delegate_to: localhost
-  become: false
-  run_once: true
-  changed_when: false
-  when: not avd_keep_tmp_files | bool
-
-- name: Read generated EOS configuration files
-  ansible.builtin.slurp:
-    src: "{{ avd_output_dir }}/configs/{{ item }}.cfg"
-  register: _avd_config_files
-  delegate_to: localhost
-  become: false
-  run_once: true
-  loop: "{{ ansible_play_hosts }}"
-
-- name: Build CVP configlet map
-  ansible.builtin.set_fact:
-    _avd_configlets: "{{ _avd_configlets | default({}) | combine({ item.item ~ '_vlan' ~ target_vlan_id: item.content | b64decode }) }}"
-  delegate_to: localhost
-  become: false
-  run_once: true
-  loop: "{{ _avd_config_files.results }}"
-
-- name: Display generated configlets
-  ansible.builtin.debug:
-    msg:
-      - "AVD output directory: {{ avd_output_dir }}"
-      - "Generated configlets for: {{ _avd_configlets.keys() | list }}"
-      - "Review configs under: {{ avd_output_dir }}/configs/"
-  delegate_to: localhost
-  become: false
-  run_once: true
-
-- name: Push to CloudVision, create the change control and wait for it (cvp_apply_configlets)
-  ansible.builtin.include_role:
-    name: cvp_change_control
-  vars:
-    cvp_push_configlets: "{{ _avd_configlets }}"
-    cvp_push_assignments: >-
-      {% set out = {} %}{% for host in ansible_play_hosts %}{% set _ = out.update({host: [host ~ '_vlan' ~ target_vlan_id]}) %}{% endfor %}{{ out }}
-  when: cvp_apply_configlets | bool
+- name: Render one configlet per leaf with every VLAN deployed on it (Studios)
+  ansible.builtin.include_tasks: studios.yml
+  when: cvp_deploy_method | default('configlets') == 'studios'
