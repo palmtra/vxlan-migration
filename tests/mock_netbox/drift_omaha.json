@@ -1,0 +1,145 @@
+{
+  "ipam/vlans": [
+    {
+      "id": 300,
+      "vid": 3000,
+      "name": "ACME_APP",
+      "group": {
+        "id": 7,
+        "name": "omaha-datacenter",
+        "slug": "omaha-datacenter"
+      },
+      "tenant": {
+        "id": 11,
+        "name": "0000822"
+      }
+    },
+    {
+      "id": 301,
+      "vid": 3000,
+      "name": "LISLE_3000",
+      "group": {
+        "id": 8,
+        "name": "lisle-datacenter",
+        "slug": "lisle-datacenter"
+      }
+    },
+    {
+      "id": 302,
+      "vid": 3002,
+      "name": "BILLING",
+      "group": {
+        "id": 7,
+        "name": "omaha-datacenter",
+        "slug": "omaha-datacenter"
+      },
+      "tenant": {
+        "id": 11,
+        "name": "0000822"
+      }
+    }
+  ],
+  "vpn/l2vpn-terminations": [
+    {
+      "id": 9,
+      "vlan_id": 300,
+      "l2vpn": {
+        "id": 5,
+        "name": "ACME_APP"
+      }
+    },
+    {
+      "id": 10,
+      "vlan_id": 302,
+      "l2vpn": {
+        "id": 6,
+        "name": "BILLING"
+      }
+    }
+  ],
+  "vpn/l2vpns": [
+    {
+      "id": 5,
+      "identifier": 11002,
+      "name": "ACME_APP",
+      "slug": "acme_app",
+      "type": {
+        "value": "vxlan-evpn",
+        "label": "VXLAN-EVPN"
+      },
+      "import_targets": [
+        {
+          "id": 50,
+          "name": "11002:3000"
+        }
+      ],
+      "export_targets": [
+        {
+          "id": 51,
+          "name": "11002:3000"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "identifier": 11004,
+      "name": "BILLING",
+      "slug": "billing",
+      "type": {
+        "value": "vxlan-evpn",
+        "label": "VXLAN-EVPN"
+      },
+      "import_targets": [
+        {
+          "id": 60,
+          "name": "11004:3002"
+        }
+      ],
+      "export_targets": [
+        {
+          "id": 61,
+          "name": "11004:3002"
+        }
+      ]
+    }
+  ],
+  "ipam/route-targets": [
+    {
+      "id": 41,
+      "name": "11002:3000",
+      "tenant": {
+        "id": 11,
+        "name": "0000822"
+      }
+    },
+    {
+      "id": 42,
+      "name": "11004:3002",
+      "tenant": {
+        "id": 11,
+        "name": "0000822"
+      }
+    }
+  ],
+  "ipam/prefixes": [
+    {
+      "id": 71,
+      "prefix": "10.230.0.0/24",
+      "vrf": {
+        "id": 3,
+        "name": "v0000822a"
+      },
+      "vlan": {
+        "id": 300
+      }
+    },
+    {
+      "id": 72,
+      "prefix": "10.232.0.0/24",
+      "vrf": null,
+      "vlan": {
+        "id": 302
+      }
+    }
+  ]
+}

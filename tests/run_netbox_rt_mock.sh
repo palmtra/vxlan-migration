@@ -3,7 +3,9 @@
 # (tests/mock_netbox/server.py) and check the route targets it writes.
 #
 #   1. dry run, VLANs 951, 1521, 960: nothing written
-#   2. apply, same VLANs: 22010:1521 updated, 20951:951 created, 960 ignored
+#   2. apply, same VLANs: 22010:1521 updated, 20951:951 created, 960 ignored;
+#      VLAN 951 created in Lisle's VLAN group with its tenant (Omaha's VLAN 951
+#      untouched) and its prefix in VRF v0000001a, assigned to it
 #   3. apply, VLANs 951, 952: fails on 952's unknown owner, nothing written for it
 #   4. apply with a token NetBox refuses: fails with HTTP 403 and the reason
 set -euo pipefail
@@ -80,6 +82,23 @@ got = sorted((w["method"], w["path"], {k: str(v) for k, v in w["body"].items()})
 want = sorted(expected)
 if got != want:
     sys.exit("FAIL: route target writes\n  got:  %s\n  want: %s" % (got, want))
+EOF
+check <<'EOF'
+import json, sys
+writes = [json.loads(line) for line in open(sys.argv[1]) if line.strip()]
+if any(w["path"] == "/api/ipam/vlans/400/" for w in writes):
+    sys.exit("FAIL: the Lisle export wrote Omaha's VLAN 951 (another data center)")
+vlans = [w for w in writes if w["method"] == "POST" and w["path"] == "/api/ipam/vlans/"]
+web = [w["body"] for w in vlans if w["body"].get("vid") == 951]
+if len(web) != 1 or web[0].get("group") != 8 or web[0].get("tenant") != 12 or "site" in web[0]:
+    sys.exit("FAIL: VLAN 951 not created in Lisle's group with tenant 0000001: %s" % web)
+rewards = [w["body"] for w in vlans if w["body"].get("vid") == 1521]
+if len(rewards) != 1 or rewards[0].get("tenant") != 11:
+    sys.exit("FAIL: VLAN 1521 not created with tenant 0000964: %s" % rewards)
+prefixes = [w["body"] for w in writes if w["path"] == "/api/ipam/prefixes/"]
+if (len(prefixes) != 1 or prefixes[0].get("prefix") != "10.95.1.0/24" or prefixes[0].get("vrf") != 3
+        or not isinstance(prefixes[0].get("vlan"), int) or prefixes[0].get("tenant") != 12):
+    sys.exit("FAIL: prefix 10.95.1.0/24 not created in VRF v0000001a for VLAN 951: %s" % prefixes)
 EOF
 
 : > "$WRITES"

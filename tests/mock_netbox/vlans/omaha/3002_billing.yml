@@ -1,0 +1,15 @@
+# Synthetic, for tests/run_netbox_drift_mock.sh: the record's VNI (11009)
+# differs from NetBox's L2VPN (11004), and its prefix is in the global table.
+id: 3002
+name: BILLING
+action: migrate
+service_type: l3
+vni: 11009
+vrf: v0000822a
+prefixes:
+  - 10.232.0.0/24
+target_switches:
+  - fntc-aggacc-sw01
+ownership:
+  tenant: "0000822"
+  owner: ACME

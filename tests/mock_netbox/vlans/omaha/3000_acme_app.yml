@@ -1,0 +1,14 @@
+# Synthetic, for tests/run_netbox_drift_mock.sh: matches the mock NetBox.
+id: 3000
+name: ACME_APP
+action: migrate
+service_type: l3
+vni: 11002
+vrf: v0000822a
+prefixes:
+  - 10.230.0.0/24
+target_switches:
+  - fntc-aggacc-sw01
+ownership:
+  tenant: "0000822"
+  owner: ACME

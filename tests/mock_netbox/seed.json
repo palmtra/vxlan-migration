@@ -1,15 +1,65 @@
 {
   "tenancy/tenants": [
-    {"id": 11, "name": "0000964", "slug": "0000964"},
-    {"id": 12, "name": "0000001", "slug": "0000001"}
+    {
+      "id": 11,
+      "name": "0000964",
+      "slug": "0000964"
+    },
+    {
+      "id": 12,
+      "name": "0000001",
+      "slug": "0000001"
+    }
   ],
   "users/owners": [
-    {"id": 21, "name": "Rewards Trust"},
-    {"id": 22, "name": "FNTS"}
+    {
+      "id": 21,
+      "name": "Rewards Trust"
+    },
+    {
+      "id": 22,
+      "name": "FNTS"
+    }
   ],
   "ipam/route-targets": [
-    {"id": 31, "name": "22010:1521", "tenant": null, "owner": null, "description": "Rewards Trust"}
+    {
+      "id": 31,
+      "name": "22010:1521",
+      "tenant": null,
+      "owner": null,
+      "description": "Rewards Trust"
+    }
   ],
   "dcim/sites": [],
-  "ipam/vlans": []
+  "ipam/vlans": [
+    {
+      "id": 400,
+      "vid": 951,
+      "name": "OMAHA_951",
+      "group": {
+        "id": 7,
+        "name": "omaha-datacenter",
+        "slug": "omaha-datacenter"
+      }
+    }
+  ],
+  "ipam/vlan-groups": [
+    {
+      "id": 7,
+      "name": "omaha-datacenter",
+      "slug": "omaha-datacenter"
+    },
+    {
+      "id": 8,
+      "name": "lisle-datacenter",
+      "slug": "lisle-datacenter"
+    }
+  ],
+  "ipam/vrfs": [
+    {
+      "id": 3,
+      "name": "v0000001a"
+    }
+  ],
+  "ipam/prefixes": []
 }

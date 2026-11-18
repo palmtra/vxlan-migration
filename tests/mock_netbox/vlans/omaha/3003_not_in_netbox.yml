@@ -1,0 +1,9 @@
+# Synthetic, for tests/run_netbox_drift_mock.sh: not in NetBox.
+id: 3003
+name: NOT_IN_NETBOX
+action: migrate
+service_type: l2
+vni: 11005
+vrf: default
+target_switches:
+  - fntc-aggacc-sw01

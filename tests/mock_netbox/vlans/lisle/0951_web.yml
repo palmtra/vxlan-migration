@@ -1,5 +1,6 @@
 # Synthetic, for tests/run_netbox_rt_mock.sh. Flat tenant/owner; its route
-# target is not in the mock NetBox yet.
+# target is not in the mock NetBox yet. Omaha has a VLAN 951 too (another
+# VLAN group): the export must create Lisle's, never touch Omaha's.
 id: 951
 name: web
 vlan_name: WEB
@@ -7,6 +8,8 @@ action: migrate
 service_type: l3
 vni: 20951
 vrf: v0000001a
+prefixes:
+  - 10.95.1.0/24
 target_switches:
   - eos-leaf-01
 tenant: "0000001"
