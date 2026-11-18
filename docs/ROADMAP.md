@@ -125,15 +125,16 @@ Discovery never deletes. Prune apply is `playbooks/core/prune_vlan.yml`: dry-run
 - [ ] Live ServiceNow webhook + work-note field mapping
 - [ ] Map SNOW payload fields (`customer_id`, `old_vrf`, `new_vrf`) into VLAN DB lookups
 - [ ] CVP approval detector (poll or native webhook → EDA `/cvp_approval`)
-- [ ] Optional `netbox_ssot_required: true` gate once NetBox is populated
+- [x] Optional `netbox_ssot_required: true` gate once NetBox is populated (fails on not configured, unreachable, missing or ambiguous)
 
 ### NetBox
 
 - [x] Standalone export role/playbook (dry-run default)
 - [x] Route targets: `<vni>:<vlan id>` with tenant, owner and a standard description; existing ones updated
-- [ ] VRF and tenant mapping in NetBox export
-- [ ] Drift report comparing local DB vs NetBox before sync
-- [ ] Mark local record `synced_to_netbox: true` with timestamp
+- [x] Export scoped to the data center's VLAN group (it used to update the first VLAN with the VID, in any data center)
+- [x] VRF and tenant mapping in NetBox export: VLAN tenant, new VLANs in the DC's VLAN group, prefixes in their VRF assigned to the VLAN
+- [x] Drift report comparing local DB vs NetBox (`playbooks/netbox_drift.yml`, read-only)
+- [x] ~~Mark local record `synced_to_netbox: true` with timestamp~~ dropped: a flag in git goes stale; the drift report shows the live state
 
 ### Verification
 

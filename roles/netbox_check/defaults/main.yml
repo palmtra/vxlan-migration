@@ -15,7 +15,9 @@ netbox_timeout: 30
 netbox_return_facts: true
 netbox_create_missing_vlan: false
 
-# When true, a missing NetBox record fails the run. Default false for Core.
+# When true, the run stops unless NetBox answers with exactly one VLAN for
+# this data center (not configured, unreachable, missing or ambiguous all
+# fail). Default false: the local VLAN record is authoritative.
 netbox_ssot_required: false
 
 # When true, log a warning if NetBox is reachable but has no matching VLAN.

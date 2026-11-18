@@ -37,6 +37,7 @@ mock-netbox:
 	$(NEED_TESTS)
 	tests/run_netbox_rt_mock.sh
 	tests/run_netbox_allocate_mock.sh
+	tests/run_netbox_drift_mock.sh
 
 mock-omaha:
 	$(NEED_TESTS)
@@ -44,7 +45,7 @@ mock-omaha:
 
 syntax:
 	@set -e; \
-	for pb in playbooks/core/*.yml playbooks/check_netbox.yml playbooks/export_vlan_to_netbox.yml playbooks/allocate_vni.yml; do \
+	for pb in playbooks/core/*.yml playbooks/check_netbox.yml playbooks/export_vlan_to_netbox.yml playbooks/allocate_vni.yml playbooks/netbox_drift.yml; do \
 	  echo "==> $$pb"; \
 	  ansible-playbook -i inventory/hosts.yml "$$pb" --syntax-check; \
 	done

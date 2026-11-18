@@ -309,7 +309,7 @@ With `netbox_url` and `netbox_token` set, the deploy looks the VLAN up in NetBox
 | `netbox_vlan_query_by_dc` | `{omaha: {group: omaha-datacenter}, lisle: {group: lisle-datacenter}}` (inventory) | NetBox VLAN filters per data center: each DC's VLAN group slug |
 | `netbox_l2vpn_api_apps` | `[vpn, ipam]` | Where L2VPNs live: `/api/vpn/` (NetBox 4.x), then `/api/ipam/` (3.x) |
 | `netbox_evpn_conflict` | `fail` | `fail` stops on a VNI / route-target conflict; `warn` deploys from the record |
-| `netbox_ssot_required` | `false` | `true` → fail if VLAN missing in NetBox |
+| `netbox_ssot_required` | `false` | `true` → fail unless NetBox has exactly one VLAN for this data center (not configured, unreachable, missing or ambiguous all stop the run) |
 | `netbox_warn_on_missing_record` | `true` | Log warning when NetBox has no record |
 
 ### External cleanup hand-off
@@ -438,7 +438,8 @@ ansible-playbook -i inventory/hosts.yml playbooks/advanced/workflow_verify.yml \
 | `netbox_export_dry_run` | `true` | `false` to write to NetBox |
 | `netbox_export_create_missing` | `true` | POST new VLAN records |
 | `netbox_export_update_existing` | `true` | PATCH existing records |
-| `netbox_export_site_map` | `{lisle: lisle, omaha: omaha}` | DC → NetBox site slug |
+| `netbox_export_site_map` | `{lisle: lisle, omaha: omaha}` | DC → NetBox site slug, for a new VLAN when `netbox_vlan_query_by_dc` names no VLAN group |
+| `netbox_export_prefixes` | `true` | Export the record's prefixes in its VRF, assigned to the VLAN and tenant |
 | `netbox_validate_certs` | `false` | Verify the NetBox TLS certificate. Off because NetBox uses a self-signed certificate |
 | `netbox_export_route_targets` | `true` | Export a route target for every `action: migrate` VLAN |
 | `netbox_export_rt_description_marker` | `Created by Ansible VXLAN Automation` | Text after the VLAN name in the route target description |

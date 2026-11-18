@@ -174,7 +174,7 @@ Per-DC VLAN databases: `vars/vlans/<data_center>/*.yml` - one file per VLAN (see
 ## Standalone utilities
 
 ```bash
-# Export VLAN attributes and route targets to NetBox (dry-run by default)
+# Export VLANs (tenant, VLAN group, prefixes in their VRF) and route targets to NetBox (dry-run by default)
 ansible-playbook -i inventory/hosts.yml playbooks/export_vlan_to_netbox.yml \
   -e manual_data_center=lisle \
   -e manual_vlan_id=100 \
@@ -182,6 +182,15 @@ ansible-playbook -i inventory/hosts.yml playbooks/export_vlan_to_netbox.yml \
 ```
 
 NetBox export details: [docs/examples/export-vlan-to-netbox.md](docs/examples/export-vlan-to-netbox.md)
+
+```bash
+# Compare the VLAN records with NetBox (read-only): VLAN, tenant, VNI, route targets, prefixes / VRF
+ansible-playbook -i inventory/hosts.yml playbooks/netbox_drift.yml \
+  -e manual_data_center=omaha \
+  --ask-vault-pass
+```
+
+Drift report details: [docs/examples/netbox-drift.md](docs/examples/netbox-drift.md)
 
 ```bash
 # A VLAN's VNI and route target from NetBox: reuse, or the next free number (report only by default)

@@ -140,15 +140,22 @@
     - netbox_warn_on_missing_record | bool
     - _netbox_sync_status == 'missing'
 
-- name: Fail only when NetBox is explicitly required and the record is missing
+# netbox_ssot_required: NetBox must answer with exactly one VLAN for this
+# data center. Anything else (not configured, unreachable, missing, several
+# matches) stops the run instead of falling back to the local record.
+- name: Fail when NetBox is required and has no single VLAN record for this data center
   ansible.builtin.fail:
     msg:
-      - "VLAN {{ target_vlan_id }} does not exist in NetBox."
-      - "netbox_ssot_required is true, so the run cannot proceed."
-      - "Disable netbox_ssot_required for Core workflow, or create the NetBox record first."
+      - "netbox_ssot_required is true and NetBox status for VLAN {{ target_vlan_id }} is {{ _netbox_sync_status }}."
+      - "{{ _netbox_sync_error | default('') or _ssot_hint[_netbox_sync_status] | default('') }}"
+      - "Fix NetBox (or export the record: playbooks/export_vlan_to_netbox.yml), or set netbox_ssot_required=false."
+  vars:
+    _ssot_hint:
+      not_configured: "netbox_url / netbox_token are not set."
+      missing: "VLAN {{ target_vlan_id }} does not exist in NetBox for {{ _netbox_data_center }}."
   when:
     - netbox_ssot_required | bool
-    - _netbox_sync_status == 'missing'
+    - _netbox_sync_status != 'found'
   delegate_to: localhost
   become: false
   run_once: true

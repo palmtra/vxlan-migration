@@ -12,6 +12,7 @@ Focused, copy-paste runnable examples. Each file covers one operator task.
 | [export-vlan-to-netbox.md](export-vlan-to-netbox.md) | Standalone NetBox export (dry-run default) |
 | [cvp-studios-onboarding.md](cvp-studios-onboarding.md) | Onboard switches to Static Configuration Studio for `cvp_deploy_method: studios` (AVD `cv_deploy`) |
 | [cvp-container-onboarding.md](cvp-container-onboarding.md) | Move switches out of CloudVision's Undefined / Unassigned container so configlets can be applied |
+| [netbox-drift.md](netbox-drift.md) | Read-only report: VLAN records vs NetBox (VLAN, tenant, VNI, route targets, prefixes / VRF) |
 | [allocate-vni.md](allocate-vni.md) | A VLAN's VNI and route target from NetBox IPAM route targets: reuse, or the next free number per DC and tenant |
 
 For the full flag reference, see [USAGE_GUIDE.md](../USAGE_GUIDE.md).

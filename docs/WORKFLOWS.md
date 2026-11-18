@@ -84,7 +84,7 @@ Only real records belong there; sample records live on the `test` branch.
 
 See `vars/vlans/README.md` for naming rules and the record format.
 
-NetBox is **secondary**. A missing NetBox record logs a warning; the run continues unless `netbox_ssot_required: true`.
+NetBox is **secondary**. A missing NetBox record logs a warning; the run continues unless `netbox_ssot_required: true`, which stops it whenever NetBox does not answer with exactly one VLAN for the data center. `playbooks/netbox_drift.yml` reports where the records and NetBox differ (read-only).
 
 ### Standalone utilities (not in workflow)
 

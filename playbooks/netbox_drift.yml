@@ -1,0 +1,102 @@
+---
+# -----------------------------------------------------------------------------
+# netbox_drift.yml - compare the local VLAN records with NetBox. Read-only.
+# -----------------------------------------------------------------------------
+# For each VLAN record of a data center (or the VLANs given): the NetBox VLAN
+# (scoped by netbox_vlan_query_by_dc), its name and tenant, the VXLAN-EVPN
+# L2VPN (VNI, import / export targets), the IPAM route target <vni>:<vid>,
+# and each prefix (in the record's VRF, assigned to the VLAN).
+#
+#   ansible-playbook -i inventory/hosts.yml playbooks/netbox_drift.yml \
+#     -e manual_data_center=omaha [-e manual_vlan_id=3000] --ask-vault-pass
+#
+# Writes reports/netbox_drift/<dc>_<ts>.md and .json. Nothing is written to
+# NetBox. -e netbox_drift_fail_on_drift=true makes drift (or a VLAN missing
+# from NetBox) fail the run, for a scheduled job.
+# -----------------------------------------------------------------------------
+
+- name: NetBox drift report
+  hosts: localhost
+  gather_facts: false
+
+  vars:
+    netbox_drift_fail_on_drift: false
+    netbox_drift_report_dir: "{{ reports_dir | default(playbook_dir ~ '/../reports') }}/netbox_drift"
+
+  tasks:
+    - name: Normalize input
+      ansible.builtin.set_fact:
+        target_data_center: "{{ [manual_data_center | default(''), target_data_center | default('')] | coalesce_trimmed | lower }}"
+        _drift_vlan_ids: "{{ ([] if target_vlan_ids is not defined else target_vlan_ids) | normalize_target_vlan_ids(manual_vlan_id | default(none)) }}"
+
+    - name: Fail without a data center
+      ansible.builtin.fail:
+        msg: "Pass -e manual_data_center=omaha (or lisle)."
+      when: target_data_center | length == 0
+
+    - name: Fail without NetBox credentials
+      ansible.builtin.fail:
+        msg: "netbox_url and netbox_token are required (vault or extra vars)."
+      when: netbox_url | default('', true) | length == 0 or netbox_token | default('', true) | length == 0
+
+    - name: Load the data center's VLAN records
+      ansible.builtin.set_fact:
+        _drift_records: "{{ (vlan_db_dir | load_vlan_db_from_directory(target_data_center, _drift_vlan_ids)).vlans }}"
+
+    - name: Fail when there is no VLAN record to compare
+      ansible.builtin.fail:
+        msg: "No VLAN records under {{ vlan_db_dir }}/{{ target_data_center }} match {{ _drift_vlan_ids or 'all' }}."
+      when: _drift_records | length == 0
+
+    - name: Compare the records with NetBox
+      netbox_drift:
+        url: "{{ netbox_url }}"
+        token: "{{ netbox_token }}"
+        validate_certs: "{{ netbox_validate_certs | default(false) }}"
+        timeout: "{{ netbox_timeout | default(30) }}"
+        records: "{{ _drift_records }}"
+        data_center: "{{ target_data_center }}"
+        vlan_query: "{{ (netbox_vlan_query_by_dc | default({}))[target_data_center] | default({}) }}"
+        l2vpn_apps: "{{ netbox_l2vpn_api_apps | default(['vpn', 'ipam']) }}"
+      register: _drift
+
+    - name: Build the drift result
+      ansible.builtin.set_fact:
+        _drift_result:
+          data_center: "{{ target_data_center }}"
+          checked_at: "{{ lookup('ansible.builtin.pipe', 'date -u +%Y-%m-%dT%H:%M:%SZ') }}"
+          summary: "{{ _drift.summary }}"
+          reports: "{{ _drift.reports }}"
+
+    - name: Create the report directory
+      ansible.builtin.file:
+        path: "{{ netbox_drift_report_dir }}"
+        state: directory
+        mode: '0755'
+
+    - name: Write the drift report
+      ansible.builtin.copy:
+        content: "{{ item.content }}"
+        dest: "{{ netbox_drift_report_dir }}/{{ target_data_center }}_{{ _drift_result.checked_at | regex_replace('[-:]', '') }}.{{ item.ext }}"
+        mode: '0644'
+      loop:
+        - {ext: json, content: "{{ _drift_result | to_nice_json }}\n"}
+        - {ext: md, content: "{{ _drift_result | netbox_drift_markdown }}"}
+      loop_control:
+        label: "{{ item.ext }}"
+
+    - name: Report the drift
+      ansible.builtin.debug:
+        msg:
+          - "NetBox drift, {{ target_data_center }}: {{ _drift.summary }}"
+          - >-
+            {{ _drift.reports | rejectattr('status', 'equalto', 'in_sync')
+               | map(attribute='vlan_id') | map('string') | join(', ') or 'every VLAN in sync' }}
+          - "Report: {{ netbox_drift_report_dir }}"
+
+    - name: Fail on drift (netbox_drift_fail_on_drift)
+      ansible.builtin.fail:
+        msg: "NetBox drift in {{ target_data_center }}: {{ _drift.summary }}"
+      when:
+        - netbox_drift_fail_on_drift | bool
+        - _drift.reports | rejectattr('status', 'equalto', 'in_sync') | list | length > 0

@@ -42,6 +42,7 @@ Short, runnable task guides in [examples/](examples/):
 | [examples/export-vlan-to-netbox.md](examples/export-vlan-to-netbox.md) | Export local VLAN DB to NetBox |
 | [examples/cvp-studios-onboarding.md](examples/cvp-studios-onboarding.md) | Onboard switches to Static Configuration Studio for the Studios deploy |
 | [examples/cvp-container-onboarding.md](examples/cvp-container-onboarding.md) | Put switches in a CloudVision container before the first deploy |
+| [examples/netbox-drift.md](examples/netbox-drift.md) | Compare the VLAN records with NetBox (read-only) |
 | [examples/allocate-vni.md](examples/allocate-vni.md) | Get a VLAN's VNI and route target from NetBox (next free number per DC and tenant) |
 
 Full examples index: [examples/README.md](examples/README.md)

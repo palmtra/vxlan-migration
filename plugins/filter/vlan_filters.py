@@ -31,6 +31,7 @@ from vlan_lib.avd_services import (  # noqa: E402
     avd_services_file_text,
     merge_avd_services,
 )
+from vlan_lib.netbox_drift import netbox_drift_markdown  # noqa: E402
 from vlan_lib.netbox import (  # noqa: E402
     merge_netbox_evpn,
     netbox_l2vpn_evpn,
@@ -151,6 +152,7 @@ class FilterModule(object):
             "avd_service_entries": avd_service_entries,
             "avd_services_file_text": avd_services_file_text,
             "merge_avd_services": merge_avd_services,
+            "netbox_drift_markdown": netbox_drift_markdown,
             "netbox_request_error": netbox_request_error,
             "netbox_route_target": netbox_route_target,
             "netbox_l2vpn_evpn": netbox_l2vpn_evpn,
