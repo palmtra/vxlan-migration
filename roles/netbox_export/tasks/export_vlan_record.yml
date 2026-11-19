@@ -1,143 +1,33 @@
 ---
-# Export a single VLAN record from the local DB to NetBox.
+# Export one VLAN record to NetBox: the VLAN (scoped to this data center like
+# netbox_check, so a VID another DC also uses is never touched), its tenant,
+# and its prefixes in the record's VRF, assigned to the VLAN.
+# plugins/action/netbox_vlan_export.py; every lookup runs before any write.
 
-- name: "Look up existing NetBox VLAN VID {{ _export_vlan.id }}"
-  ansible.builtin.uri:
-    url: "{{ netbox_url }}/api/ipam/vlans/?vid={{ _export_vlan.id }}"
-    method: GET
-    headers:
-      Authorization: "Token {{ netbox_token }}"
-      Accept: "application/json"
+- name: "Export to NetBox: VLAN {{ _export_vlan.id }}"
+  netbox_vlan_export:
+    url: "{{ netbox_url }}"
+    token: "{{ netbox_token }}"
     validate_certs: "{{ netbox_validate_certs | default(false) | bool }}"
     timeout: "{{ netbox_export_timeout | int }}"
-    status_code: 200
-  register: _netbox_vlan_search
+    record: "{{ _export_vlan }}"
+    data_center: "{{ target_data_center }}"
+    vlan_query: "{{ (netbox_vlan_query_by_dc | default({}))[target_data_center | lower] | default({}) }}"
+    site_id: "{{ _netbox_site_id | default(omit) }}"
+    dry_run: "{{ netbox_export_dry_run | bool }}"
+    create_missing: "{{ netbox_export_create_missing | bool }}"
+    update_existing: "{{ netbox_export_update_existing | bool }}"
+    export_prefixes: "{{ netbox_export_prefixes | bool }}"
+    description_marker: "{{ netbox_export_rt_description_marker }}"
+  register: _netbox_vlan_export
   delegate_to: localhost
   become: false
-  changed_when: false
-  failed_when: false
-  no_log: true
 
-# no_log hides the request's own failure (the request carries the token), so
-# the status and reason are reported here instead.
-- name: "Fail when NetBox could not look up VLAN VID {{ _export_vlan.id }}"
-  ansible.builtin.fail:
-    msg: "NetBox VLAN lookup for VID {{ _export_vlan.id }} failed: {{ _netbox_vlan_search | netbox_request_error(200) }}"
-  delegate_to: localhost
-  become: false
-  when: _netbox_vlan_search | netbox_request_error(200) | length > 0
-
-- name: Build NetBox VLAN payload
+- name: "Record the export result for VLAN {{ _export_vlan.id }}"
   ansible.builtin.set_fact:
-    _netbox_vlan_exists: "{{ _netbox_vlan_search.json.results | default([]) | length > 0 }}"
-    _netbox_vlan_payload:
-      vid: "{{ _export_vlan.id | int }}"
-      name: "{{ _export_vlan.vlan_name | default(_export_vlan.name) }}"
-      status: active
-      description: >-
-        Exported from vxlan-migration local VLAN DB ({{ target_data_center }}).
-        service_type={{ _export_vlan.service_type | default('unknown') }},
-        vni={{ _export_vlan.vni | default('n/a') }},
-        vrf={{ _export_vlan.vrf | default('default') }}
+    _netbox_export_results: >-
+      {{ _netbox_export_results | default([]) + [_netbox_vlan_export
+         | dict2items | selectattr('key', 'in', ['vlan_id', 'vlan_name', 'netbox_status', 'netbox_vlan_id',
+                                                  'payload', 'prefixes']) | items2dict] }}
   delegate_to: localhost
   become: false
-
-- name: Attach NetBox site to payload when resolved
-  ansible.builtin.set_fact:
-    _netbox_vlan_payload: "{{ _netbox_vlan_payload | combine({'site': _netbox_site_id}) }}"
-  delegate_to: localhost
-  become: false
-  when: _netbox_site_id is defined
-
-- name: Record dry-run export result
-  ansible.builtin.set_fact:
-    _netbox_export_results: "{{ _netbox_export_results | default([]) + [_export_result] }}"
-  vars:
-    _export_result:
-      vlan_id: "{{ _export_vlan.id | int }}"
-      vlan_name: "{{ _export_vlan.name }}"
-      netbox_status: "{{ 'dry_run_would_update' if _netbox_vlan_exists else 'dry_run_would_create' }}"
-      payload: "{{ _netbox_vlan_payload }}"
-  delegate_to: localhost
-  become: false
-  when: netbox_export_dry_run | bool
-
-- name: Create NetBox VLAN when missing
-  ansible.builtin.uri:
-    url: "{{ netbox_url }}/api/ipam/vlans/"
-    method: POST
-    headers:
-      Authorization: "Token {{ netbox_token }}"
-      Accept: "application/json"
-      Content-Type: "application/json"
-    body_format: json
-    body: "{{ _netbox_vlan_payload }}"
-    validate_certs: "{{ netbox_validate_certs | default(false) | bool }}"
-    timeout: "{{ netbox_export_timeout | int }}"
-    status_code:
-      - 201
-  register: _netbox_vlan_create
-  delegate_to: localhost
-  become: false
-  failed_when: false
-  when:
-    - not netbox_export_dry_run | bool
-    - netbox_export_create_missing | bool
-    - not _netbox_vlan_exists | bool
-  no_log: true
-
-- name: Update existing NetBox VLAN
-  ansible.builtin.uri:
-    url: "{{ netbox_url }}/api/ipam/vlans/{{ (_netbox_vlan_search.json.results | first).id }}/"
-    method: PATCH
-    headers:
-      Authorization: "Token {{ netbox_token }}"
-      Accept: "application/json"
-      Content-Type: "application/json"
-    body_format: json
-    body: "{{ _netbox_vlan_payload }}"
-    validate_certs: "{{ netbox_validate_certs | default(false) | bool }}"
-    timeout: "{{ netbox_export_timeout | int }}"
-    status_code:
-      - 200
-  register: _netbox_vlan_update
-  delegate_to: localhost
-  become: false
-  failed_when: false
-  when:
-    - not netbox_export_dry_run | bool
-    - netbox_export_update_existing | bool
-    - _netbox_vlan_exists | bool
-  no_log: true
-
-- name: "Fail when NetBox refused VLAN VID {{ _export_vlan.id }}"
-  ansible.builtin.fail:
-    msg: "NetBox refused to {{ _vlan_write_verb }} VLAN VID {{ _export_vlan.id }}: {{ _vlan_write_error }}"
-  vars:
-    _vlan_write_verb: "{{ 'update' if _netbox_vlan_exists | bool else 'create' }}"
-    _vlan_write_error: >-
-      {{ (_netbox_vlan_create | default({'skipped': true}) | netbox_request_error(201))
-         ~ (_netbox_vlan_update | default({'skipped': true}) | netbox_request_error(200)) }}
-  delegate_to: localhost
-  become: false
-  when:
-    - not netbox_export_dry_run | bool
-    - _vlan_write_error | length > 0
-
-- name: Record applied export result
-  ansible.builtin.set_fact:
-    _netbox_export_results: "{{ _netbox_export_results | default([]) + [_export_result] }}"
-  vars:
-    _export_result:
-      vlan_id: "{{ _export_vlan.id | int }}"
-      vlan_name: "{{ _export_vlan.name }}"
-      netbox_status: >-
-        {{ 'created' if (_netbox_vlan_create is defined and not (_netbox_vlan_create.skipped | default(false)))
-           else 'updated' if (_netbox_vlan_update is defined and not (_netbox_vlan_update.skipped | default(false)))
-           else 'skipped' }}
-      netbox_vlan_id: >-
-        {{ _netbox_vlan_create.json.id | default((_netbox_vlan_search.json.results | first).id | default('')) }}
-      payload: "{{ _netbox_vlan_payload }}"
-  delegate_to: localhost
-  become: false
-  when: not netbox_export_dry_run | bool

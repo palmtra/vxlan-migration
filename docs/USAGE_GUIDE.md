@@ -270,7 +270,9 @@ See `vars/vlans/README.md`.
 
 | Variable | Default | Description |
 |---|---|---|
-| `use_avd` | `false` | `true` → `roles/avd_vxlan_config` (Arista AVD); `false` → legacy Jinja |
+| `use_avd` | `true` | `true` → `roles/avd_vxlan_config` (Arista AVD); `false` → legacy Jinja (deprecated) |
+| `cvp_deploy_method` | `configlets` | `configlets` → Network Provisioning, one configlet per VLAN per leaf; `studios` → Static Configuration Studio via `arista.avd.cv_deploy`, one configlet per leaf with every `deployed: true` VLAN (needs `use_avd`) |
+| `cvp_studios_onboarded` | `false` | Must be `true` before a Studios push: every target switch onboarded and reconciled ([examples/cvp-studios-onboarding.md](examples/cvp-studios-onboarding.md)) |
 | `cvp_apply_configlets` | `false` | `true` → push to CVP; `false` → render files only under `reports/cvp_configlets/<dc>/vlan<id>/` |
 
 Detailed generate-only walkthrough: [examples/generate-config-without-cvp-push.md](examples/generate-config-without-cvp-push.md).
@@ -307,7 +309,7 @@ With `netbox_url` and `netbox_token` set, the deploy looks the VLAN up in NetBox
 | `netbox_vlan_query_by_dc` | `{omaha: {group: omaha-datacenter}, lisle: {group: lisle-datacenter}}` (inventory) | NetBox VLAN filters per data center: each DC's VLAN group slug |
 | `netbox_l2vpn_api_apps` | `[vpn, ipam]` | Where L2VPNs live: `/api/vpn/` (NetBox 4.x), then `/api/ipam/` (3.x) |
 | `netbox_evpn_conflict` | `fail` | `fail` stops on a VNI / route-target conflict; `warn` deploys from the record |
-| `netbox_ssot_required` | `false` | `true` → fail if VLAN missing in NetBox |
+| `netbox_ssot_required` | `false` | `true` → fail unless NetBox has exactly one VLAN for this data center (not configured, unreachable, missing or ambiguous all stop the run) |
 | `netbox_warn_on_missing_record` | `true` | Log warning when NetBox has no record |
 
 ### External cleanup hand-off
@@ -334,7 +336,6 @@ ansible-playbook -i inventory/hosts.yml playbooks/core/workflow_deploy.yml \
   -e manual_data_center=lisle \
   -e manual_target_vrf=default \
   -e cvp_apply_configlets=true \
-  -e use_avd=true \
   --limit dc_lisle
 ```
 
@@ -437,7 +438,8 @@ ansible-playbook -i inventory/hosts.yml playbooks/advanced/workflow_verify.yml \
 | `netbox_export_dry_run` | `true` | `false` to write to NetBox |
 | `netbox_export_create_missing` | `true` | POST new VLAN records |
 | `netbox_export_update_existing` | `true` | PATCH existing records |
-| `netbox_export_site_map` | `{lisle: lisle, omaha: omaha}` | DC → NetBox site slug |
+| `netbox_export_site_map` | `{lisle: lisle, omaha: omaha}` | DC → NetBox site slug, for a new VLAN when `netbox_vlan_query_by_dc` names no VLAN group |
+| `netbox_export_prefixes` | `true` | Export the record's prefixes in its VRF, assigned to the VLAN and tenant |
 | `netbox_validate_certs` | `false` | Verify the NetBox TLS certificate. Off because NetBox uses a self-signed certificate |
 | `netbox_export_route_targets` | `true` | Export a route target for every `action: migrate` VLAN |
 | `netbox_export_rt_description_marker` | `Created by Ansible VXLAN Automation` | Text after the VLAN name in the route target description |

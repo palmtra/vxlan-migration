@@ -23,7 +23,9 @@ cvp_configlet_data_center: >-
       or (hostvars['localhost']['_target_vlan_record'] | default({})).data_center | default('', true)
       or 'unknown_dc') | string | trim | lower }}
 cvp_configlet_vlan_dir: "{{ cvp_configlet_root }}/{{ cvp_configlet_data_center }}/vlan{{ target_vlan_id }}"
-avd_output_dir: "{{ cvp_configlet_vlan_dir }}/avd"
+avd_output_dir: >-
+  {{ cvp_configlet_vlan_dir }}/{{ 'avd' if cvp_deploy_method | default('configlets') != 'studios'
+     else ('avd_studio_rollback' if avd_studio_rollback | bool else 'avd_studio') }}
 # Shared temp dir for arista.avd.validate_inputs + eos_cli_config_gen (AVD 6; 5.x has no validate_inputs).
 avd_tmp_dir: "{{ avd_output_dir }}/tmp_eos_cli_config_gen"
 avd_keep_tmp_files: false
@@ -33,6 +35,10 @@ avd_keep_tmp_files: false
 avd_build_borderleaf_config: false
 # Match both "border" and common "blf" naming (e.g. chi01-blf01).
 avd_borderleaf_regex: "(?i)(border|blf)"
+
+# Studios deploy (cvp_deploy_method: studios) only: render each leaf without
+# this VLAN, keeping every other VLAN deployed on it (roles/cvp_rollback sets it).
+avd_studio_rollback: false
 
 # Push to CloudVision, create a change control and wait for it. The
 # change-control settings live in roles/cvp_change_control/defaults/main.yml.

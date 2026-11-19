@@ -95,13 +95,18 @@
             _preflight_checks_cvp: >-
               {% set targets = hostvars['localhost']['_preflight_record'].target_switches | default([]) %}{%
               set where = _preflight_cvp_facts | cvp_device_containers(targets) %}{%
+              set studios = cvp_deploy_method | default('configlets') == 'studios' %}{%
               set rows = [{'check': 'cloudvision', 'target': hostvars['localhost']['_preflight_cvp_host'], 'status': 'ok',
                            'detail': 'token accepted'}] %}{%
               for host in targets %}{% set _ = rows.append(
                 {'check': 'cloudvision', 'target': host,
-                 'status': 'ok' if host in where.found else 'fail',
+                 'status': 'ok' if (host in where.found or (studios and host in where.unassigned | default([]))) else 'fail',
                  'detail': ('container ' ~ where.found[host].container) if host in where.found
-                           else 'not in CloudVision, or not in a container (hostnames must match the inventory)'}) %}{%
+                           else ('in CloudVision (no container; the Studios deploy does not need one)' if studios
+                                 and host in where.unassigned | default([])
+                           else ('in CloudVision but not in a container (Undefined / Unassigned): move it in Network Provisioning'
+                                 if host in where.unassigned | default([])
+                                 else 'not in CloudVision (hostnames must match the inventory)'))}) %}{%
               endfor %}{{ rows }}
           delegate_to: localhost
           delegate_facts: true

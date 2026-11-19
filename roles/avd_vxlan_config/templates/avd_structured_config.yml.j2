@@ -1,9 +1,13 @@
 ---
-# AVD structured configuration for VLAN {{ target_vlan_id }} migration
+{# _avd_vlan is the VLAN rendered here: this run's VLAN, or (Studios deploy) #}
+{# one of the VLANs already deployed on the leaf. #}
+{% set _avd_vlan = _render_vlan | default(_avd_vlan) %}
+{% set _vid = (_avd_vlan.id | default(target_vlan_id)) | int %}
+# AVD structured configuration for VLAN {{ _vid }} migration
 # Device: {{ _target_device }}
 
 {% set _vxlan_intf = eos_vxlan_interface | default('Vxlan1') %}
-{% set _vlan_name = _avd_vlan.vlan_name | default(_avd_vlan.name, true) | default('VLAN' ~ target_vlan_id, true) %}
+{% set _vlan_name = _avd_vlan.vlan_name | default(_avd_vlan.name, true) | default('VLAN' ~ _vid, true) %}
 {% set _svi_description = (_avd_vlan.svi_description | default(_avd_vlan.description, true) | string) %}
 {% set _vni = _avd_vlan.vni %}
 {% set _vrf = (_avd_vlan.vrf | default(target_vrf | default('default')) | string) %}
@@ -16,13 +20,13 @@
 
 # AVD renders the VLAN; eos_cli below carries the rest and must not repeat it.
 vlans:
-  - id: {{ target_vlan_id | int }}
+  - id: {{ _vid }}
     name: {{ _vlan_name }}
 
 # Migration configlet CLI (same intent as roles/cvp_deploy leaf/border templates).
 eos_cli: |
 {% if _is_gateway %}
-  interface Vlan{{ target_vlan_id }}
+  interface Vlan{{ _vid }}
 {% if _svi_description | length > 0 %}
    description {{ _svi_description }}
 {% endif %}
@@ -36,12 +40,12 @@ eos_cli: |
   !
 {% endif %}
   interface {{ _vxlan_intf }}
-   vxlan vlan {{ target_vlan_id }} vni {{ _vni }}
+   vxlan vlan {{ _vid }} vni {{ _vni }}
   !
 {% set _bgp = _avd_vlan | bgp_vlan_evpn(_target_device, _bgp_as, _router_id) %}
 {% if _bgp and (_bgp.missing | default([]) | length == 0) %}
   router bgp {{ _bgp.asn }}
-   vlan {{ target_vlan_id }}
+   vlan {{ _vid }}
     rd {{ _bgp.rd }}
 {% if _bgp.rt_both | default('') | length > 0 %}
     route-target both {{ _bgp.rt_both }}
@@ -58,14 +62,15 @@ eos_cli: |
 {% endif %}
   !
 {% endif %}
-{% if _is_borderleaf | bool and avd_build_borderleaf_config | bool and target_vrf | default('default') != 'default' and _router_id | length > 0 %}
-  vrf instance {{ target_vrf }}
+{% set _bl_vrf = (target_vrf | default('default', true) | string) if _vid == (target_vlan_id | int) else _vrf %}
+{% if _is_borderleaf | bool and avd_build_borderleaf_config | bool and _bl_vrf != 'default' and _router_id | length > 0 %}
+  vrf instance {{ _bl_vrf }}
    rd {{ _router_id }}:{{ _vni }}
    !
    address-family ipv4
       route-target import evpn {{ _vni }}:{{ _vni }}
   !
   interface {{ _vxlan_intf }}
-   vxlan vrf {{ target_vrf }} vni {{ _vni }}
+   vxlan vrf {{ _bl_vrf }} vni {{ _vni }}
   !
 {% endif %}

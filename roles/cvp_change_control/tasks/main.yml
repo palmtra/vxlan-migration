@@ -6,13 +6,15 @@
 #   cvp_push_configlets:  {configlet name: text}
 #   cvp_push_assignments: {switch: [configlet names]}
 #
-# 1. Read where each switch sits in CloudVision (its container must not change).
-# 2. Push the configlets and add them to their switches (apply_mode loose:
-#    nothing already on a switch is removed). CloudVision creates one task per
-#    switch whose config changes.
-# 3. Create one change control that runs those tasks, in parallel.
-# 4. Wait for it to run (a person approves and executes it in CloudVision),
-#    unless cvp_change_control_wait is false.
+# cvp_deploy_method picks how the config reaches CloudVision:
+#   configlets (configlets.yml): Network Provisioning. Push the configlets,
+#     add them to their switches (each switch stays in its container), one
+#     change control for the tasks that creates.
+#   studios (studios.yml): arista.avd.cv_deploy. One configlet per switch in
+#     Static Configuration Studio, through a workspace whose submission creates
+#     the change control. Needs every switch onboarded there first.
+# Either way, wait for the change control to run (a person approves and
+# executes it in CloudVision), unless cvp_change_control_wait is false.
 # Sets _cvp_deploy on localhost: {status, change_control_id, task_ids, ...}.
 # status: no_change | created | completed | failed | timed_out
 # -----------------------------------------------------------------------------
@@ -50,102 +52,28 @@
   when: (cvp_push_configlets | default({})) | length == 0 or (cvp_push_assignments | default({})) | length == 0
   run_once: true
 
-- name: Read the switches CloudVision manages
-  arista.cvp.cv_facts_v3:
-    facts:
-      - devices
-  register: _cvp_facts
-  delegate_to: "{{ _cvp_host }}"
-  run_once: true
-
-- name: Find each target switch's current container
-  ansible.builtin.set_fact:
-    _cvp_containers: "{{ _cvp_facts | cvp_device_containers(cvp_push_assignments.keys() | list) }}"
-  run_once: true
-  delegate_to: localhost
-
-- name: Fail when a target switch is not provisioned in CloudVision
+- name: Fail on an unknown deploy method
   ansible.builtin.fail:
-    msg: >-
-      These switches are not in CloudVision, or not in a container, so their configlets cannot be
-      applied: {{ _cvp_containers.missing | join(', ') }}. CloudVision hostnames must match the
-      inventory hostnames (or their FQDN's first label).
-  when: _cvp_containers.missing | length > 0
+    msg: "cvp_deploy_method is '{{ cvp_deploy_method }}'; use 'configlets' or 'studios'."
+  when: cvp_deploy_method not in ['configlets', 'studios']
   run_once: true
 
-- name: Push the configlets to CloudVision
-  arista.cvp.cv_configlet_v3:
-    configlets: "{{ cvp_push_configlets }}"
-    configlets_notes: "{{ cvp_configlets_notes }}"
-    state: present
-  register: _cvp_configlet_result
-  delegate_to: "{{ _cvp_host }}"
-  run_once: true
+- name: Deploy through Network Provisioning configlets
+  ansible.builtin.include_tasks: configlets.yml
+  when: cvp_deploy_method == 'configlets'
 
-- name: Add the configlets to their switches (keeps each switch in its container)
-  arista.cvp.cv_device_v3:
-    devices: "{{ cvp_push_assignments | cvp_device_assignments(_cvp_containers.found) }}"
-    state: present
-    apply_mode: loose
-    search_key: hostname
-  register: _cvp_device_result
-  delegate_to: "{{ _cvp_host }}"
-  run_once: true
-
-# Assigning a configlet creates a task; so does changing a configlet that is
-# already assigned (a redeploy, or a rollback overwriting the same names).
-- name: Collect the tasks CloudVision created
-  ansible.builtin.set_fact:
-    _cvp_task_ids: "{{ [_cvp_configlet_result, _cvp_device_result] | cvp_task_ids }}"
-    _cvp_cc_id: ""
-    _cvp_cc_state: {}
-  run_once: true
-  delegate_to: localhost
-
-- name: Create the change control and wait for it
-  when: _cvp_task_ids | length > 0
-  block:
-    - name: Create the change control
-      arista.cvp.cv_change_control_v3:
-        state: set
-        change: "{{ cvp_change_control_name | cvp_change_control(cvp_change_control_notes, _cvp_task_ids) }}"
-      register: _cvp_cc_created
-      delegate_to: "{{ _cvp_host }}"
-      run_once: true
-
-    - name: Record the change control ID
-      ansible.builtin.set_fact:
-        _cvp_cc_id: "{{ _cvp_cc_created.data.id | default(_cvp_cc_created.data.key.id | default('')) }}"
-      run_once: true
-      delegate_to: localhost
-
-    - name: Fail when CloudVision returned no change control ID
-      ansible.builtin.fail:
-        msg: "CloudVision did not return a change control ID: {{ _cvp_cc_created.data | default({}) }}"
-      when: _cvp_cc_id | length == 0
-      run_once: true
-
-    - name: Approve and run the change control (explicitly allowed for this run)
-      arista.cvp.cv_change_control_v3:
-        state: "{{ cvp_change_control_state }}"
-        change_id:
-          - "{{ _cvp_cc_id }}"
-      delegate_to: "{{ _cvp_host }}"
-      run_once: true
-      when:
-        - cvp_change_control_state != 'set'
-        - cvp_change_control_auto_execute_allowed | bool
-
-    - name: Wait for the change control to run
-      ansible.builtin.include_tasks: wait.yml
-      when: cvp_change_control_wait | bool
+- name: Deploy through Static Configuration Studio (arista.avd.cv_deploy)
+  ansible.builtin.include_tasks: studios.yml
+  when: cvp_deploy_method == 'studios'
 
 - name: Record the CloudVision outcome
   ansible.builtin.set_fact:
     _cvp_deploy: >-
       {{ {
         'vlan_id': target_vlan_id | int,
-        'status': 'no_change' if _cvp_task_ids | length == 0 else (_cvp_cc_state.outcome | default('created')),
+        'status': 'no_change' if not _cvp_cc_id else (_cvp_cc_state.outcome | default('created')),
+        'method': cvp_deploy_method,
+        'workspace_id': _cvp_workspace_id | default(''),
         'change_control_id': _cvp_cc_id,
         'change_control_name': cvp_change_control_name,
         'change_control_state': _cvp_cc_state,
@@ -181,8 +109,13 @@
       - "VLAN {{ target_vlan_id }}: {{ hostvars['localhost']['_cvp_deploy'].status }}"
       - >-
         {{ 'Change control ' ~ _cvp_cc_id ~ ' (' ~ cvp_change_control_name ~ ')' if _cvp_cc_id
-           else 'No change control: CloudVision created no task (configlets already in place)' }}
+           else 'No change control: nothing to change on the switches (config already in place)' }}
       - "Tasks: {{ _cvp_task_ids | join(', ') or 'none' }}"
+      - >-
+        {{ ('Set deployed: true in VLAN ' ~ target_vlan_id ~ "'s record under vars/vlans/ and commit it: "
+            ~ 'the Studios deploy keeps only deployed VLANs on each leaf.')
+           if hostvars['localhost']['_cvp_deploy'].status == 'completed' and not (avd_studio_rollback | default(false) | bool)
+           else '' }}
   run_once: true
 
 - name: Fail when the change control failed

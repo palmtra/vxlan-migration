@@ -77,6 +77,10 @@
           ansible.builtin.include_role:
             name: post_change_verification
 
+        - name: Keep the migration's verification results for the report
+          ansible.builtin.set_fact:
+            _verify_report_migration: "{{ _verification_results }}"
+
         - name: Report post-change verification results
           ansible.builtin.debug:
             msg: "{{ _verification_results }}"
@@ -109,6 +113,10 @@
               vars:
                 verify_expect_vlan_present: false
                 verify_mac_arp_learning: false
+
+            - name: Keep the post-rollback verification results for the report
+              ansible.builtin.set_fact:
+                _verify_report_rollback: "{{ _verification_results }}"
 
             - name: Fail if rollback re-verification did not pass
               ansible.builtin.fail:
@@ -155,6 +163,67 @@
             - name: Re-raise verification / rollback failure
               ansible.builtin.fail:
                 msg: "{{ ansible_failed_result.msg | default('Step 6 failed on ' + inventory_hostname) }}"
+      always:
+        # One report per VLAN, beside its discovery reports:
+        # reports/<dc>/<vlan>/<vlan>_verification_<ts>.{json,md}. Written
+        # whether verification passed, failed, or was rolled back.
+        - name: Build the VLAN verification report
+          ansible.builtin.set_fact:
+            _verify_report: >-
+              {{ _verify_switches | build_verification_report(hostvars['localhost']['_target_vlan_record'] | default({}), {
+                   'vlan_id': hostvars['localhost']['target_vlan_id'] | int,
+                   'data_center': _verify_dc,
+                   'change_control_id': hostvars['localhost']['cvp_change_control_id']
+                                        | default((hostvars['localhost']['_cvp_deploy'] | default({})).change_control_id | default(''), true),
+                   'deploy_method': hostvars['localhost']['cvp_deploy_method'] | default(cvp_deploy_method | default('configlets'), true),
+                   'verified_at': _verify_ts,
+                   'auto_rollback': auto_rollback_on_verification_failure | bool}) }}
+          vars:
+            _verify_dc: "{{ hostvars['localhost']['_vlan_db_data_center'] | default(hostvars['localhost']['target_data_center'] | default('unknown'), true) }}"
+            _verify_ts: "{{ lookup('ansible.builtin.pipe', 'date -u +%Y-%m-%dT%H:%M:%SZ') }}"
+            _verify_switches: >-
+              {% set out = [] %}{% for host in (_cvp_hosts or ansible_play_hosts_all) | sort %}{% set _ = out.append({
+                'host': host,
+                'migration': hostvars[host]['_verify_report_migration'] | default({}),
+                'rollback': hostvars[host]['_verify_report_rollback'] | default({})}) %}{% endfor %}{{ out }}
+          run_once: true
+          delegate_to: localhost
+          delegate_facts: true
+
+        - name: Create the VLAN report directory
+          ansible.builtin.file:
+            path: >-
+              {{ reports_dir | default(playbook_dir ~ '/../../reports') }}/{{ hostvars['localhost']['_verify_report'].data_center
+              }}/{{ hostvars['localhost']['_verify_report'].vlan_slug }}
+            state: directory
+            mode: '0755'
+          run_once: true
+          delegate_to: localhost
+
+        - name: Write the VLAN verification report
+          ansible.builtin.copy:
+            content: "{{ item.content }}"
+            dest: "{{ _verify_report_path }}.{{ item.ext }}"
+            mode: '0644'
+          loop:
+            - {ext: json, content: "{{ hostvars['localhost']['_verify_report'] | to_nice_json }}\n"}
+            - {ext: md, content: "{{ hostvars['localhost']['_verify_report'] | verification_report_markdown }}"}
+          loop_control:
+            label: "{{ _verify_report_path }}.{{ item.ext }}"
+          vars:
+            _r: "{{ hostvars['localhost']['_verify_report'] }}"
+            _verify_report_path: >-
+              {{ reports_dir | default(playbook_dir ~ '/../../reports') }}/{{ _r.data_center }}/{{ _r.vlan_slug }}/{{
+                 _r.vlan_slug }}_verification_{{ _r.meta.verified_at | regex_replace('[-:]', '') }}
+          run_once: true
+          delegate_to: localhost
+
+        - name: Report the verification outcome
+          ansible.builtin.debug:
+            msg:
+              - "VLAN {{ hostvars['localhost']['_verify_report'].vlan_id }}: {{ hostvars['localhost']['_verify_report'].outcome }}"
+              - "Failed checks: {{ hostvars['localhost']['_verify_report'].failed_checks | length }}"
+          run_once: true
 
     - name: Notify ServiceNow that the migration completed successfully (Advanced)
       ansible.builtin.include_role:

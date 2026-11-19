@@ -2,7 +2,9 @@
 # -----------------------------------------------------------------------------
 # export_vlan_to_netbox.yml - standalone NetBox export (not part of migration workflow)
 # -----------------------------------------------------------------------------
-# Exports VLAN attributes from the local per-DC VLAN database to NetBox.
+# Exports VLANs from the local per-DC VLAN database to NetBox: the VLAN (in the
+# DC's VLAN group, with its tenant), its prefixes in their VRF, and its route
+# target. Scoped per DC like the deploy's NetBox check (netbox_vlan_query_by_dc).
 # Safe default is dry-run (no NetBox writes).
 #
 # Preview export for one VLAN:

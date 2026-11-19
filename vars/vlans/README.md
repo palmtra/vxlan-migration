@@ -59,6 +59,7 @@ Records are validated against [`schemas/vlan_record.schema.json`](../../schemas/
 | Field | Required | Notes |
 |---|---|---|
 | `vrf` | yes | Target VRF (discovery fills from SVI) |
+| `deployed` | no | `true` once the VLAN's change control has run; commit it. The Studios deploy (`cvp_deploy_method: studios`) puts every deployed VLAN in each leaf's single configlet, so a migrated VLAN without it is removed from the leaf on the next Studios run. Top level, or under `migration:` in a nested record |
 | `gateway` | no | Anycast / HSRP / virtual-router address |
 | `prefixes` | no | Subnets from SVI CIDRs |
 | `static_route_tags` | no | Name tags. A static is associated when a tag equals `ip route ... name`, ignoring case |

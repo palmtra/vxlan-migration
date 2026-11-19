@@ -19,6 +19,10 @@
       "type": "string",
       "enum": ["migrate", "decommission"]
     },
+    "deployed": {
+      "type": "boolean",
+      "description": "Set true (and commit) once the VLAN's change control has run. The Studios deploy (cvp_deploy_method: studios) keeps every deployed VLAN in each leaf's single configlet; a VLAN without it is left out, which removes it from the leaf."
+    },
     "service_type": {
       "type": "string",
       "enum": ["l2", "l3"],

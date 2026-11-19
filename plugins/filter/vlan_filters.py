@@ -24,12 +24,14 @@ from vlan_lib.placement import (  # noqa: E402
     vlan_config_hosts,
     vlan_gateway_hosts,
 )
+from vlan_lib.avd_render import avd_eos_config  # noqa: E402
 from vlan_lib.avd_services import (  # noqa: E402
     avd_leaf_pairs,
     avd_service_entries,
     avd_services_file_text,
     merge_avd_services,
 )
+from vlan_lib.netbox_drift import netbox_drift_markdown  # noqa: E402
 from vlan_lib.netbox import (  # noqa: E402
     merge_netbox_evpn,
     netbox_l2vpn_evpn,
@@ -54,6 +56,8 @@ from vlan_lib import (  # noqa: E402,F401
     cvp_change_control_state,
     cvp_device_assignments,
     cvp_device_containers,
+    cv_studio_leaf_vlans,
+    cv_studio_structured_config,
     cvp_task_ids,
     build_mop_input,
     build_run_index,
@@ -117,6 +121,8 @@ from vlan_lib import (  # noqa: E402,F401
     svi_prefixes,
     endpoint_reachability,
     parse_endpoint_baseline,
+    build_verification_report,
+    verification_report_markdown,
     parse_l2_interface_config,
     interface_config_entries_from_cli_results,
     ports_needing_interface_config,
@@ -141,10 +147,12 @@ from vlan_lib import (  # noqa: E402,F401
 class FilterModule(object):
     def filters(self):
         return {
+            "avd_eos_config": avd_eos_config,
             "avd_leaf_pairs": avd_leaf_pairs,
             "avd_service_entries": avd_service_entries,
             "avd_services_file_text": avd_services_file_text,
             "merge_avd_services": merge_avd_services,
+            "netbox_drift_markdown": netbox_drift_markdown,
             "netbox_request_error": netbox_request_error,
             "netbox_route_target": netbox_route_target,
             "netbox_l2vpn_evpn": netbox_l2vpn_evpn,
@@ -220,6 +228,8 @@ class FilterModule(object):
             "svi_prefixes": svi_prefixes,
             "endpoint_reachability": endpoint_reachability,
             "parse_endpoint_baseline": parse_endpoint_baseline,
+            "build_verification_report": build_verification_report,
+            "verification_report_markdown": verification_report_markdown,
             "gateway_validated_vlans": gateway_validated_vlans,
             "migrate_readiness": migrate_readiness,
             "prune_readiness": prune_readiness,
@@ -234,6 +244,8 @@ class FilterModule(object):
             "cvp_change_control_state": cvp_change_control_state,
             "cvp_device_assignments": cvp_device_assignments,
             "cvp_device_containers": cvp_device_containers,
+            "cv_studio_leaf_vlans": cv_studio_leaf_vlans,
+            "cv_studio_structured_config": cv_studio_structured_config,
             "cvp_task_ids": cvp_task_ids,
             "build_mop_input": build_mop_input,
             "build_run_index": build_run_index,

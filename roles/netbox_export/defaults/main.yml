@@ -15,8 +15,15 @@ netbox_export_site_map:
   lisle: lisle
   omaha: omaha
 
-# Optional NetBox tenant slug applied to exported VLANs.
-netbox_export_tenant_slug: ""
+# The VLAN's tenant is the record's numeric tenant id (ownership.tenant),
+# looked up by name in NetBox; a tenant NetBox does not have stops that VLAN.
+# A new VLAN goes in the DC's VLAN group (netbox_vlan_query_by_dc), else on
+# the site below. An existing VLAN keeps its group and site.
+
+# Prefixes: each record prefix in the record's VRF (default = global table),
+# assigned to the VLAN and its tenant. The VRF must exist in NetBox (VRFs are
+# not created here).
+netbox_export_prefixes: true
 
 # Route targets (/ipam/route-targets/): one per migrated VLAN, named
 # <l2 vni>:<vlan id>, with the record's tenant (numeric id) and owner

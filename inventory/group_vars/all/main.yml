@@ -58,9 +58,17 @@ auto_rollback_on_verification_failure: false
 # false only removes VXLAN mappings (safer if the VLAN pre-existed).
 cvp_rollback_allow_destructive_no_vlan: false
 
-# When true, use arista.avd.eos_cli_config_gen for EOS configlet generation
-# instead of the legacy custom Jinja templates in roles/cvp_deploy.
-use_avd: false
+# Production config generator: arista.avd.eos_cli_config_gen (roles/avd_vxlan_config).
+# false falls back to the legacy Jinja templates in roles/cvp_deploy, which are
+# deprecated and will be removed.
+use_avd: true
+
+# How AVD config reaches CloudVision; see roles/cvp_change_control/defaults.
+# configlets: Network Provisioning (switches must be in a container).
+# studios: Static Configuration Studio via arista.avd.cv_deploy (needs
+# cvp_studios_onboarded: true once the switches are onboarded there).
+cvp_deploy_method: configlets
+cvp_studios_onboarded: false
 
 # Inventory fallback when a VLAN record has no per-leaf asn. Prefer the asn
 # discovered on that VTEP. router_id on the host is the same kind of fallback.

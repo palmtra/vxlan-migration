@@ -24,6 +24,10 @@ _CC_STATUS = {
     "CHANGE_CONTROL_STATUS_NOT_STARTED": "not_started",
     "CHANGE_CONTROL_STATUS_UNSPECIFIED": "unknown",
 }
+# Containers CloudVision uses for a device that is streaming but not
+# provisioned (Network Provisioning shows "Undefined"; some CVaaS views say
+# "Unassigned"). Configlets cannot be applied to a device in one of these.
+_UNPROVISIONED = {"undefined", "unassigned"}
 # Placeholders cv_device_v3 returns instead of task IDs in check mode.
 _NOT_TASKS = {"check_mode", "unsupported_in_check_mode"}
 
@@ -51,7 +55,10 @@ def cvp_device_containers(facts_result, hostnames):
 
     *facts_result* is a registered ``cv_facts_v3`` result (``facts:
     [devices]``). A switch matches on hostname, or on the short name of its
-    FQDN. Returns ``{found: {host: {container, serial, fqdn}}, missing: [...]}``.
+    FQDN. Returns ``{found: {host: {container, serial, fqdn}}, missing: [...],
+    unassigned: [...]}``. *missing* lists every switch that cannot take
+    configlets; *unassigned* is the subset CloudVision knows but has not placed
+    in a container (fix in Network Provisioning, not in the inventory).
     """
     by_name = {}
     for device in _find_list(facts_result, "cvp_devices"):
@@ -68,13 +75,16 @@ def cvp_device_containers(facts_result, hostnames):
                 by_name.setdefault(_short(name), record)
     found = {}
     missing = []
+    unassigned = []
     for host in hostnames or []:
         record = by_name.get(_short(host))
-        if record and record["container"] and record["container"] != "Undefined":
+        if record and record["container"] and record["container"].strip().lower() not in _UNPROVISIONED:
             found[host] = record
         else:
             missing.append(host)
-    return {"found": found, "missing": missing}
+            if record:
+                unassigned.append(host)
+    return {"found": found, "missing": missing, "unassigned": unassigned}
 
 
 def cvp_device_assignments(assignments, containers):
@@ -171,3 +181,87 @@ def cvp_change_control_state(show_result):
         "error": str(error or "").strip(),
         "done": status in ("completed", "failed"),
     }
+
+
+# --- Studios (arista.avd.cv_deploy) -----------------------------------------
+# cv_deploy keeps ONE configlet per switch in Static Configuration Studio and
+# overwrites it on every run. A leaf's configlet must therefore hold every
+# VLAN migrated onto it, not only the VLAN of this run.
+
+
+def _record_id(record):
+    try:
+        return int((record or {}).get("id"))
+    except (TypeError, ValueError):
+        return None
+
+
+def cv_studio_leaf_vlans(records, current, hosts, exclude_current=False):
+    """VLAN records that belong in each leaf's Studios configlet.
+
+    *records* are the data center's VLAN records; *current* is this run's
+    record (its NetBox VNI merged in); *hosts* are the leaves this run deploys.
+    A leaf gets every record with ``deployed: true`` and ``action: migrate``
+    that places config on it, plus *current* unless *exclude_current* (a
+    rollback, which re-renders the leaf without that VLAN).
+
+    Returns ``{leafs: {leaf: [record, ...] sorted by id}, problems: [...]}``.
+    A problem is a deployed record that cannot be rendered from disk (no VNI),
+    which would otherwise drop that VLAN from the leaf.
+    """
+    from vlan_lib.placement import vlan_config_hosts
+
+    hosts = [str(h) for h in (hosts or [])]
+    current_id = _record_id(current)
+    leafs = {host: {} for host in hosts}
+    problems = []
+    for record in records or []:
+        if not isinstance(record, dict) or record.get("_probe"):
+            continue
+        vid = _record_id(record)
+        if vid is None or vid == current_id:
+            continue
+        if record.get("deployed") is not True or str(record.get("action") or "migrate") != "migrate":
+            continue
+        on = [h for h in vlan_config_hosts(record) if h in leafs]
+        if not on:
+            continue
+        if not str(record.get("vni") or "").strip().isdigit():
+            problems.append(
+                "VLAN %s is deployed on %s but its record has no vni on disk: add it (evpn.l2.vni) "
+                "or it would be removed from those leaves" % (vid, ", ".join(on))
+            )
+            continue
+        for host in on:
+            leafs[host][vid] = record
+    if not exclude_current and current_id is not None:
+        for host in vlan_config_hosts(current):
+            if host in leafs:
+                leafs[host][current_id] = current
+    return {
+        "leafs": {host: [by_id[k] for k in sorted(by_id)] for host, by_id in leafs.items()},
+        "problems": problems,
+    }
+
+
+def cv_studio_structured_config(parts, hostname):
+    """Merge per-VLAN AVD structured configs into one for *hostname*.
+
+    hostname is not set: the switch keeps the one CloudVision already has.
+
+    Each part has ``vlans`` (list) and ``eos_cli`` (text), as rendered by
+    roles/avd_vxlan_config/templates/avd_structured_config.yml.j2.
+    """
+    vlans = []
+    blocks = []
+    for part in parts or []:
+        if not isinstance(part, dict):
+            continue
+        vlans.extend(part.get("vlans") or [])
+        text = str(part.get("eos_cli") or "").rstrip()
+        if text:
+            blocks.append(text)
+    merged = {"vlans": sorted(vlans, key=lambda v: int(v.get("id", 0)))}
+    if blocks:
+        merged["eos_cli"] = "\n".join(blocks) + "\n"
+    return merged

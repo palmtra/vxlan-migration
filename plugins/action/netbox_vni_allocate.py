@@ -27,19 +27,16 @@ from __future__ import absolute_import, division, print_function
 
 __metaclass__ = type
 
-import json
 import os
 import sys
-from urllib.parse import urlencode, urlsplit
 
-from ansible.module_utils.six.moves.urllib.error import HTTPError, URLError
-from ansible.module_utils.urls import open_url
 from ansible.plugins.action import ActionBase
 
 _PLUGINS_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 if _PLUGINS_DIR not in sys.path:
     sys.path.insert(0, _PLUGINS_DIR)
 
+from vlan_lib.netbox_api import Netbox as _Netbox, NetboxError  # noqa: E402
 from vlan_lib.netbox import ROUTE_TARGET_DESCRIPTION, DESCRIPTION_MAX, netbox_vlan_pick  # noqa: E402
 from vlan_lib.netbox_rt import (  # noqa: E402
     FNTS_TENANTS,
@@ -51,80 +48,6 @@ from vlan_lib.netbox_rt import (  # noqa: E402
     taken_by_other_vlan,
     tenant_name,
 )
-
-_PAGE = 1000
-
-
-class NetboxError(Exception):
-    pass
-
-
-class _Netbox(object):
-    def __init__(self, url, token, validate_certs, timeout):
-        self.base = str(url or "").rstrip("/")
-        self.headers = {"Authorization": "Token %s" % token, "Accept": "application/json"}
-        self.validate_certs = validate_certs
-        self.timeout = timeout
-
-    def request(self, path, params=None, method="GET", body=None, missing_ok=False):
-        url = "%s/api/%s" % (self.base, path.lstrip("/"))
-        if params:
-            url += "?" + urlencode(params)
-        headers = dict(self.headers)
-        data = None
-        if body is not None:
-            headers["Content-Type"] = "application/json"
-            data = json.dumps(body)
-        try:
-            response = open_url(
-                url, data=data, headers=headers, method=method,
-                validate_certs=self.validate_certs, timeout=self.timeout,
-            )
-            return json.loads(response.read() or b"{}")
-        except HTTPError as exc:
-            if missing_ok and exc.code == 404:
-                return None
-            detail = ""
-            try:
-                payload = json.loads(exc.read() or b"{}")
-                detail = payload.get("detail") or json.dumps(payload, sort_keys=True)[:300]
-            except (ValueError, AttributeError):
-                pass
-            hint = ""
-            if exc.code in (401, 403):
-                hint = ". Check netbox_token and its permissions"
-            elif exc.code == 404:
-                hint = ". Check netbox_url: it should be the NetBox address without /api"
-            raise NetboxError("%s /api/%s: HTTP %s%s%s" % (method, path, exc.code, (": %s" % detail) if detail else "", hint))
-        except URLError as exc:
-            reason = str(getattr(exc, "reason", exc))
-            if "CERTIFICATE_VERIFY_FAILED" in reason:
-                raise NetboxError(
-                    "the NetBox TLS certificate is not trusted (%s). Install the CA that signed it on this host, "
-                    "or set netbox_validate_certs: false" % reason
-                )
-            raise NetboxError("no HTTP answer from NetBox for /api/%s: %s" % (path, reason))
-
-    def all(self, path, params, missing_ok=False):
-        """Every result of a list query, following ``next``."""
-        params = dict(params, limit=_PAGE)
-        page = self.request(path, params, missing_ok=missing_ok)
-        if page is None:
-            return None
-        results = list(page.get("results") or [])
-        while page.get("next"):
-            nxt = urlsplit(page["next"])
-            # NetBox may answer with its own host name; keep ours.
-            page = self.request(nxt.path.split("/api/", 1)[-1], dict(_query(nxt.query)))
-            results.extend(page.get("results") or [])
-        return results
-
-
-def _query(text):
-    from urllib.parse import parse_qsl
-
-    return parse_qsl(text, keep_blank_values=True)
-
 
 def _record_tenant(record):
     ownership = record.get("ownership") if isinstance(record.get("ownership"), dict) else {}

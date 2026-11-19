@@ -135,7 +135,8 @@ Read the dry run (`reports/<dc>/_prune/prune_dry_run_<ts>.md`) and follow the ph
 | `migrate_decisions_reviewed` | `false` | `true` once every open decision is settled in the record |
 | `migrate_preflight` | `true` | `false` skips step 0's preflight |
 | `migrate_prune_readiness` | `true` | `false` skips step 5 (and its extra discovery, so no endpoint comparison) |
-| `use_avd` | `false` | `true` renders the configlets with Arista AVD |
+| `use_avd` | `true` | `false` renders with the deprecated Jinja templates |
+| `cvp_deploy_method` | `configlets` | `studios` deploys through Static Configuration Studio (see the README) |
 | `manual_target_vrf` | the record's VRF | VRF for the deploy and the endpoint pings |
 | `cvp_change_control_wait_minutes` / `cvp_change_control_poll_seconds` | `240` / `60` | How long to wait for the change control |
 | `netbox_evpn_conflict` | `fail` | `warn` deploys from the VLAN record when NetBox disagrees |

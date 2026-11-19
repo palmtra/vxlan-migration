@@ -1,0 +1,149 @@
+---
+# Static Configuration Studio (cvp_deploy_method: studios).
+#
+# arista.avd.cv_deploy keeps ONE configlet per switch and overwrites it, so a
+# leaf's config here holds every VLAN already deployed on it (records with
+# deployed: true) plus this run's VLAN, or minus it for a rollback
+# (avd_studio_rollback). Everything runs once on the control node and renders
+# with pyavd, so a rollback started from one host's rescue covers every leaf.
+#
+# Output: <avd_output_dir>/structured_configs/<leaf>.yml and configs/<leaf>.cfg.
+
+# The run's VLAN DB holds only the requested VLAN: read the whole data center.
+- name: Studios - pick the VLANs each leaf's configlet holds
+  ansible.builtin.set_fact:
+    _avd_studio_plan: >-
+      {{ (vlan_db_dir | load_vlan_db_from_directory(_avd_studio_dc)).vlans
+         | cv_studio_leaf_vlans(_avd_vlan, _avd_vlan | vlan_config_hosts, avd_studio_rollback | bool) }}
+  vars:
+    _avd_studio_dc: >-
+      {{ hostvars['localhost']['_vlan_db_data_center'] | default(cvp_configlet_data_center, true) | trim }}
+  delegate_to: localhost
+  become: false
+  run_once: true
+
+- name: Studios - fail when a deployed VLAN cannot be rendered from its record
+  ansible.builtin.fail:
+    msg: "{{ _avd_studio_plan.problems }}"
+  when: _avd_studio_plan.problems | length > 0
+  delegate_to: localhost
+  become: false
+  run_once: true
+
+- name: Studios - clear this VLAN's previous output (each run replaces it)
+  ansible.builtin.file:
+    path: "{{ avd_output_dir }}"
+    state: absent
+  when:
+    - target_vlan_id | string is match('^[0-9]+$')
+    - avd_output_dir is search('/vlan' ~ target_vlan_id ~ '(/|$)')
+  delegate_to: localhost
+  become: false
+  run_once: true
+
+- name: Studios - create the output directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: '0755'
+  loop: >-
+    {{ [avd_output_dir ~ '/structured_configs', avd_output_dir ~ '/configs']
+       + (_avd_studio_plan.leafs.keys() | map('regex_replace', '^', avd_output_dir ~ '/vlan_parts/') | list) }}
+  delegate_to: localhost
+  become: false
+  run_once: true
+
+- name: Studios - render each VLAN on each leaf
+  ansible.builtin.template:
+    src: avd_structured_config.yml.j2
+    dest: "{{ avd_output_dir }}/vlan_parts/{{ item.0.key }}/vlan{{ item.1.id }}.yml"
+    mode: '0644'
+  loop: "{{ _avd_studio_plan.leafs | dict2items | subelements('value') }}"
+  loop_control:
+    label: "{{ item.0.key }} VLAN {{ item.1.id }}"
+  vars:
+    _target_device: "{{ item.0.key }}"
+    _render_vlan: "{{ item.1 }}"
+    _is_borderleaf: "{{ item.0.key is match(avd_borderleaf_regex) }}"
+  delegate_to: localhost
+  become: false
+  run_once: true
+
+- name: Studios - merge each leaf's VLANs into one structured config
+  ansible.builtin.set_fact:
+    _avd_studio_structured: >-
+      {{ _avd_studio_structured | default({}) | combine({item.key:
+           query('ansible.builtin.file', *_paths) | map('from_yaml') | list | cv_studio_structured_config(item.key)}) }}
+  loop: "{{ _avd_studio_plan.leafs | dict2items }}"
+  loop_control:
+    label: "{{ item.key }}"
+  vars:
+    _paths: >-
+      {{ item.value | map(attribute='id') | map('string')
+         | map('regex_replace', '^(.*)$', avd_output_dir ~ '/vlan_parts/' ~ item.key ~ '/vlan\1.yml') | list }}
+  delegate_to: localhost
+  become: false
+  run_once: true
+
+- name: Studios - write each leaf's structured config
+  ansible.builtin.copy:
+    content: "{{ item.value | to_nice_yaml(indent=2) }}"
+    dest: "{{ avd_output_dir }}/structured_configs/{{ item.key }}.yml"
+    mode: '0644'
+  loop: "{{ _avd_studio_structured | dict2items }}"
+  loop_control:
+    label: "{{ item.key }}"
+  delegate_to: localhost
+  become: false
+  run_once: true
+
+# An empty file is valid: the leaf has no migrated VLAN left (rollback of its
+# last one), and an empty configlet removes the migration config from it.
+- name: Studios - render each leaf's EOS config with pyavd
+  ansible.builtin.copy:
+    content: "{{ item.value | avd_eos_config(item.key) }}"
+    dest: "{{ avd_output_dir }}/configs/{{ item.key }}.cfg"
+    mode: '0644'
+  loop: "{{ _avd_studio_structured | dict2items }}"
+  loop_control:
+    label: "{{ item.key }}"
+  delegate_to: localhost
+  become: false
+  run_once: true
+
+- name: Studios - build the per-leaf configlet map
+  ansible.builtin.set_fact:
+    _avd_configlets: >-
+      {{ _avd_configlets | default({}) | combine({item: lookup('ansible.builtin.file',
+           avd_output_dir ~ '/configs/' ~ item ~ '.cfg', rstrip=false)}) }}
+  loop: "{{ _avd_studio_structured.keys() | list | sort }}"
+  delegate_to: localhost
+  become: false
+  run_once: true
+
+- name: Studios - show what each leaf's configlet holds
+  ansible.builtin.debug:
+    msg:
+      - "AVD output directory: {{ avd_output_dir }} ({{ 'rollback of' if avd_studio_rollback | bool else 'deploy of' }} VLAN {{ target_vlan_id }})"
+      - >-
+        {% for leaf, vlans in _avd_studio_plan.leafs.items() | sort %}{{ leaf }}: VLANs
+        {{ vlans | map(attribute='id') | join(', ') or 'none' }}{{ '; ' if not loop.last }}{% endfor %}
+      - >-
+        Each leaf's Static Configuration Studio configlet is replaced with exactly these VLANs.
+        A VLAN deployed earlier but missing here has no 'deployed: true' in its record.
+  delegate_to: localhost
+  become: false
+  run_once: true
+
+- name: Studios - deploy through a workspace and change control (cvp_apply_configlets)
+  ansible.builtin.include_role:
+    name: cvp_change_control
+  vars:
+    cvp_push_configlets: "{{ _avd_configlets }}"
+    cvp_push_assignments: >-
+      {% set out = {} %}{% for host in _avd_configlets.keys() %}{% set _ = out.update({host:
+      [cvp_studio_configlet_name_template | default('VXLAN-MIGRATION_${hostname}') | replace('${hostname}', host)]})
+      %}{% endfor %}{{ out }}
+    cvp_studio_structured_dir: "{{ avd_output_dir }}/structured_configs"
+    cvp_studio_config_dir: "{{ avd_output_dir }}/configs"
+  when: cvp_apply_configlets | bool

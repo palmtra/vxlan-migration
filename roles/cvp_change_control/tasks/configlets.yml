@@ -1,0 +1,100 @@
+---
+# Network Provisioning: push the configlets and add them to their switches.
+# 1. Read where each switch sits in CloudVision (its container must not change).
+# 2. Push the configlets and add them to their switches (apply_mode loose:
+#    nothing already on a switch is removed). CloudVision creates one task per
+#    switch whose config changes.
+# 3. Create one change control that runs those tasks, in parallel, and wait.
+
+- name: Read the switches CloudVision manages
+  arista.cvp.cv_facts_v3:
+    facts:
+      - devices
+  register: _cvp_facts
+  delegate_to: "{{ _cvp_host }}"
+  run_once: true
+
+- name: Find each target switch's current container
+  ansible.builtin.set_fact:
+    _cvp_containers: "{{ _cvp_facts | cvp_device_containers(cvp_push_assignments.keys() | list) }}"
+  run_once: true
+  delegate_to: localhost
+
+- name: Fail when a target switch is not provisioned in CloudVision
+  ansible.builtin.fail:
+    msg: >-
+      Configlets cannot be applied to: {{ _cvp_containers.missing | join(', ') }}.
+      {% if _cvp_containers.unassigned | default([]) | length > 0 %}In CloudVision but not in a
+      container (Undefined / Unassigned): {{ _cvp_containers.unassigned | join(', ') }}. Move them
+      into their DC container in Network Provisioning and reconcile first (docs/examples/cvp-container-onboarding.md).
+      {% endif %}Any other switch is not in CloudVision under that name: CloudVision hostnames must
+      match the inventory hostnames (or their FQDN's first label).
+  when: _cvp_containers.missing | length > 0
+  run_once: true
+
+- name: Push the configlets to CloudVision
+  arista.cvp.cv_configlet_v3:
+    configlets: "{{ cvp_push_configlets }}"
+    configlets_notes: "{{ cvp_configlets_notes }}"
+    state: present
+  register: _cvp_configlet_result
+  delegate_to: "{{ _cvp_host }}"
+  run_once: true
+
+- name: Add the configlets to their switches (keeps each switch in its container)
+  arista.cvp.cv_device_v3:
+    devices: "{{ cvp_push_assignments | cvp_device_assignments(_cvp_containers.found) }}"
+    state: present
+    apply_mode: loose
+    search_key: hostname
+  register: _cvp_device_result
+  delegate_to: "{{ _cvp_host }}"
+  run_once: true
+
+# Assigning a configlet creates a task; so does changing a configlet that is
+# already assigned (a redeploy, or a rollback overwriting the same names).
+- name: Collect the tasks CloudVision created
+  ansible.builtin.set_fact:
+    _cvp_task_ids: "{{ [_cvp_configlet_result, _cvp_device_result] | cvp_task_ids }}"
+    _cvp_cc_id: ""
+    _cvp_cc_state: {}
+  run_once: true
+  delegate_to: localhost
+
+- name: Create the change control and wait for it
+  when: _cvp_task_ids | length > 0
+  block:
+    - name: Create the change control
+      arista.cvp.cv_change_control_v3:
+        state: set
+        change: "{{ cvp_change_control_name | cvp_change_control(cvp_change_control_notes, _cvp_task_ids) }}"
+      register: _cvp_cc_created
+      delegate_to: "{{ _cvp_host }}"
+      run_once: true
+
+    - name: Record the change control ID
+      ansible.builtin.set_fact:
+        _cvp_cc_id: "{{ _cvp_cc_created.data.id | default(_cvp_cc_created.data.key.id | default('')) }}"
+      run_once: true
+      delegate_to: localhost
+
+    - name: Fail when CloudVision returned no change control ID
+      ansible.builtin.fail:
+        msg: "CloudVision did not return a change control ID: {{ _cvp_cc_created.data | default({}) }}"
+      when: _cvp_cc_id | length == 0
+      run_once: true
+
+    - name: Approve and run the change control (explicitly allowed for this run)
+      arista.cvp.cv_change_control_v3:
+        state: "{{ cvp_change_control_state }}"
+        change_id:
+          - "{{ _cvp_cc_id }}"
+      delegate_to: "{{ _cvp_host }}"
+      run_once: true
+      when:
+        - cvp_change_control_state != 'set'
+        - cvp_change_control_auto_execute_allowed | bool
+
+    - name: Wait for the change control to run
+      ansible.builtin.include_tasks: wait.yml
+      when: cvp_change_control_wait | bool

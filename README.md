@@ -97,7 +97,7 @@ More discovery examples: [docs/examples/discover-vlan.md](docs/examples/discover
 
 After the VLAN record exists in the local SSOT, generate configlets locally (no CVP API calls):
 
-**Legacy Jinja:**
+Configs are rendered with Arista AVD (`use_avd: true`, the default):
 
 ```bash
 ansible-playbook -i inventory/hosts.yml playbooks/core/workflow_deploy.yml \
@@ -109,28 +109,24 @@ ansible-playbook -i inventory/hosts.yml playbooks/core/workflow_deploy.yml \
   --ask-vault-pass
 ```
 
-**Arista AVD:**
+The legacy Jinja templates (`roles/cvp_deploy`) are deprecated and still run with `-e use_avd=false`. They render the same config, and they will be removed.
 
-```bash
-ansible-playbook -i inventory/hosts.yml playbooks/core/workflow_deploy.yml \
-  -e manual_vlan_id=810 \
-  -e manual_data_center=lisle \
-  -e manual_target_vrf=default \
-  -e use_avd=true \
-  -e cvp_apply_configlets=false \
-  --limit dc_lisle \
-  --ask-vault-pass
-```
-
-Output: one directory per data center and VLAN, `reports/cvp_configlets/<dc>/vlan<id>/`: `configs/` (Jinja) or `avd/structured_configs/` and `avd/configs/` (AVD). Each run replaces that VLAN's files and leaves other VLANs alone.
+Output: one directory per data center and VLAN, `reports/cvp_configlets/<dc>/vlan<id>/`: `avd/structured_configs/` and `avd/configs/` (AVD, configlets method), `avd_studio/` (AVD, Studios method), or `configs/` (Jinja). Each run replaces that VLAN's files and leaves other VLANs alone.
 
 More generate-only options: [docs/examples/generate-config-without-cvp-push.md](docs/examples/generate-config-without-cvp-push.md)
 
 **Production path:** VLANs are migrated with this repo's deploy
-(`playbooks/core/workflow_deploy.yml`, steps 2 and 3). It writes one CVP configlet
-per VLAN per leaf (`vxlan_vlan<id>_<leaf>`). The VLAN record under
-`vars/vlans/<dc>/` is the record of what was migrated, so commit one for every
-migration.
+(`playbooks/core/workflow_deploy.yml`, steps 2 and 3), rendered with AVD. Two
+ways of reaching CloudVision are kept until one is retired (`cvp_deploy_method`):
+
+| Method | CloudVision | Configlets | Needs |
+|---|---|---|---|
+| `configlets` (default) | Network Provisioning, `arista.cvp` | One per VLAN per leaf, `vxlan_vlan<id>_<leaf>` | Switches in a container: [cvp-container-onboarding.md](docs/examples/cvp-container-onboarding.md) |
+| `studios` | Static Configuration Studio, `arista.avd.cv_deploy` | One per leaf, `VXLAN-MIGRATION_<leaf>`, with every deployed VLAN | Switches onboarded and `cvp_studios_onboarded: true`: [cvp-studios-onboarding.md](docs/examples/cvp-studios-onboarding.md) |
+
+The VLAN record under `vars/vlans/<dc>/` is the record of what was migrated:
+commit one for every migration, with `deployed: true` once its change control has
+run. The Studios method rebuilds each leaf's configlet from those records.
 
 **AVD services repo (parked):**
 [palmtra/avd-vxlan-repo](https://github.com/palmtra/avd-vxlan-repo) holds the
@@ -150,13 +146,13 @@ ansible-playbook -i inventory/hosts.yml playbooks/core/workflow_deploy.yml \
   -e manual_vlan_id=810 \
   -e manual_data_center=lisle \
   -e manual_target_vrf=default \
-  -e use_avd=true \
   -e cvp_apply_configlets=true \
   --limit dc_lisle \
   --ask-vault-pass
 ```
 
-Approve and execute the change control in CloudVision manually.
+Approve and execute the change control in CloudVision manually. Once it has run,
+set `deployed: true` in the VLAN's record and commit it.
 
 ### 4. Verify (optional, post-CVP)
 
@@ -169,12 +165,16 @@ ansible-playbook -i inventory/hosts.yml playbooks/core/workflow_verify.yml \
   --ask-vault-pass
 ```
 
+Verify writes one report per VLAN beside its discovery reports,
+`reports/<dc>/<vlan_name>/<vlan_name>_verification_<ts>.md` and `.json`: the outcome
+(passed, failed, rolled back or escalated), action items, and every check per switch.
+
 Per-DC VLAN databases: `vars/vlans/<data_center>/*.yml` - one file per VLAN (see `vars/vlans/README.md`).
 
 ## Standalone utilities
 
 ```bash
-# Export VLAN attributes and route targets to NetBox (dry-run by default)
+# Export VLANs (tenant, VLAN group, prefixes in their VRF) and route targets to NetBox (dry-run by default)
 ansible-playbook -i inventory/hosts.yml playbooks/export_vlan_to_netbox.yml \
   -e manual_data_center=lisle \
   -e manual_vlan_id=100 \
@@ -182,6 +182,15 @@ ansible-playbook -i inventory/hosts.yml playbooks/export_vlan_to_netbox.yml \
 ```
 
 NetBox export details: [docs/examples/export-vlan-to-netbox.md](docs/examples/export-vlan-to-netbox.md)
+
+```bash
+# Compare the VLAN records with NetBox (read-only): VLAN, tenant, VNI, route targets, prefixes / VRF
+ansible-playbook -i inventory/hosts.yml playbooks/netbox_drift.yml \
+  -e manual_data_center=omaha \
+  --ask-vault-pass
+```
+
+Drift report details: [docs/examples/netbox-drift.md](docs/examples/netbox-drift.md)
 
 ```bash
 # A VLAN's VNI and route target from NetBox: reuse, or the next free number (report only by default)
